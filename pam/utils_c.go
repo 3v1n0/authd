@@ -1,6 +1,7 @@
 package main
 
 /*
+#cgo pkg-config: gdm-pam-extensions
 #include "pam-utils.h"
 
 typedef struct pam_response pam_response_t;
@@ -9,6 +10,7 @@ typedef struct pam_response pam_response_t;
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -94,4 +96,43 @@ func requestInput(pamh pamHandle, prompt string) (string, error) {
 
 func requestSecret(pamh pamHandle, prompt string) (string, error) {
 	return pamConv(pamh, prompt+": ", PamPromptEchoOff)
+}
+
+func gdmChoiceListSupported() bool {
+	return C.gdm_choices_list_supported() != C.bool(false)
+}
+
+func gdmChoiceListRequest(pamh pamHandle, prompt string, choices map[string]string) (string, error) {
+	if len(choices) == 0 {
+		return "", errors.New("No choices provided")
+	}
+
+	cPrompt := C.CString(prompt)
+	defer C.free(unsafe.Pointer(cPrompt))
+	cChoicesRequest := C.gdm_choices_request_create(cPrompt, C.ulong(len(choices)))
+	defer C.gdm_choices_request_free(cChoicesRequest)
+
+	var i = 0
+	for key, text := range choices {
+		cKey := C.CString(key)
+		defer C.free(unsafe.Pointer(cKey))
+		cText := C.CString(text)
+		defer C.free(unsafe.Pointer(cText))
+
+		C.gdm_choices_request_set(cChoicesRequest, C.ulong(i), cKey, cText)
+		i++
+	}
+
+	cReply := C.gdm_choices_request_ask(pamh, cChoicesRequest)
+	defer C.free(unsafe.Pointer(cReply))
+	if cReply == nil {
+		return "", errors.New("GDM didn't return any choice")
+	}
+
+	reply := C.GoString(cReply)
+	if _, ok := choices[reply]; ok {
+		return reply, nil
+	}
+
+	return "", fmt.Errorf("reply %s is not known", reply)
 }
