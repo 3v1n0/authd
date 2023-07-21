@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sirupsen/logrus"
@@ -32,12 +33,26 @@ var (
 	brokerIDUsedToAuthenticate string
 )
 
+type ClientType int
+
+const (
+	ClientTypeNone ClientType = iota + 1
+	ClientTypeTerminal
+	ClientTypeStandard
+)
+
 //go:generate sh -c "go build -ldflags='-extldflags -Wl,-soname,pam_authd.so' -buildmode=c-shared -o pam_authd.so"
 
 /*
 	Add to /etc/pam.d/common-auth
 	auth    [success=3 default=die ignore=ignore]   pam_authd.so
 */
+
+func ForwardAndLogError(pamh pamHandle, format string, args ...interface{}) error {
+	message := fmt.Sprintf(format, args...)
+	log.Error(context.TODO(), message)
+	return sendError(pamh, message)
+}
 
 //export pam_sm_authenticate
 func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.int {
@@ -46,6 +61,9 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 	// Attach logger and info handler.
 	// TODO
+
+	// TODO: Get this value from argc or pam environment
+	log.SetLevel(log.DebugLevel)
 
 	interactiveTerminal := term.IsTerminal(int(os.Stdin.Fd()))
 
@@ -112,7 +130,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	}
 
 	if logErrMsg != "" {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", logErrMsg)
+		ForwardAndLogError(pamh, logErrMsg)
 	}
 
 	return errCode
@@ -155,8 +173,13 @@ func pam_sm_acct_mgmt(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.
 
 // newClient returns a new GRPC client ready to emit requests
 func newClient(argc C.int, argv **C.char) (client authd.PAMClient, close func(), err error) {
-	conn, err := grpc.Dial("unix://"+getSocketPath(argc, argv), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, "unix://"+getSocketPath(argc, argv),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
 	if err != nil {
+		log.Debugf(context.TODO(), "%s", err)
 		return nil, nil, fmt.Errorf("could not connect to authd: %v", err)
 	}
 	return authd.NewPAMClient(conn), func() { conn.Close() }, nil
