@@ -57,6 +57,48 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 	// Attach logger and info handler.
 	// TODO
+	module, err := getModuleName(pamh)
+	if err != nil {
+		log.Errorf(context.TODO(), "Can't get the module name %v", err)
+		return C.PAM_AUTH_ERR
+	}
+
+	log.Debugf(context.TODO(), "Module name is %s", module)
+
+	if module != "gdm-okta" {
+		log.Errorf(context.TODO(), "Module not supported %s", module)
+		return C.PAM_AUTH_ERR
+	}
+
+	err = sendInfo(pamh, "Hello PAM, this a native conversation!")
+	if err != nil {
+		log.Error(context.TODO(), "%s", err)
+		return C.PAM_IGNORE
+	}
+
+	userInput, err := requestInput(pamh, "Tell me something...")
+	if err != nil {
+		log.Error(context.TODO(), "%s", err)
+		return C.PAM_IGNORE
+	}
+
+	err = sendInfo(pamh, "Cool, you just told me: "+userInput)
+	if err != nil {
+		log.Error(context.TODO(), "%s", err)
+		return C.PAM_IGNORE
+	}
+
+	userSecret, err := requestSecret(pamh, "And now tell me a secret")
+	if err != nil {
+		log.Error(context.TODO(), "%s", err)
+		return C.PAM_IGNORE
+	}
+
+	err = sendInfo(pamh, "Don't worry, I won't tell anybody you said me: "+userSecret)
+	if err != nil {
+		log.Error(context.TODO(), "%s", err)
+		return C.PAM_IGNORE
+	}
 
 	// Check if we are in an interactive terminal to see if we can do something
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
