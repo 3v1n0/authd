@@ -83,7 +83,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	})
 	if err != nil {
 		log.Debugf(context.TODO(), "Could not get current available brokers: %v", err)
-		return C.PAM_IGNORE
+		return C.PAM_AUTH_ERR
 	}
 
 	type Stage int
