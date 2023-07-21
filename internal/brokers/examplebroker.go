@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ubuntu/authd/internal/log"
 	"golang.org/x/exp/slices"
 )
 
@@ -274,6 +275,7 @@ func (b *exampleBroker) IsAuthorized(ctx context.Context, sessionID, authenticat
 	}
 
 	authDeniedResp := "denied"
+	log.Debugf(ctx, "In mode %s, auth data is %s", sessionInfo.selectedMode, authData["challenge"])
 
 	// Note that the "wait" authentication can be cancelled and switch to another mode with a challenge.
 	// Take into account the cancellation.

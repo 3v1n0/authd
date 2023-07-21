@@ -45,6 +45,7 @@ type ClientType int
 const (
 	ClientTypeNone ClientType = iota + 1
 	ClientTypeTerminal
+	ClientTypeRemote
 	ClientTypeGdm
 )
 
@@ -63,6 +64,9 @@ func sendAndLogError(pamh pamHandle, message string) error {
 //export pam_sm_authenticate
 func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.int {
 	// Initialize localization
+
+	// set global log level
+	log.SetLevel(log.DebugLevel)
 	// TODO
 
 	// Attach logger and info handler.
@@ -117,8 +121,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	} else if gdmChoiceListSupported() {
 		clientType = ClientTypeGdm
 	} else {
-		log.Info(context.TODO(), "Not in an interactive terminal and not an authd compatible application. Exiting")
-		return C.PAM_IGNORE
+		clientType = ClientTypeRemote
 	}
 
 	sendInfo(pamh, fmt.Sprintf("We're using mode %v", clientType))
@@ -126,7 +129,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	client, close, err := newClient(argc, argv)
 	if err != nil {
 		log.Debugf(context.TODO(), "%s", err)
-		return C.PAM_IGNORE
+		return C.PAM_AUTHINFO_UNAVAIL
 	}
 	defer close()
 
@@ -192,6 +195,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 					}
 					return C.PAM_SYSTEM_ERR
 				}
+				sendInfo(pamh, fmt.Sprintf("Broker with id %v selected", brokerID))
 			}
 			if brokerID == "local" {
 				return C.PAM_IGNORE
@@ -308,13 +312,15 @@ func selectBrokerInteractive(pamh pamHandle, clientType ClientType, brokersInfo 
 	case ClientTypeGdm:
 		return selectBrokerInteractiveGdm(pamh, brokersInfo)
 	case ClientTypeTerminal:
-		return selectBrokerInteractiveCli(pamh, brokersInfo)
+		return selectBrokerInteractivePam(pamh, brokersInfo)
+	case ClientTypeRemote:
+		return selectBrokerInteractivePam(pamh, brokersInfo)
 	default:
 		return "", "", errors.New("Unhandled client type")
 	}
 }
 
-func selectBrokerInteractiveCli(pamh pamHandle, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+func selectBrokerInteractivePam(pamh pamHandle, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
 	var choices []string
 	var ids []string
 	for _, b := range brokersInfo {
@@ -685,8 +691,13 @@ func pam_sm_acct_mgmt(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.
 
 // newClient returns a new GRPC client ready to emit requests
 func newClient(argc C.int, argv **C.char) (client authd.PAMClient, close func(), err error) {
-	conn, err := grpc.Dial("unix://"+getSocketPath(argc, argv), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, "unix://"+getSocketPath(argc, argv),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock())
 	if err != nil {
+		log.Debugf(context.TODO(), "%s", err)
 		return nil, nil, fmt.Errorf("could not connect to authd: %v", err)
 	}
 	return authd.NewPAMClient(conn), func() { conn.Close() }, nil
