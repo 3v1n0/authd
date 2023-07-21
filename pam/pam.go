@@ -67,6 +67,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	client, closeConn, err := newClient(argc, argv)
 	if err != nil {
 		log.Debug(context.TODO(), err)
+		ForwardAndLogError(pamh, "Client creation failed: %v", err)
 		return C.PAM_AUTHINFO_UNAVAIL
 	}
 	defer closeConn()
