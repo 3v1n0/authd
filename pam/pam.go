@@ -46,6 +46,7 @@ const (
 	ClientTypeNone ClientType = iota + 1
 	ClientTypeTerminal
 	ClientTypeStandard
+	ClientTypeGdm
 )
 
 type PAMClient interface {
@@ -83,6 +84,10 @@ type PAMClientTerminal struct {
 	PAMClientBase
 }
 
+type PAMClientGdm struct {
+	PAMClientBase
+}
+
 func NewPAMClientBase(clientType ClientType, pamh pamHandle,
 	client authd.PAMClient) *PAMClientBase {
 	return &PAMClientBase{clientType, pamh, client,
@@ -91,6 +96,10 @@ func NewPAMClientBase(clientType ClientType, pamh pamHandle,
 
 func NewPAMClientTerminal(pamh pamHandle, client authd.PAMClient) *PAMClientTerminal {
 	return &PAMClientTerminal{*NewPAMClientBase(ClientTypeTerminal, pamh, client)}
+}
+
+func NewPAMClientGdm(pamh pamHandle, client authd.PAMClient) *PAMClientGdm {
+	return &PAMClientGdm{*NewPAMClientBase(ClientTypeGdm, pamh, client)}
 }
 
 func (base *PAMClientBase) getClientType() ClientType {
@@ -164,6 +173,8 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	var pamClient PAMClient
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		pamClient = NewPAMClientTerminal(pamh, client)
+	} else if gdmChoiceListSupported() {
+		pamClient = NewPAMClientGdm(pamh, client)
 	} else {
 		pamClient = NewPAMClientBase(ClientTypeStandard, pamh, client)
 	}
@@ -176,6 +187,8 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		sendAndLogError(pamh, fmt.Sprintf("Can't get user: %v", err))
 		return C.PAM_AUTH_ERR
 	}
+
+	// IF BROKER DISCONNECTED... fail!
 
 	brokersInfo, err := client.AvailableBrokers(context.TODO(), &authd.ABRequest{
 		UserName: &user,
@@ -335,15 +348,27 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 // selectBroker allows interactive broker selection.
 // Only one choice will be returned immediately.
-func (pamClient *PAMClientBase) selectBrokerInteractive(
-	brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+func maybeGetBroker(brokersInfo []*authd.ABResponse_BrokerInfo) (
+	*authd.ABResponse_BrokerInfo, error) {
 	if len(brokersInfo) < 1 {
-		return "", "", errors.New("no broker found")
+		return nil, errors.New("no broker found")
 	}
 
 	// Default choice for one possibility.
 	if len(brokersInfo) == 1 {
-		return brokersInfo[0].GetId(), brokersInfo[0].GetName(), nil
+		return brokersInfo[0], nil
+	}
+
+	return nil, nil
+}
+
+func (pamClient *PAMClientBase) selectBrokerInteractive(
+	brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+	broker, err := maybeGetBroker(brokersInfo)
+	if err != nil {
+		return "", "", err
+	} else if broker != nil {
+		return broker.GetId(), broker.GetName(), nil
 	}
 
 	var choices []string
@@ -365,6 +390,27 @@ func (pamClient *PAMClientBase) selectBrokerInteractive(
 	return ids[i], brokersInfo[i].GetName(), nil
 }
 
+func (pamClient *PAMClientGdm) selectBrokerInteractive(
+	brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+	broker, err := maybeGetBroker(brokersInfo)
+	if err != nil {
+		return "", "", err
+	} else if broker != nil {
+		return broker.GetId(), broker.GetName(), nil
+	}
+
+	var choices = make(map[string]string)
+	sendInfo(pamClient.pamh, fmt.Sprintf("Sending choices to gdm %v", choices))
+	for _, b := range brokersInfo {
+		choices[b.GetId()] = b.GetName()
+	}
+	id, err := gdmChoiceListRequest(pamClient.pamh, "Select broker", choices)
+	if err != nil {
+		return "", "", err
+	}
+	return id, choices[id], nil
+}
+
 func (pamClient *PAMClientBase) getSupportedLayouts() []*authd.UILayout {
 	required, optional := "required", "optional"
 	supportedEntries := "optional:chars,chars_password"
@@ -383,6 +429,21 @@ func (pamClient *PAMClientBase) getSupportedLayouts() []*authd.UILayout {
 			Content: &required,
 			Wait:    &waitRequired,
 			Label:   &optional,
+		},
+	}
+}
+
+func (pamClient *PAMClientGdm) getSupportedLayouts() []*authd.UILayout {
+	required := "required"
+	supportedEntries := "optional:chars,chars_password"
+	waitOptional := "optional:true,false"
+
+	return []*authd.UILayout{
+		{
+			Type:  "form",
+			Label: &required,
+			Entry: &supportedEntries,
+			Wait:  &waitOptional,
 		},
 	}
 }
