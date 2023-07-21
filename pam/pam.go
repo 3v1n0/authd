@@ -50,6 +50,11 @@ const (
 	auth    [success=3 default=die ignore=ignore]   pam_authd.so
 */
 
+func sendAndLogError(pamh pamHandle, message string) error {
+	log.Errorf(context.TODO(), message)
+	return sendError(pamh, message)
+}
+
 //export pam_sm_authenticate
 func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.int {
 	// Initialize localization
@@ -59,14 +64,14 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	// TODO
 	module, err := getModuleName(pamh)
 	if err != nil {
-		log.Errorf(context.TODO(), "Can't get the module name %v", err)
+		sendAndLogError(pamh, fmt.Sprintf("Can't get the module name %v", err))
 		return C.PAM_AUTH_ERR
 	}
 
 	log.Debugf(context.TODO(), "Module name is %s", module)
 
 	if module != "gdm-okta" {
-		log.Errorf(context.TODO(), "Module not supported %s", module)
+		sendAndLogError(pamh, fmt.Sprintf("Module not supported %s", module))
 		return C.PAM_AUTH_ERR
 	}
 
@@ -116,7 +121,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	// Get current user for broker.
 	user, err := getUser(pamh, "login: ")
 	if err != nil {
-		log.Errorf(context.TODO(), "Can't get user: %v", err)
+		sendAndLogError(pamh, fmt.Sprintf("Can't get user: %v", err))
 		return C.PAM_AUTH_ERR
 	}
 
@@ -165,11 +170,11 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		case StageBrokerSelection:
 			// Broker selection and escape
 			if brokerID == "" {
-				brokerID, brokerName, err = selectBrokerInteractive(brokersInfo.GetBrokersInfos())
+				brokerID, brokerName, err = selectBrokerInteractive(pamh, brokersInfo.GetBrokersInfos())
 				if err != nil {
 					// Do not show error message if we only wanted to reset everything from the start, including user name.
 					if !errors.Is(err, errGoBack) {
-						log.Errorf(context.TODO(), "could not get selected broker: %v", err)
+						sendAndLogError(pamh, fmt.Sprintf("could not get selected broker: %v", err))
 					}
 					return C.PAM_SYSTEM_ERR
 				}
@@ -179,7 +184,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 			}
 			sessionID, availableAuthModes, encryptionKey, err = startBrokerSession(client, brokerID, user)
 			if err != nil {
-				log.Errorf(context.TODO(), "can't select broker %q: %v", brokerName, err)
+				sendAndLogError(pamh, fmt.Sprintf("can't select broker %q: %v", brokerName, err))
 				return C.PAM_SYSTEM_ERR
 			}
 
@@ -189,7 +194,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 		case StageAuthenticationMode:
 			if currentAuthModeName == "" {
-				currentAuthModeName, err = selectAuthenticationModeInteractive(availableAuthModes)
+				currentAuthModeName, err = selectAuthenticationModeInteractive(pamh, availableAuthModes)
 				// Return one level up, to broker selection.
 				if errors.Is(err, errGoBack) {
 					brokerID = ""
@@ -197,7 +202,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 					continue
 				}
 				if err != nil {
-					log.Errorf(context.TODO(), "can't select interactively authentication mode: %v", err)
+					sendAndLogError(pamh, fmt.Sprintf("can't select interactively authentication mode: %v", err))
 					return C.PAM_SYSTEM_ERR
 				}
 			}
@@ -209,12 +214,12 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 			}
 			uiInfo, err := client.SelectAuthenticationMode(context.TODO(), samReq)
 			if err != nil {
-				log.Errorf(context.TODO(), "can't select authentication mode: %v", err)
+				sendAndLogError(pamh, fmt.Sprintf("can't select authentication mode: %v", err))
 				return C.PAM_SYSTEM_ERR
 			}
 
 			if uiInfo.UiLayoutInfo == nil {
-				log.Errorf(context.TODO(), "invalid empty UI Layout information from broker")
+				sendAndLogError(pamh, fmt.Sprintf("invalid empty UI Layout information from broker"))
 				return C.PAM_SYSTEM_ERR
 			}
 
@@ -232,7 +237,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 				iaResp, err = formChallenge(client, sessionID, encryptionKey, uiLayout)
 
 			case "qrcode":
-				iaResp, err = qrcodeChallenge(client, sessionID, encryptionKey, uiLayout)
+				iaResp, err = qrcodeChallenge(pamh, client, sessionID, encryptionKey, uiLayout)
 			}
 
 			// Go back to authentication selection.
@@ -247,26 +252,26 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 				err = errors.New("empty reponse")
 			}
 			if err != nil {
-				log.Errorf(context.TODO(), "can't check for authorization: %v", err)
+				sendAndLogError(pamh, fmt.Sprintf("can't check for authorization: %v", err))
 				return C.PAM_SYSTEM_ERR
 			}
 
 			// Check if authorized
 			switch strings.ToLower(iaResp.Access) {
 			case "denied":
-				fmt.Println("Access Denied")
+				sendError(pamh, "Access Denied")
 				challengeRetry++
 				if challengeRetry < maxChallengeRetries {
-					fmt.Println("Retrying")
+					sendInfo(pamh, "Access Denied")
 					continue
 				}
 				return C.PAM_AUTH_ERR
 			case "allowed":
-				fmt.Printf("Welcome:\n%s\n", iaResp.UserInfo)
+				sendInfo(pamh, fmt.Sprintf("Welcome:\n%s\n", iaResp.UserInfo))
 				return C.PAM_SUCCESS
 			default:
 				// Invalid response
-				log.Errorf(context.TODO(), "Invalid Reponse: %v", iaResp.Access)
+				sendAndLogError(pamh, fmt.Sprintf("Invalid Response: %v", iaResp.Access))
 				return C.PAM_SYSTEM_ERR
 			}
 		}
@@ -275,7 +280,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 // selectBroker allows interactive broker selection.
 // Only one choice will be returned immediately.
-func selectBrokerInteractive(brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+func selectBrokerInteractive(pamh pamHandle, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
 	if len(brokersInfo) < 1 {
 		return "", "", errors.New("no broker found")
 	}
@@ -296,7 +301,7 @@ func selectBrokerInteractive(brokersInfo []*authd.ABResponse_BrokerInfo) (broker
 		ids = append(ids, b.GetId())
 	}
 
-	i, err := promptForInt("= Broker selection =", choices, "Select broker: ")
+	i, err := promptForInt(pamh, "= Broker selection =", choices, "Select broker: ")
 	if err != nil {
 		return "", "", fmt.Errorf("broker selection error: %w", err)
 	}
@@ -363,7 +368,7 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) (sess
 
 // selectAuthenticationModeInteractive allows interactive authentication mode selection.
 // Only one choice will be returned immediately.
-func selectAuthenticationModeInteractive(authModes []*authd.SBResponse_AuthenticationMode) (name string, err error) {
+func selectAuthenticationModeInteractive(pamh pamHandle, authModes []*authd.SBResponse_AuthenticationMode) (name string, err error) {
 	if len(authModes) < 1 {
 		return "", errors.New("no auhentication mode supported")
 	}
@@ -380,7 +385,7 @@ func selectAuthenticationModeInteractive(authModes []*authd.SBResponse_Authentic
 		ids = append(ids, m.GetName())
 	}
 
-	i, err := promptForInt("= Authentication mode =", choices, "Select authentication mode ('r' to cancel): ")
+	i, err := promptForInt(pamh, "= Authentication mode =", choices, "Select authentication mode ('r' to cancel)")
 	if err != nil {
 		return "", fmt.Errorf("authentication mode selection error: %w", err)
 	}
@@ -388,18 +393,17 @@ func selectAuthenticationModeInteractive(authModes []*authd.SBResponse_Authentic
 	return ids[i], nil
 }
 
-func promptForInt(title string, choices []string, prompt string) (r int, err error) {
-	fmt.Println(title)
+func promptForInt(pamh pamHandle, title string, choices []string, prompt string) (r int, err error) {
+	pamPrompt := title
 
 	for {
-		fmt.Println()
+		pamPrompt += fmt.Sprintln()
 		for i, msg := range choices {
-			fmt.Printf("%d - %s\n", i+1, msg)
+			pamPrompt += fmt.Sprintf("%d - %s\n", i+1, msg)
 		}
 
-		fmt.Print(prompt)
-		var r string
-		if _, err = fmt.Scanln(&r); err != nil {
+		var r, err = requestInput(pamh, pamPrompt[:len(pamPrompt)-1])
+		if err != nil {
 			return 0, fmt.Errorf("error while reading stdin: %v", err)
 		}
 		if r == "r" {
@@ -464,6 +468,8 @@ func formChallenge(client authd.PAMClient, sessionID, encryptionKey string, uiLa
 
 	if uiLayout.GetEntry() == "chars" || uiLayout.GetEntry() == "chars_password" {
 		go func() {
+			// FIXME: This should go through pam too, but we should make it not
+			// blocking?
 			out, err := readPasswordWithContext(int(os.Stdin.Fd()), termCtx, uiLayout.GetEntry() == "chars_password")
 
 			// No more processing if wait IsAuthorized has been answered.
@@ -513,17 +519,21 @@ func formChallenge(client authd.PAMClient, sessionID, encryptionKey string, uiLa
 	return r.iaResp, nil
 }
 
-func qrcodeChallenge(client authd.PAMClient, sessionID, encryptionKey string, uiLayout *authd.UILayout) (iaResp *authd.IAResponse, err error) {
+func qrcodeChallenge(pamh pamHandle, client authd.PAMClient, sessionID, encryptionKey string, uiLayout *authd.UILayout) (iaResp *authd.IAResponse, err error) {
 	l := uiLayout.GetLabel()
+	var output string
 	if l != "" {
-		fmt.Println(l)
+		output = fmt.Sprintln(l)
 	}
 	qrCode, err := qrcode.New(uiLayout.GetContent(), qrcode.Medium)
 	if err != nil {
 		return nil, fmt.Errorf("can't generate QR code: %v", err)
 	}
 	asciiQR := qrCode.ToSmallString(false)
-	fmt.Println(asciiQR)
+	_, err = pamConv(pamh, output+asciiQR, PamPromptInfo)
+	if err != nil {
+		return nil, err
+	}
 
 	iaReq := &authd.IARequest{
 		SessionId:          sessionID,
