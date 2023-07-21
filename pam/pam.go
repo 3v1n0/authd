@@ -405,9 +405,14 @@ func (pamClient *PAMClientGdm) selectBrokerInteractive(
 	for _, b := range brokersInfo {
 		choices[b.GetId()] = b.GetName()
 	}
+	choices["go-back"] = "Go back"
+
 	id, err := gdmChoiceListRequest(pamClient.pamh, "Select broker", choices)
 	if err != nil {
 		return "", "", err
+	}
+	if id == "go-back" {
+		return "", "", errGoBack
 	}
 	return id, choices[id], nil
 }
@@ -498,7 +503,7 @@ func (pamClient *PAMClientBase) startBrokerSession(brokerID, username string) er
 
 // selectAuthenticationModeInteractive allows interactive authentication mode selection.
 // Only one choice will be returned immediately.
-func (pamClient *PAMClientBase) selectAuthenticationModeInteractive() (name string, err error) {
+func (pamClient *PAMClientBase) maybeGetAuthMode() (string, error) {
 	if len(pamClient.authModes) < 1 {
 		return "", errors.New("no authentication mode supported")
 	}
@@ -506,6 +511,16 @@ func (pamClient *PAMClientBase) selectAuthenticationModeInteractive() (name stri
 	// Default choice for one possibility.
 	if len(pamClient.authModes) == 1 {
 		return pamClient.authModes[0].GetName(), nil
+	}
+	return "", nil
+}
+
+func (pamClient *PAMClientBase) selectAuthenticationModeInteractive() (name string, err error) {
+	authMode, err := pamClient.maybeGetAuthMode()
+	if err != nil {
+		return "", err
+	} else if authMode != "" {
+		return authMode, nil
 	}
 
 	var choices []string
@@ -524,6 +539,30 @@ func (pamClient *PAMClientBase) selectAuthenticationModeInteractive() (name stri
 	return ids[i], nil
 }
 
+func (pamClient *PAMClientGdm) selectAuthenticationModeInteractive() (name string, err error) {
+	authMode, err := pamClient.maybeGetAuthMode()
+	if err != nil {
+		return "", err
+	} else if authMode != "" {
+		return authMode, nil
+	}
+
+	var choices = make(map[string]string)
+	sendInfo(pamClient.pamh, fmt.Sprintf("Sending choices to gdm %v", choices))
+	for _, m := range pamClient.authModes {
+		choices[m.GetName()] = m.GetLabel()
+	}
+
+	id, err := gdmChoiceListRequest(pamClient.pamh, "Select authentication mode", choices)
+	if err != nil {
+		return "", err
+	}
+	if id == "go-back" {
+		return "", errGoBack
+	}
+	return id, nil
+}
+
 func (pamClient *PAMClientBase) promptForInt(title string, choices []string, prompt string) (
 	r int, err error) {
 	pamPrompt := title
@@ -538,7 +577,7 @@ func (pamClient *PAMClientBase) promptForInt(title string, choices []string, pro
 		if err != nil {
 			return 0, fmt.Errorf("error while reading stdin: %v", err)
 		}
-		if r == "r" {
+		if r == "r" && pamClient.clientType != ClientTypeGdm {
 			return 0, errGoBack
 		}
 		if r == "" {
@@ -589,7 +628,7 @@ func (pamClient *PAMClientBase) formChallenge(uiLayout *authd.UILayout) (
 		return nil, err
 	}
 
-	if input == "r" {
+	if input == "r" && pamClient.clientType != ClientTypeGdm {
 		return nil, errGoBack
 	}
 
