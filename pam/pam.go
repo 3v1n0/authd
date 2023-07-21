@@ -40,6 +40,14 @@ const (
 	maxChallengeRetries = 3
 )
 
+type ClientType int
+
+const (
+	ClientTypeNone ClientType = iota + 1
+	ClientTypeTerminal
+	ClientTypeGdm
+)
+
 //go:generate sh -c "go build -ldflags='-extldflags -Wl,-soname,pam_authd.so' -buildmode=c-shared -o pam_authd.so"
 
 /*
@@ -67,10 +75,10 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 	log.Debugf(context.TODO(), "Module name is %s", module)
 
-	if module != "gdm-okta" {
-		sendAndLogError(pamh, fmt.Sprintf("Module not supported %s", module))
-		return C.PAM_AUTH_ERR
-	}
+	// if module != "gdm-okta" {
+	// 	sendAndLogError(pamh, fmt.Sprintf("Module not supported %s", module))
+	// 	return C.PAM_AUTH_ERR
+	// }
 
 	err = sendInfo(pamh, "Hello PAM, this a native conversation!")
 	if err != nil {
@@ -78,35 +86,42 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		return C.PAM_IGNORE
 	}
 
-	userInput, err := requestInput(pamh, "Tell me something...")
-	if err != nil {
-		log.Error(context.TODO(), "%s", err)
-		return C.PAM_IGNORE
-	}
+	// userInput, err := requestInput(pamh, "Tell me something...")
+	// if err != nil {
+	// 	log.Error(context.TODO(), "%s", err)
+	// 	return C.PAM_IGNORE
+	// }
 
-	err = sendInfo(pamh, "Cool, you just told me: "+userInput)
-	if err != nil {
-		log.Error(context.TODO(), "%s", err)
-		return C.PAM_IGNORE
-	}
+	// err = sendInfo(pamh, "Cool, you just told me: "+userInput)
+	// if err != nil {
+	// 	log.Error(context.TODO(), "%s", err)
+	// 	return C.PAM_IGNORE
+	// }
 
-	userSecret, err := requestSecret(pamh, "And now tell me a secret")
-	if err != nil {
-		log.Error(context.TODO(), "%s", err)
-		return C.PAM_IGNORE
-	}
+	// userSecret, err := requestSecret(pamh, "And now tell me a secret")
+	// if err != nil {
+	// 	log.Error(context.TODO(), "%s", err)
+	// 	return C.PAM_IGNORE
+	// }
 
-	err = sendInfo(pamh, "Don't worry, I won't tell anybody you said me: "+userSecret)
-	if err != nil {
-		log.Error(context.TODO(), "%s", err)
-		return C.PAM_IGNORE
-	}
+	// err = sendInfo(pamh, "Don't worry, I won't tell anybody you said me: "+userSecret)
+	// if err != nil {
+	// 	log.Error(context.TODO(), "%s", err)
+	// 	return C.PAM_IGNORE
+	// }
 
+	var clientType ClientType
 	// Check if we are in an interactive terminal to see if we can do something
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		clientType = ClientTypeTerminal
+	} else if gdmChoiceListSupported() {
+		clientType = ClientTypeGdm
+	} else {
 		log.Info(context.TODO(), "Not in an interactive terminal and not an authd compatible application. Exiting")
 		return C.PAM_IGNORE
 	}
+
+	sendInfo(pamh, fmt.Sprintf("We're using mode %v", clientType))
 
 	client, close, err := newClient(argc, argv)
 	if err != nil {
@@ -121,6 +136,8 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		sendAndLogError(pamh, fmt.Sprintf("Can't get user: %v", err))
 		return C.PAM_AUTH_ERR
 	}
+
+	// IF BROKER DISCONNECTED... fail!
 
 	brokersInfo, err := client.AvailableBrokers(context.TODO(), &authd.ABRequest{
 		UserName: &user,
@@ -167,7 +184,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		case StageBrokerSelection:
 			// Broker selection and escape
 			if brokerID == "" {
-				brokerID, brokerName, err = selectBrokerInteractive(pamh, brokersInfo.GetBrokersInfos())
+				brokerID, brokerName, err = selectBrokerInteractive(pamh, clientType, brokersInfo.GetBrokersInfos())
 				if err != nil {
 					// Do not show error message if we only wanted to reset everything from the start, including user name.
 					if !errors.Is(err, errGoBack) {
@@ -277,7 +294,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 
 // selectBroker allows interactive broker selection.
 // Only one choice will be returned immediately.
-func selectBrokerInteractive(pamh pamHandle, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+func selectBrokerInteractive(pamh pamHandle, clientType ClientType, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
 	if len(brokersInfo) < 1 {
 		return "", "", errors.New("no broker found")
 	}
@@ -287,6 +304,17 @@ func selectBrokerInteractive(pamh pamHandle, brokersInfo []*authd.ABResponse_Bro
 		return brokersInfo[0].GetId(), brokersInfo[0].GetName(), nil
 	}
 
+	switch clientType {
+	case ClientTypeGdm:
+		return selectBrokerInteractiveGdm(pamh, brokersInfo)
+	case ClientTypeTerminal:
+		return selectBrokerInteractiveCli(pamh, brokersInfo)
+	default:
+		return "", "", errors.New("Unhandled client type")
+	}
+}
+
+func selectBrokerInteractiveCli(pamh pamHandle, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
 	var choices []string
 	var ids []string
 	for _, b := range brokersInfo {
@@ -304,6 +332,19 @@ func selectBrokerInteractive(pamh pamHandle, brokersInfo []*authd.ABResponse_Bro
 	}
 
 	return ids[i], brokersInfo[i].GetName(), nil
+}
+
+func selectBrokerInteractiveGdm(pamh pamHandle, brokersInfo []*authd.ABResponse_BrokerInfo) (brokerID, brokerName string, err error) {
+	var choices = make(map[string]string)
+	sendInfo(pamh, fmt.Sprintf("Sending choices to gdm %v", choices))
+	for _, b := range brokersInfo {
+		choices[b.GetId()] = b.GetName()
+	}
+	id, err := gdmChoiceListRequest(pamh, "Select broker", choices)
+	if err != nil {
+		return "", "", err
+	}
+	return id, choices[id], nil
 }
 
 // startBrokerSession returns the sessionID and available authentication modes after marking a broker as current.
