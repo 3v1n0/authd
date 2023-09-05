@@ -41,6 +41,11 @@ func sliceFromArgv(argc C.int, argv **C.char) []string {
 // mockPamUser mocks the PAM user item in absence of pamh for manual testing.
 var mockPamUser = "user1" // TODO: remove assignement once ok with debugging
 
+// stringToConstC gets a const char from a GO String
+func stringToConstC(s string) *C.char {
+	return (*C.char)(unsafe.Pointer(unsafe.StringData(s)))
+}
+
 // getPAMUser returns the user from PAM.
 func getPAMUser(pamh *C.pam_handle_t) string {
 	if pamh == nil {
@@ -60,10 +65,8 @@ func setPAMUser(pamh *C.pam_handle_t, username string) {
 		mockPamUser = username
 		return
 	}
-	cUsername := C.CString(username)
-	defer C.free(unsafe.Pointer(cUsername))
 
-	C.set_user(pamh, cUsername)
+	C.set_user(pamh, stringToConstC(username))
 }
 
 // getPAMUser returns the user from PAM.
@@ -93,11 +96,9 @@ func getModuleName(pamh pamHandle) (string, error) {
 
 // pamConv starts a pam conversation of type PamPrompt
 func pamConv(pamh pamHandle, prompt string, kind PamPrompt) (string, error) {
-	cPrompt := C.CString(prompt)
-	defer C.free(unsafe.Pointer(cPrompt))
 	pamConvMutex.Lock()
 	defer pamConvMutex.Unlock()
-	cResponse := C.send_msg(pamh, cPrompt, C.int(kind))
+	cResponse := C.send_msg(pamh, stringToConstC(prompt), C.int(kind))
 	if cResponse == nil {
 		return "", fmt.Errorf("conversation with PAM application failed")
 	}
