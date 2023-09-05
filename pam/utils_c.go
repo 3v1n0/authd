@@ -7,6 +7,7 @@ import "C"
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 )
 
@@ -14,6 +15,8 @@ import (
 type pamHandle = *C.pam_handle_t
 
 type PamPrompt int
+
+var pamConvMutex = sync.Mutex{}
 
 const (
 	PamPromptEchoOff PamPrompt = 1
@@ -63,6 +66,22 @@ func setPAMUser(pamh *C.pam_handle_t, username string) {
 	C.set_user(pamh, cUsername)
 }
 
+// getPAMUser returns the user from PAM.
+func promptForPAMUser(pamh *C.pam_handle_t, prompt string) string {
+	if pamh == nil {
+		return mockPamUser
+	}
+	pamConvMutex.Lock()
+	defer pamConvMutex.Unlock()
+	fmt.Println("Asking for username to pam...")
+	cUsername := C.prompt_for_username(pamh, C.CString(prompt))
+	fmt.Println("Got username", cUsername, "value %s", C.GoString(cUsername))
+	if cUsername == nil {
+		return ""
+	}
+	return C.GoString(cUsername)
+}
+
 // getModuleName gets the current PAM module name.
 func getModuleName(pamh pamHandle) (string, error) {
 	cModuleName := C.get_module_name(pamh)
@@ -76,6 +95,8 @@ func getModuleName(pamh pamHandle) (string, error) {
 func pamConv(pamh pamHandle, prompt string, kind PamPrompt) (string, error) {
 	cPrompt := C.CString(prompt)
 	defer C.free(unsafe.Pointer(cPrompt))
+	pamConvMutex.Lock()
+	defer pamConvMutex.Unlock()
 	cResponse := C.send_msg(pamh, cPrompt, C.int(kind))
 	if cResponse == nil {
 		return "", fmt.Errorf("conversation with PAM application failed")
