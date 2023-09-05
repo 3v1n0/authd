@@ -2,8 +2,9 @@ package main
 
 /*
 #cgo LDFLAGS: -lpam -fPIC
+#cgo CFLAGS: -I.
 #include <security/pam_appl.h>
-#include <security/pam_ext.h>
+#include "gdm-extensions/gdm-private-string-pam-extension.h"
 
 */
 import "C"
@@ -12,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,6 +53,37 @@ func ForwardAndLogError(pamh pamHandle, format string, args ...interface{}) erro
 	return sendError(pamh, message)
 }
 
+func PromptForInt(pamh pamHandle, title string, choices []string, prompt string) (
+	r int, err error) {
+	pamPrompt := title
+
+	for {
+		pamPrompt += fmt.Sprintln()
+		for i, msg := range choices {
+			pamPrompt += fmt.Sprintf("%d - %s\n", i+1, msg)
+		}
+
+		var r, err = requestInput(pamh, pamPrompt[:len(pamPrompt)-1])
+		if err != nil {
+			return 0, fmt.Errorf("error while reading stdin: %v", err)
+		}
+		if r == "r" {
+			return -1, nil
+		}
+		if r == "" {
+			r = "1"
+		}
+
+		choice, err := strconv.Atoi(r)
+		if err != nil || choice <= 0 || choice > len(choices) {
+			log.Errorf(context.TODO(), "Invalid entry. Try again or type 'r'.")
+			continue
+		}
+
+		return choice - 1, nil
+	}
+}
+
 //export pam_sm_authenticate
 func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.int {
 	// Initialize localization
@@ -60,9 +93,24 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	// TODO
 
 	// TODO: Get this value from argc or pam environment
-	log.SetLevel(log.DebugLevel)
+	// log.SetLevel(log.DebugLevel)
 
-	interactiveTerminal := term.IsTerminal(int(os.Stdin.Fd()))
+	// TODO: Define user options, like disable interactive terminal always
+
+	// FIXME: Ignore root user
+
+	interactiveTerminal := false
+	isGdm := false
+
+	if isGdmPamExtensionSupported(C.GDM_PAM_EXTENSION_PRIVATE_STRING) {
+		isGdm = true
+
+		fmt.Println("Gdm Reply is ", sendGdmAuthdProtoData(pamh, `{type: "hello"}`))
+	} else {
+		interactiveTerminal = term.IsTerminal(int(os.Stdin.Fd()))
+	}
+
+	fmt.Println("Found GDM extension", isGdm)
 
 	client, closeConn, err := newClient(argc, argv)
 	if err != nil {
@@ -76,6 +124,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		pamh:                pamh,
 		client:              client,
 		interactiveTerminal: interactiveTerminal,
+		gdm:                 isGdm,
 	}
 
 	//tea.WithInput(nil)

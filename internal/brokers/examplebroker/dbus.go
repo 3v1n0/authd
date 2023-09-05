@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	dbusObjectPath = "/com/ubuntu/auth/ExampleBroker"
-	dbusInterface  = "com.ubuntu.auth.ExampleBroker"
-	configDir      = "/etc/authd/broker.d/"
+	dbusObjectPath = "/com/ubuntu/authd/ExampleBroker"
+	dbusInterface  = "com.ubuntu.authd.ExampleBroker"
+	configDir      = "/tmp/authd/broker.d/"
 )
 
 // Bus is the D-Bus object that will answer calls for the broker.

@@ -46,6 +46,10 @@ func stringToConstC(s string) *C.char {
 	return (*C.char)(unsafe.Pointer(unsafe.StringData(s)))
 }
 
+func isGdmPamExtensionSupported(extension string) bool {
+	return bool(C.is_gdm_extension_supported(stringToConstC(extension)))
+}
+
 // getPAMUser returns the user from PAM.
 func getPAMUser(pamh *C.pam_handle_t) string {
 	if pamh == nil {
@@ -136,4 +140,22 @@ func requestInput(pamh pamHandle, prompt string) (string, error) {
 // requestSecret requests for input secret to PAM client
 func requestSecret(pamh pamHandle, prompt string) (string, error) {
 	return pamConv(pamh, prompt+": ", PamPromptEchoOff)
+}
+
+// sendGdmAuthdProtoRequest sends an authd request to GDM
+func sendGdmAuthdProtoData(pamh pamHandle, data string) string {
+	cProto := C.CString("authd-json")
+	defer C.free(unsafe.Pointer(cProto))
+	cData := C.CString(data)
+	defer C.free(unsafe.Pointer(cData))
+
+	pamConvMutex.Lock()
+	defer pamConvMutex.Unlock()
+	cReply := C.gdm_private_string_protocol_send(pamh, cProto, 1, cData)
+	if cReply == nil {
+		return ""
+	}
+
+	defer C.free(unsafe.Pointer(cReply))
+	return C.GoString(cReply)
 }

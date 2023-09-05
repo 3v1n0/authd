@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ubuntu/authd"
@@ -41,6 +42,7 @@ type model struct {
 	height              int
 	width               int
 	interactiveTerminal bool
+	gdm                 bool
 
 	currentSession *sessionInfo
 
@@ -56,6 +58,9 @@ type model struct {
 
 // UsernameOrBrokerListReceived is received either when the user name is filled (pam or manually) and we got the broker list.
 type UsernameOrBrokerListReceived struct{}
+
+// UsernameAndBrokerListReceive is received either when the user name is filled (pam or manually) and we got the broker list.
+type UsernameAndBrokerListReceived struct{}
 
 // BrokerSelected signifies that the broker has been chosen.
 type BrokerSelected struct {
@@ -87,11 +92,11 @@ type SessionEnded struct{}
 
 // Init initializes the main model orchestrator.
 func (m *model) Init() tea.Cmd {
-	m.userSelectionModel = newUserSelectionModel(m.pamh)
+	m.userSelectionModel = newUserSelectionModel(m.pamh, m.interactiveTerminal)
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.userSelectionModel.Init())
 
-	m.brokerSelectionModel = newBrokerSelectionModel(m.client)
+	m.brokerSelectionModel = newBrokerSelectionModel(m.client, m.pamh, m.interactiveTerminal)
 	cmds = append(cmds, m.brokerSelectionModel.Init())
 
 	m.authModeSelectionModel = newAuthModeSelectionModel(m.client)
@@ -155,6 +160,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Events
 	case UsernameOrBrokerListReceived:
+		fmt.Println("Username or broker got", m.username(), m.availableBrokers())
 		if m.username() == "" {
 			return m, nil
 		}
@@ -165,7 +171,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Got user and brokers? Time to auto or manually select.
 		return m, tea.Sequence(
 			m.changeStage(stageBrokerSelection),
-			m.brokerSelectionModel.AutoSelectForUser(m.username()))
+			m.brokerSelectionModel.AutoSelectForUser(m.username()),
+			// Let's wait to see if we can get a BrokerSelected event earlier
+			tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg { return nil }),
+			sendEvent(UsernameAndBrokerListReceived{}))
 
 	case BrokerSelected:
 		return m, startBrokerSession(m.client, msg.BrokerID, m.username())
@@ -224,7 +233,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) View() string {
 	var view strings.Builder
 
-	log.Info(context.TODO(), m.currentStage())
+	log.Debugf(context.TODO(), "View, current stage %v", m.currentStage())
 	switch m.currentStage() {
 	case stageUserSelection:
 		view.WriteString(m.userSelectionModel.View())
@@ -264,37 +273,25 @@ func (m *model) currentStage() stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *model) changeStage(s stage) tea.Cmd {
+	m.brokerSelectionModel.Blur()
+	m.authModeSelectionModel.Blur()
+	m.authorizationModel.Blur()
+	m.userSelectionModel.Blur()
+
 	switch s {
 	case stageUserSelection:
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authorizationModel.Blur()
-
 		return m.userSelectionModel.Focus()
 
 	case stageBrokerSelection:
-		m.userSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authorizationModel.Blur()
-
 		m.authModeSelectionModel.Reset()
-
 		return tea.Sequence(endSession(m.client, m.currentSession), m.brokerSelectionModel.Focus())
 
 	case stageAuthModeSelection:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authorizationModel.Blur()
-
 		m.authorizationModel.Reset()
 
 		return m.authModeSelectionModel.Focus()
 
 	case stageChallenge:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-
 		return m.authorizationModel.Focus()
 	}
 

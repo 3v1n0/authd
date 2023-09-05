@@ -18,7 +18,9 @@ type brokerSelectionModel struct {
 	list.Model
 	focused bool
 
-	client authd.PAMClient
+	client              authd.PAMClient
+	pamh                pamHandle
+	interactiveTerminal bool
 
 	availableBrokers []*authd.ABResponse_BrokerInfo
 }
@@ -43,7 +45,8 @@ func selectBroker(brokerID string) tea.Cmd {
 }
 
 // newBrokerSelectionModel initializes an empty list with default options of brokerSelectionModel.
-func newBrokerSelectionModel(client authd.PAMClient) brokerSelectionModel {
+func newBrokerSelectionModel(client authd.PAMClient, pamh pamHandle,
+	interactiveTerminal bool) brokerSelectionModel {
 	l := list.New(nil, itemLayout{}, 80, 24)
 	l.Title = "Select your provider"
 	l.SetShowStatusBar(false)
@@ -55,8 +58,10 @@ func newBrokerSelectionModel(client authd.PAMClient) brokerSelectionModel {
 	l.Styles.HelpStyle = helpStyle*/
 
 	return brokerSelectionModel{
-		Model:  l,
-		client: client,
+		Model:               l,
+		client:              client,
+		pamh:                pamh,
+		interactiveTerminal: interactiveTerminal,
 	}
 }
 
@@ -64,6 +69,11 @@ func newBrokerSelectionModel(client authd.PAMClient) brokerSelectionModel {
 func (m brokerSelectionModel) Init() tea.Cmd {
 	return getAvailableBrokers(m.client)
 }
+
+// func (m brokerSelectionModel) View() string {
+// 	fmt.Println("Broker selection view")
+// 	return m.Model.View()
+// }
 
 // Update handles events and actions.
 func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd) {
@@ -102,6 +112,32 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 		return m, sendEvent(BrokerSelected{
 			BrokerID: broker.Id,
 		})
+
+	case UsernameAndBrokerListReceived:
+		fmt.Println("We've everything, let's ask for broker from", m.Items(),
+			"selected item is", m.SelectedItem(), m.Focused())
+		if m.SelectedItem() != nil {
+			return m, nil
+		}
+
+		var choices []string
+		var ids []string
+		for _, b := range m.Items() {
+			b := convertTo[brokerItem](b)
+			choices = append(choices, b.name)
+			ids = append(ids, b.id)
+		}
+
+		i, err := PromptForInt(m.pamh, "= Broker selection =", choices, "Select broker: ")
+		if err != nil {
+			return m, nil
+			// return m, fmt.Errorf("broker selection error: %w", err)
+		}
+
+		m.Select(i)
+		return m, sendEvent(BrokerSelected{
+			BrokerID: convertTo[brokerItem](m.Items()[i]).id,
+		})
 	}
 
 	// interaction events
@@ -109,7 +145,7 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 		return m, nil
 	}
 	switch msg := msg.(type) {
-	// Key presses
+	// Key pressesu
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":

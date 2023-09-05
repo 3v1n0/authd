@@ -9,7 +9,8 @@ import (
 type userSelectionModel struct {
 	textinput.Model
 
-	pamh pamHandle
+	pamh                pamHandle
+	interactiveTerminal bool
 }
 
 // userSelected events to select a new username.
@@ -25,26 +26,34 @@ func sendUserSelected(username string) tea.Cmd {
 }
 
 // newUserSelectionModel returns an initialized userSelectionModel.
-func newUserSelectionModel(pamh pamHandle) userSelectionModel {
+func newUserSelectionModel(pamh pamHandle, interactiveTerminal bool) userSelectionModel {
 	u := textinput.New()
 	u.Prompt = "Username: " // TODO: i18n
+	// i18n should be done against user LANG (if set), not current LANG
 	u.Placeholder = "user name"
 
 	//TODO: u.Validate
 	return userSelectionModel{
 		Model: u,
 
-		pamh: pamh,
+		pamh:                pamh,
+		interactiveTerminal: interactiveTerminal,
 	}
 }
 
 // Init initializes userSelectionModel, by getting it from PAM if prefilled.
 func (m *userSelectionModel) Init() tea.Cmd {
-	pamUser := getPAMUser(m.pamh)
-	if pamUser != "" {
-		return sendUserSelected(pamUser)
+	username := getPAMUser(m.pamh)
+	if !m.interactiveTerminal && username == "" {
+		return func() tea.Msg {
+			username, err := pamConv(m.pamh, m.Prompt, PamPromptEchoOn)
+			if err != nil {
+				return pamAbort{msg: "Username request failed"}
+			}
+			return userSelected{username}
+		}
 	}
-	return nil
+	return sendUserSelected(username)
 }
 
 // Update handles events and actions.
