@@ -11,6 +11,9 @@ char *get_user (pam_handle_t *pamh);
 char *set_user (pam_handle_t *pamh,
                 char         *username);
 
+const char * prompt_for_username (pam_handle_t *pamh,
+                                  const char   *prompt);
+
 const char *get_module_name (pam_handle_t *pamh);
 
 struct pam_response *send_msg (pam_handle_t *pamh,
