@@ -2,8 +2,9 @@ package main
 
 /*
 #cgo LDFLAGS: -lpam -fPIC
+#cgo CFLAGS: -I.
 #include <security/pam_appl.h>
-#include <security/pam_ext.h>
+#include "gdm-extensions/gdm-private-string-pam-extension.h"
 
 */
 import "C"
@@ -20,6 +21,7 @@ import (
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/log"
+	"github.com/ubuntu/authd/pam/gdm"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -62,7 +64,30 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	// TODO: Get this value from argc or pam environment
 	log.SetLevel(log.DebugLevel)
 
-	interactiveTerminal := term.IsTerminal(int(os.Stdin.Fd()))
+	// TODO: Define user options, like disable interactive terminal always
+
+	// FIXME: Ignore root user
+
+	interactiveTerminal := false
+	isGdm := false
+
+	if isGdmPamExtensionSupported(C.GDM_PAM_EXTENSION_PRIVATE_STRING) {
+		isGdm = true
+
+		reply, err := SendGdmAuthdProtoParsed(pamh, gdm.Data{Type: "hello"})
+		if err != nil {
+			ForwardAndLogError(pamh, "Gdm initialization failed: %v", err)
+			return C.PAM_AUTHINFO_UNAVAIL
+		}
+		if reply.Type != "hello" || reply.Data["version"] != float64(gdm.ProtoWireVersion) {
+			ForwardAndLogError(pamh, "Gdm protocol initialization failed, type %s, version %v",
+				reply.Type, reply.Data["version"])
+			return C.PAM_AUTHINFO_UNAVAIL
+		}
+		log.Debugf(context.TODO(), "Gdm Reply is %v", reply)
+	} else {
+		interactiveTerminal = term.IsTerminal(int(os.Stdin.Fd()))
+	}
 
 	client, closeConn, err := newClient(argc, argv)
 	if err != nil {
@@ -76,6 +101,7 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 		pamh:                pamh,
 		client:              client,
 		interactiveTerminal: interactiveTerminal,
+		gdm:                 isGdm,
 	}
 
 	//tea.WithInput(nil)
