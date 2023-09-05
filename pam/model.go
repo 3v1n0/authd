@@ -41,6 +41,7 @@ type model struct {
 	height              int
 	width               int
 	interactiveTerminal bool
+	gdm                 bool
 
 	currentSession *sessionInfo
 
