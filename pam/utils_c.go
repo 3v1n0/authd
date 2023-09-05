@@ -6,6 +6,7 @@ package main
 import "C"
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"unsafe"
@@ -40,6 +41,12 @@ func sliceFromArgv(argc C.int, argv **C.char) []string {
 
 // mockPamUser mocks the PAM user item in absence of pamh for manual testing.
 var mockPamUser = "user1" // TODO: remove assignement once ok with debugging
+
+func isGdmPamExtensionSupported(extension string) bool {
+	cExtension := C.CString(extension)
+	defer C.free(unsafe.Pointer(cExtension))
+	return bool(C.is_gdm_extension_supported(cExtension))
+}
 
 // getPAMUser returns the user from PAM.
 func getPAMUser(pamh *C.pam_handle_t) string {
@@ -135,4 +142,24 @@ func requestInput(pamh pamHandle, prompt string) (string, error) {
 // requestSecret requests for input secret to PAM client
 func requestSecret(pamh pamHandle, prompt string) (string, error) {
 	return pamConv(pamh, prompt+": ", PamPromptEchoOff)
+}
+
+// sendGdmAuthdProtoRequest sends an authd request to GDM
+func sendGdmAuthdProtoData(pamh pamHandle, data string) (string, error) {
+	cProto := C.CString("authd-json")
+	defer C.free(unsafe.Pointer(cProto))
+	cData := C.CString(data)
+	defer C.free(unsafe.Pointer(cData))
+	cError := (*C.char)(nil)
+	defer C.free(unsafe.Pointer(cError))
+
+	pamConvMutex.Lock()
+	defer pamConvMutex.Unlock()
+	cReply := C.gdm_private_string_protocol_send(pamh, cProto, 1, cData, &cError)
+	if cReply == nil {
+		return "", errors.New(C.GoString(cError))
+	}
+
+	defer C.free(unsafe.Pointer(cReply))
+	return C.GoString(cReply), nil
 }
