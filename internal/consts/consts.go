@@ -13,14 +13,14 @@ const (
 	TEXTDOMAIN = "adsys"
 
 	// DefaultLogLevel is the default logging level selected without any option.
-	DefaultLogLevel = log.WarnLevel
+	DefaultLogLevel = log.DebugLevel
 
 	// DefaultSocketPath is the default socket path.
-	DefaultSocketPath = "/run/authd.sock"
+	DefaultSocketPath = "/tmp/run/authd.sock"
 
 	// DefaultCacheDir is the default directory for the cache.
-	DefaultCacheDir = "/var/cache/authd/"
+	DefaultCacheDir = "/tmp/var/cache/authd/"
 
 	// DefaultRunDir is the default run directory.
-	DefaultRunDir = "/run/authd/"
+	DefaultRunDir = "/tmp/run/authd/"
 )

@@ -51,8 +51,8 @@ func NewManager(ctx context.Context, configuredBrokers []string, args ...Option)
 
 	// Set default options.
 	opts := options{
-		rootDir:      "/",
-		brokerCfgDir: "etc/authd/broker.d",
+		rootDir:      "/tmp",
+		brokerCfgDir: "authd/broker.d",
 	}
 	// Apply given args.
 	for _, f := range args {

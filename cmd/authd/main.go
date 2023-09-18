@@ -1,4 +1,4 @@
-// Package main is the windows-agent entry point.
+// package main is the windows-agent entry point.
 package main
 
 import (
@@ -29,12 +29,13 @@ func main() {
 	fmt.Printf("Mock system bus started on %s\n", os.Getenv("DBUS_SYSTEM_BUS_ADDRESS"))
 
 	// Create the directory for the broker configuration files.
-	if err = os.MkdirAll("/etc/authd/broker.d", 0750); err != nil {
+	if err = os.MkdirAll("/tmp/authd/broker.d", 0750); err != nil {
+		log.Error(context.Background(), err)
 		busCleanup()
 		os.Exit(1)
 	}
 	cleanup := func() {
-		os.RemoveAll("/etc/authd/broker.d")
+		os.RemoveAll("/tmp/authd/broker.d")
 		busCleanup()
 	}
 
@@ -42,6 +43,7 @@ func main() {
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
+		fmt.Println("Starting example broker...")
 		if err = examplebroker.StartBus(ctx); err != nil {
 			log.Error(context.Background(), err)
 			cleanup()
