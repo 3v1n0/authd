@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -27,9 +28,11 @@ var pamModuleHandler pam.ModuleHandler = &pamModule{} //nolint:golint,unused
 type pamModule struct {
 }
 
-var (
-	// brokerIDUsedToAuthenticate global variable is for the second stage authentication to select the default broker for the current user.
-	brokerIDUsedToAuthenticate string
+const (
+	// authenticationBrokerIDKey is the Key used to store the data in the
+	// PAM module for the second stage authentication to select the default
+	// broker for the current user.
+	authenticationBrokerIDKey = "authentication-broker-id"
 )
 
 /*
@@ -62,6 +65,10 @@ func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 		interactiveTerminal: interactiveTerminal,
 	}
 
+	if err := mt.SetData(authenticationBrokerIDKey, nil); err != nil {
+		return err
+	}
+
 	//tea.WithInput(nil)
 	//tea.WithoutRenderer()
 	var opts []tea.ProgramOption
@@ -78,11 +85,15 @@ func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 
 	switch exitMsg := appState.exitStatus.(type) {
 	case pamSuccess:
-		brokerIDUsedToAuthenticate = exitMsg.brokerID
+		if err := mt.SetData(authenticationBrokerIDKey, exitMsg.brokerID); err != nil {
+			return err
+		}
 		status = exitMsg
 	case pamIgnore:
 		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
-		brokerIDUsedToAuthenticate = exitMsg.localBrokerID
+		if err := mt.SetData(authenticationBrokerIDKey, exitMsg.localBrokerID); err != nil {
+			return err
+		}
 		status = exitMsg
 	case pamReturnStatus:
 		status = exitMsg
@@ -98,8 +109,14 @@ func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 // AcctMgmt sets any used brokerID as default for the user.
 func (h *pamModule) AcctMgmt(mt pam.ModuleTransaction, flags pam.Flags,
 	args []string) error {
+	brokerData, err := mt.GetData(authenticationBrokerIDKey)
+	if err != nil && errors.Is(err, pam.NoModuleData) {
+		return pam.Ignore
+	}
+
+	brokerIDUsedToAuthenticate, ok := brokerData.(string)
 	// Only set the brokerID as default if we stored one after authentication.
-	if brokerIDUsedToAuthenticate == "" {
+	if !ok || brokerIDUsedToAuthenticate == "" {
 		return pam.Ignore
 	}
 
