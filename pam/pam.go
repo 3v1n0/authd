@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,7 +41,7 @@ const (
 	ClientTypeStandard
 )
 
-//go:generate sh -c "go build -ldflags='-extldflags -Wl,-soname,pam_authd.so' -buildmode=c-shared -o pam_authd.so"
+//go:generate go build "-ldflags=-extldflags -Wl,-soname,pam_authd.so" -buildmode=c-shared -o pam_authd.so
 
 /*
 	Add to /etc/pam.d/common-auth
@@ -51,6 +52,37 @@ func ForwardAndLogError(pamh pamHandle, format string, args ...interface{}) erro
 	message := fmt.Sprintf(format, args...)
 	log.Error(context.TODO(), message)
 	return sendError(pamh, message)
+}
+
+func PromptForInt(pamh pamHandle, title string, choices []string, prompt string) (
+	r int, err error) {
+	pamPrompt := title
+
+	for {
+		pamPrompt += fmt.Sprintln()
+		for i, msg := range choices {
+			pamPrompt += fmt.Sprintf("%d - %s\n", i+1, msg)
+		}
+
+		var r, err = requestInput(pamh, pamPrompt[:len(pamPrompt)-1])
+		if err != nil {
+			return 0, fmt.Errorf("error while reading stdin: %v", err)
+		}
+		if r == "r" {
+			return -1, nil
+		}
+		if r == "" {
+			r = "1"
+		}
+
+		choice, err := strconv.Atoi(r)
+		if err != nil || choice <= 0 || choice > len(choices) {
+			log.Errorf(context.TODO(), "Invalid entry. Try again or type 'r'.")
+			continue
+		}
+
+		return choice - 1, nil
+	}
 }
 
 //export pam_sm_authenticate
@@ -74,14 +106,15 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	if isGdmPamExtensionSupported(C.GDM_PAM_EXTENSION_PRIVATE_STRING) {
 		isGdm = true
 
-		reply, err := SendGdmAuthdProtoParsed(pamh, gdm.Data{Type: "hello"})
+		reply, err := SendGdmAuthdProtoParsed(pamh, gdm.Data{Type: gdm.Hello})
 		if err != nil {
 			ForwardAndLogError(pamh, "Gdm initialization failed: %v", err)
 			return C.PAM_AUTHINFO_UNAVAIL
 		}
-		if reply.Type != "hello" || reply.Data["version"] != float64(gdm.ProtoWireVersion) {
-			ForwardAndLogError(pamh, "Gdm protocol initialization failed, type %s, version %v",
-				reply.Type, reply.Data["version"])
+		if reply.Type != gdm.Hello || reply.HelloData == nil ||
+			reply.HelloData.Version != gdm.ProtoWireVersion {
+			ForwardAndLogError(pamh, "Gdm protocol initialization failed, type %s, data %d",
+				reply.Type.String(), reply.HelloData)
 			return C.PAM_AUTHINFO_UNAVAIL
 		}
 		log.Debugf(context.TODO(), "Gdm Reply is %v", reply)
@@ -98,10 +131,12 @@ func pam_sm_authenticate(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char)
 	defer closeConn()
 
 	appState := model{
-		pamh:                pamh,
-		client:              client,
-		interactiveTerminal: interactiveTerminal,
-		gdm:                 isGdm,
+		Parameters: Parameters{
+			pamh:                pamh,
+			client:              client,
+			interactiveTerminal: interactiveTerminal,
+			gdm:                 isGdm,
+		},
 	}
 
 	//tea.WithInput(nil)
