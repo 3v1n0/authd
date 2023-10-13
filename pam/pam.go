@@ -9,6 +9,7 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -30,9 +31,11 @@ import (
 type pamModule struct {
 }
 
-var (
-	// brokerIDUsedToAuthenticate global variable is for the second stage authentication to select the default broker for the current user.
-	brokerIDUsedToAuthenticate string
+const (
+	// authenticationBrokerIDKey is the Key used to store the data in the
+	// PAM module for the second stage authentication to select the default
+	// broker for the current user.
+	authenticationBrokerIDKey = "authentication-broker-id"
 )
 
 /*
@@ -81,6 +84,10 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		interactiveTerminal: interactiveTerminal,
 	}
 
+	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {
+		return err
+	}
+
 	//tea.WithInput(nil)
 	//tea.WithoutRenderer()
 	var opts []tea.ProgramOption
@@ -97,12 +104,16 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 
 	switch exitStatus := appState.exitStatus.(type) {
 	case pamSuccess:
-		brokerIDUsedToAuthenticate = exitStatus.brokerID
+		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.brokerID); err != nil {
+			return err
+		}
 		return nil
 
 	case pamIgnore:
 		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
-		brokerIDUsedToAuthenticate = exitStatus.localBrokerID
+		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.localBrokerID); err != nil {
+			return err
+		}
 		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
 
 	case pamReturnError:
@@ -114,6 +125,21 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 
 // AcctMgmt sets any used brokerID as default for the user.
 func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
+	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
+	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
+		return pam.ErrIgnore
+	}
+
+	brokerIDUsedToAuthenticate, ok := brokerData.(string)
+	if !ok {
+		msg := fmt.Sprintf("broker data as an invalid type %#v", brokerData)
+		log.Errorf(context.TODO(), msg)
+		if _, err := mTx.StartStringConv(pam.ErrorMsg, msg); err != nil {
+			log.Errorf(context.TODO(), "Failed sending info to pam: %v", err)
+		}
+		return pam.ErrIgnore
+	}
+
 	// Only set the brokerID as default if we stored one after authentication.
 	if brokerIDUsedToAuthenticate == "" {
 		return pam.ErrIgnore
