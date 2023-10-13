@@ -11,7 +11,7 @@ extern int go_handle_pam_message (struct pam_message *,
                                   unsigned char **reply);
 
 static char pam_extension_environment_block[_POSIX_ARG_MAX];
-static const char **supported_extensions = NULL;
+static char **supported_extensions = NULL;
 
 static inline int
 conversation_handler (int                        n_messages,
@@ -54,25 +54,43 @@ conversation_handler (int                        n_messages,
 }
 
 static inline pam_handle_t *
-init_handle (const char *service_name, const char *user, const char *confdir)
+init_handle (const char *service_name, const char *user, const char *confdir,
+             const char **error)
 {
+  int ret;
   pam_handle_t *pamh;
   struct pam_conv pam_conversation = { .conv = conversation_handler };
 
-  if (pam_start_confdir (service_name, user,
-                         &pam_conversation, confdir, &pamh) != 0)
-    return NULL;
+  if ((ret = pam_start_confdir (service_name, user,
+                                &pam_conversation, confdir, &pamh)) != 0)
+    {
+      *error = pam_strerror (NULL, ret);
+      return NULL;
+    }
 
   return pamh;
 }
 
 static inline void
-advertise_supported_pam_extensions (const char *extensions[])
+advertise_supported_pam_extensions (const char *extensions[],
+                                    size_t      n_extensions)
 {
-  GDM_PAM_EXTENSION_ADVERTISE_SUPPORTED_EXTENSIONS (
-    pam_extension_environment_block, extensions);
+  if (supported_extensions)
+    {
+      for (size_t i = 0; supported_extensions[i] != NULL; ++i)
+        free (supported_extensions[i]);
 
-  supported_extensions = extensions;
+      free (supported_extensions);
+    }
+
+  supported_extensions = malloc ((n_extensions + 1) * sizeof (char *));
+
+  for (size_t i = 0; i < n_extensions; ++i)
+    supported_extensions[i] = strdup (extensions[i]);
+  supported_extensions[n_extensions] = NULL;
+
+  GDM_PAM_EXTENSION_ADVERTISE_SUPPORTED_EXTENSIONS (
+    pam_extension_environment_block, supported_extensions);
 }
 
 static inline const char *

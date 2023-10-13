@@ -31,9 +31,7 @@ const (
 // sliceFromArgv returns a slice of strings given to the PAM module.
 func sliceFromArgv(argc C.int, argv **C.char) []string {
 	r := make([]string, 0, argc)
-	for i := 0; i < int(argc); i++ {
-		s := C.argv_string_get(argv, C.uint(i))
-		defer C.free(unsafe.Pointer(s))
+	for _, s := range unsafe.Slice(argv, argc) {
 		r = append(r, C.GoString(s))
 	}
 	return r

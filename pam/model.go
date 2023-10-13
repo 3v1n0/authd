@@ -33,15 +33,19 @@ type sessionInfo struct {
 	encryptionKey string
 }
 
-// model is the global models orchestrator.
-type model struct {
-	pamh   pamHandle
-	client authd.PAMClient
-
-	height              int
-	width               int
+type Parameters struct {
+	pamh                pamHandle
+	client              authd.PAMClient
 	interactiveTerminal bool
 	gdm                 bool
+}
+
+// model is the global models orchestrator.
+type model struct {
+	Parameters
+
+	height int
+	width  int
 
 	currentSession *sessionInfo
 
@@ -49,6 +53,7 @@ type model struct {
 	brokerSelectionModel   brokerSelectionModel
 	authModeSelectionModel authModeSelectionModel
 	authenticationModel    authenticationModel
+	gdmModel               gdmModel
 
 	exitMsg fmt.Stringer
 }
@@ -57,6 +62,9 @@ type model struct {
 
 // UsernameOrBrokerListReceived is received either when the user name is filled (pam or manually) and we got the broker list.
 type UsernameOrBrokerListReceived struct{}
+
+// UsernameAndBrokerListReceive is received either when the user name is filled (pam or manually) and we got the broker list.
+type UsernameAndBrokerListReceived struct{}
 
 // BrokerSelected signifies that the broker has been chosen.
 type BrokerSelected struct {
@@ -88,11 +96,13 @@ type SessionEnded struct{}
 
 // Init initializes the main model orchestrator.
 func (m *model) Init() tea.Cmd {
-	m.userSelectionModel = newUserSelectionModel(m.pamh)
 	var cmds []tea.Cmd
-	cmds = append(cmds, m.userSelectionModel.Init())
-
-	m.brokerSelectionModel = newBrokerSelectionModel(m.client)
+	if m.gdm {
+		m.gdmModel = newGdmModel(&m.Parameters)
+		cmds = append(cmds, m.gdmModel.Init())
+	}
+	m.userSelectionModel = newUserSelectionModel(&m.Parameters)
+	m.brokerSelectionModel = newBrokerSelectionModel(&m.Parameters)
 	cmds = append(cmds, m.brokerSelectionModel.Init())
 
 	m.authModeSelectionModel = newAuthModeSelectionModel(m.client)
@@ -156,6 +166,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Events
 	case UsernameOrBrokerListReceived:
+		fmt.Println("Username or broker got", m.username(), m.availableBrokers())
 		if m.username() == "" {
 			return m, nil
 		}
@@ -167,6 +178,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Sequence(
 			m.changeStage(stageBrokerSelection),
 			AutoSelectForUser(m.client, m.username()))
+
+		// // Let's wait to see if we can get a BrokerSelected event earlier
+		// tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg { return nil }),
+		// sendEvent(UsernameAndBrokerListReceived{}))
 
 	case BrokerSelected:
 		return m, startBrokerSession(m.client, msg.BrokerID, m.username())
@@ -222,6 +237,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.authenticationModel, cmd = m.authenticationModel.Update(msg)
 	cmds = append(cmds, cmd)
 
+	if m.gdm {
+		m.gdmModel, cmd = m.gdmModel.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -229,7 +249,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) View() string {
 	var view strings.Builder
 
-	log.Info(context.TODO(), m.currentStage())
+	log.Debugf(context.TODO(), "View, current stage %v", m.currentStage())
+	// dbg.PrintStack()
 	switch m.currentStage() {
 	case stageUserSelection:
 		view.WriteString(m.userSelectionModel.View())
@@ -269,37 +290,36 @@ func (m *model) currentStage() stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *model) changeStage(s stage) tea.Cmd {
+	if m.currentStage() == s && m.gdm {
+		return nil
+	}
+	if m.brokerSelectionModel.Focused() {
+		m.brokerSelectionModel.Blur()
+	}
+	if m.authModeSelectionModel.Focused() {
+		m.authModeSelectionModel.Blur()
+	}
+	if m.authenticationModel.Focused() {
+		m.authenticationModel.Blur()
+	}
+	if m.userSelectionModel.Model.Focused() {
+		m.userSelectionModel.Blur()
+	}
+
 	switch s {
 	case stageUserSelection:
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		return m.userSelectionModel.Focus()
 
 	case stageBrokerSelection:
-		m.userSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		m.authModeSelectionModel.Reset()
-
 		return tea.Sequence(endSession(m.client, m.currentSession), m.brokerSelectionModel.Focus())
 
 	case stageAuthModeSelection:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		m.authenticationModel.Reset()
 
 		return m.authModeSelectionModel.Focus()
 
 	case stageChallenge:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-
 		return m.authenticationModel.Focus()
 	}
 
