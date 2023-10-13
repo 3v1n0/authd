@@ -9,6 +9,7 @@ import "C"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -79,48 +80,25 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
 		return pam.ErrAbort
 	}
 
-	logErrMsg := "unknown"
-	errCode := pam.ErrSystem
+	var status = pam.NewTransactionError(pam.ErrSystem, errors.New("unknown exit code"))
 
-	switch exitMsg := appState.exitMsg.(type) {
+	switch exitMsg := appState.exitStatus.(type) {
 	case pamSuccess:
 		brokerIDUsedToAuthenticate = exitMsg.brokerID
 		return nil
 	case pamIgnore:
 		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
 		brokerIDUsedToAuthenticate = exitMsg.localBrokerID
-		if exitMsg.String() != "" {
-			log.Debugf(context.TODO(), "Ignoring authd authentication: %s", exitMsg)
-		}
-		logErrMsg = ""
-		errCode = pam.ErrIgnore
-	case pamAbort:
-		if exitMsg.String() != "" {
-			logErrMsg = fmt.Sprintf("cancelled authentication: %s", exitMsg)
-		}
-		errCode = pam.ErrAbort
-	case pamAuthError:
-		if exitMsg.String() != "" {
-			logErrMsg = fmt.Sprintf("authentication: %s", exitMsg)
-		}
-		errCode = pam.ErrAuth
-	case pamAuthInfoUnavailable:
-		if exitMsg.String() != "" {
-			logErrMsg = fmt.Sprintf("missing authentication data: %s", exitMsg)
-		}
-		errCode = pam.ErrAuthinfoUnavail
-	case pamSystemError:
-		if exitMsg.String() != "" {
-			logErrMsg = fmt.Sprintf("system: %s", exitMsg)
-		}
-		errCode = pam.ErrSystem
+		status = exitMsg
+	case pamReturnStatus:
+		status = exitMsg
 	}
 
-	if logErrMsg != "" {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", logErrMsg)
+	if status.Status() != pam.ErrIgnore && (flags&pam.Silent) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", status)
 	}
 
-	return errCode
+	return status
 }
 
 // AcctMgmt sets any used brokerID as default for the user.
