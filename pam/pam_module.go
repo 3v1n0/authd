@@ -57,6 +57,16 @@ func handlePamCall(pamh *C.pam_handle_t, flags C.int, argc C.int,
 	return pam.StatusError(0)
 }
 
+//export pam_sm_authenticate
+func pam_sm_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C._const_char_t) C.int {
+	return C.int(handlePamCall(pamh, flags, argc, argv, pamModuleHandler.Authenticate))
+}
+
+//export pam_sm_setcred
+func pam_sm_setcred(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C._const_char_t) C.int {
+	return C.int(handlePamCall(pamh, flags, argc, argv, pamModuleHandler.SetCred))
+}
+
 //export pam_sm_acct_mgmt
 func pam_sm_acct_mgmt(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C._const_char_t) C.int {
 	return C.int(handlePamCall(pamh, flags, argc, argv, pamModuleHandler.AcctMgmt))
@@ -75,14 +85,4 @@ func pam_sm_close_session(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **
 //export pam_sm_chauthtok
 func pam_sm_chauthtok(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C._const_char_t) C.int {
 	return C.int(handlePamCall(pamh, flags, argc, argv, pamModuleHandler.ChangeAuthTok))
-}
-
-//export pam_sm_authenticate
-func pam_sm_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C._const_char_t) C.int {
-	return C.int(handlePamCall(pamh, flags, argc, argv, pamModuleHandler.Authenticate))
-}
-
-//export pam_sm_setcred
-func pam_sm_setcred(pamh *C.pam_handle_t, flags C.int, argc C.int, argv **C._const_char_t) C.int {
-	return C.int(handlePamCall(pamh, flags, argc, argv, pamModuleHandler.SetCred))
 }

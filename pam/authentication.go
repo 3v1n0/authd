@@ -4,10 +4,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/msteinert/pam"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers/responses"
 	"github.com/ubuntu/authd/internal/log"
@@ -33,9 +35,8 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 					access: responses.AuthCancelled,
 				}
 			}
-			return pamSystemError{
-				msg: fmt.Sprintf("Authentication status failure: %v", err),
-			}
+			return pam.NewTransactionError(pam.ErrSystem,
+				fmt.Errorf("authentication status failure: %v", err))
 		}
 
 		return isAuthenticatedResultReceived{
@@ -124,18 +125,24 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		log.Infof(context.TODO(), "isAuthenticatedResultReceived: %v", msg.access)
 		switch msg.access {
 		case responses.AuthGranted:
-			return *m, sendEvent(pamSuccess{brokerID: m.currentBrokerID})
+			return *m, sendEvent(newPamSuccess(m.currentBrokerID))
 
 		case responses.AuthRetry:
-			m.errorMsg = dataToMsg(msg.msg)
+			errorMsg, err := dataToMsg(msg.msg)
+			if err != nil {
+				return *m, sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
+			}
+			m.errorMsg = errorMsg
 			return *m, sendEvent(startAuthentication{})
 
 		case responses.AuthDenied:
 			errMsg := "Access denied"
-			if err := dataToMsg(msg.msg); err != "" {
-				errMsg = err
+			if msg, err := dataToMsg(msg.msg); err != nil {
+				return *m, sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
+			} else if errMsg != "" {
+				errMsg = msg
 			}
-			return *m, sendEvent(pamAuthError{msg: errMsg})
+			return *m, sendEvent(pam.NewTransactionError(pam.ErrAuth, errors.New(errMsg)))
 
 		case responses.AuthNext:
 			return *m, sendEvent(GetAuthenticationModesRequested{})
@@ -205,7 +212,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, layout *authd.
 	case "qrcode":
 		qrcodeModel, err := newQRCodeModel(layout.GetContent(), layout.GetLabel(), layout.GetButton(), layout.GetWait() == "true")
 		if err != nil {
-			return sendEvent(pamSystemError{msg: err.Error()})
+			return sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
 		}
 		m.currentModel = qrcodeModel
 
@@ -214,7 +221,8 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, layout *authd.
 		m.currentModel = newPasswordModel
 
 	default:
-		return sendEvent(pamSystemError{msg: fmt.Sprintf("unknown layout type: %q", layout.Type)})
+		return sendEvent(pam.NewTransactionError(pam.ErrSystem,
+			fmt.Errorf("unknown layout type: %q", layout.Type)))
 	}
 
 	return sendEvent(startAuthentication{})
@@ -247,24 +255,22 @@ func (m *authenticationModel) Reset() {
 }
 
 // dataToMsg returns the data message from a given JSON message.
-func dataToMsg(data string) string {
+func dataToMsg(data string) (string, error) {
 	if data == "" {
-		return ""
+		return "", nil
 	}
 
 	v := make(map[string]string)
 	if err := json.Unmarshal([]byte(data), &v); err != nil {
-		log.Infof(context.TODO(), "Invalid json data from provider: %v", data)
-		return ""
+		return "", fmt.Errorf("invalid json data from provider: %v", err)
 	}
 	if len(v) == 0 {
-		return ""
+		return "", nil
 	}
 
 	r, ok := v["message"]
 	if !ok {
-		log.Debugf(context.TODO(), "No message entry in json data from provider: %v", data)
-		return ""
+		return "", fmt.Errorf("no message entry in json data from provider: %v", v)
 	}
-	return r
+	return r, nil
 }
