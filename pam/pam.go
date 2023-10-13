@@ -33,9 +33,11 @@ var pamModuleHandler pam.ModuleHandler = &pamModule{}
 type pamModule struct {
 }
 
-var (
-	// brokerIDUsedToAuthenticate global variable is for the second stage authentication to select the default broker for the current user.
-	brokerIDUsedToAuthenticate string
+const (
+	// authenticationBrokerIDKey is the Key used to store the data in the
+	// PAM module for the second stage authentication to select the default
+	// broker for the current user.
+	authenticationBrokerIDKey = "authentication-broker-id"
 )
 
 /*
@@ -68,6 +70,10 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
 		interactiveTerminal: interactiveTerminal,
 	}
 
+	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {
+		return err
+	}
+
 	//tea.WithInput(nil)
 	//tea.WithoutRenderer()
 	var opts []tea.ProgramOption
@@ -84,18 +90,28 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
 
 	switch exitMsg := appState.exitStatus.(type) {
 	case pamSuccess:
-		brokerIDUsedToAuthenticate = exitMsg.brokerID
+		if err := mTx.SetData(authenticationBrokerIDKey, exitMsg.brokerID); err != nil {
+			return err
+		}
 		return nil
 	case pamIgnore:
 		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
-		brokerIDUsedToAuthenticate = exitMsg.localBrokerID
+		if err := mTx.SetData(authenticationBrokerIDKey, exitMsg.localBrokerID); err != nil {
+			return err
+		}
 		status = exitMsg
 	case pamReturnStatus:
 		status = exitMsg
 	}
 
-	if status.Status() != pam.ErrIgnore && (flags&pam.Silent) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", status)
+	if status.Status() != pam.ErrIgnore {
+		if _, err := mTx.StartStringConv(pam.ErrorMsg, status.Error()); err != nil {
+			log.Errorf(context.TODO(), "Failed reporting error to pam: %v", err)
+		}
+	} else if status.Error() != "" {
+		if _, err := mTx.StartStringConv(pam.TextInfo, status.Error()); err != nil {
+			log.Errorf(context.TODO(), "Failed sending info to pam: %v", err)
+		}
 	}
 
 	return status
@@ -104,8 +120,14 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
 // AcctMgmt sets any used brokerID as default for the user.
 func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags,
 	args []string) error {
+	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
+	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
+		return pam.ErrIgnore
+	}
+
+	brokerIDUsedToAuthenticate, ok := brokerData.(string)
 	// Only set the brokerID as default if we stored one after authentication.
-	if brokerIDUsedToAuthenticate == "" {
+	if !ok || brokerIDUsedToAuthenticate == "" {
 		return pam.ErrIgnore
 	}
 
