@@ -1,0 +1,3 @@
+pam_module.go
+pam_authd.h
+pam_authd.so
