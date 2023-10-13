@@ -100,8 +100,14 @@ func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 		status = exitMsg
 	}
 
-	if status.Status() != pam.ErrIgnore && (pam.Flags(flags)&pam.Silent) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", status)
+	if status.Status() != pam.ErrIgnore {
+		if _, err := mt.StartStringConv(pam.ErrorMsg, status.Error()); err != nil {
+			log.Errorf(context.TODO(), "Failed reporting error to pam: %v", err)
+		}
+	} else if status.Error() != "" {
+		if _, err := mt.StartStringConv(pam.TextInfo, status.Error()); err != nil {
+			log.Errorf(context.TODO(), "Failed sending info to pam: %v", err)
+		}
 	}
 
 	return status
