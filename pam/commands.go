@@ -3,11 +3,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/msteinert/pam"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/log"
 )
@@ -23,7 +25,7 @@ func sendEvent(msg tea.Msg) tea.Cmd {
 func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.Cmd {
 	return func() tea.Msg {
 		if brokerID == "local" {
-			return pamIgnore{localBrokerID: brokerID}
+			return newPamIgnore(brokerID, nil)
 		}
 
 		// Start a transaction for this user with the broker.
@@ -45,16 +47,19 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 
 		sbResp, err := client.SelectBroker(context.TODO(), sbReq)
 		if err != nil {
-			return pamSystemError{msg: fmt.Sprintf("can't select broker: %v", err)}
+			return newPamStatus(pam.ErrSystem,
+				fmt.Errorf("can't select broker: %v", err))
 		}
 
 		sessionID := sbResp.GetSessionId()
 		if sessionID == "" {
-			return pamSystemError{msg: "no session ID returned by broker"}
+			return newPamStatus(pam.ErrSystem,
+				errors.New("no session ID returned by broker"))
 		}
 		encryptionKey := sbResp.GetEncryptionKey()
 		if encryptionKey == "" {
-			return pamSystemError{msg: "no encryption key returned by broker"}
+			return newPamStatus(pam.ErrSystem,
+				errors.New("no encryption key returned by broker"))
 		}
 
 		return SessionStarted{
@@ -74,17 +79,15 @@ func getLayout(client authd.PAMClient, sessionID, authModeID string) tea.Cmd {
 		}
 		uiInfo, err := client.SelectAuthenticationMode(context.TODO(), samReq)
 		if err != nil {
-			return pamSystemError{
+			return newPamStatus(pam.ErrSystem,
 				// TODO: probably go back to broker selection here
-				msg: fmt.Sprintf("can't select authentication mode: %v", err),
-			}
+				fmt.Errorf("can't select authentication mode: %v", err))
 		}
 
 		if uiInfo.UiLayoutInfo == nil {
-			return pamSystemError{
+			return newPamStatus(pam.ErrSystem,
 				// TODO: probably go back to broker selection here
-				msg: "invalid empty UI Layout information from broker",
-			}
+				errors.New("invalid empty UI Layout information from broker"))
 		}
 
 		return UILayoutReceived{

@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -51,7 +51,7 @@ type model struct {
 	authModeSelectionModel authModeSelectionModel
 	authenticationModel    authenticationModel
 
-	exitMsg fmt.Stringer
+	exitStatus pamReturnStatus
 }
 
 /* global events */
@@ -115,7 +115,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return m, sendEvent(pamAbort{msg: "cancel requested"})
+			return m, sendEvent(newPamStatus(pam.ErrAbort,
+				errors.New("cancel requested")))
 		case "esc":
 			if m.brokerSelectionModel.WillCaptureEscape() || m.authModeSelectionModel.WillCaptureEscape() {
 				break
@@ -139,20 +140,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.brokerSelectionModel.SetWidth(m.width)
 
 	// Exit cases
-	case pamIgnore:
-		m.exitMsg = msg
-		return m, m.quit()
-	case pamAbort:
-		m.exitMsg = msg
-		return m, m.quit()
-	case pamSystemError:
-		m.exitMsg = msg
-		return m, m.quit()
-	case pamAuthError:
-		m.exitMsg = msg
-		return m, m.quit()
-	case pamSuccess:
-		m.exitMsg = msg
+	case pamReturnStatus:
+		m.exitStatus = msg
 		return m, m.quit()
 
 	// Events
@@ -196,7 +185,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg.ID = m.authModeSelectionModel.currentAuthModeSelectedID
 		}
 		if msg.ID == "" {
-			return m, sendEvent(pamSystemError{msg: "reselection of current auth mode without current ID"})
+			return m, sendEvent(newPamStatus(
+				pam.ErrSystem,
+				errors.New("reselection of current auth mode without current ID")))
 		}
 		return m, getLayout(m.client, m.currentSession.sessionID, msg.ID)
 
