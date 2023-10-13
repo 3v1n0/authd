@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/msteinert/pam"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/log"
 )
@@ -36,7 +37,7 @@ type sessionInfo struct {
 
 // model is the global models orchestrator.
 type model struct {
-	pamh   pamHandle
+	pamMt  pam.ModuleTransaction
 	client authd.PAMClient
 
 	height              int
@@ -88,7 +89,7 @@ type SessionEnded struct{}
 
 // Init initializes the main model orchestrator.
 func (m *model) Init() tea.Cmd {
-	m.userSelectionModel = newUserSelectionModel(m.pamh)
+	m.userSelectionModel = newUserSelectionModel(m.pamMt)
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.userSelectionModel.Init())
 
