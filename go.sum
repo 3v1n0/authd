@@ -58,6 +58,8 @@ github.com/3v1n0/go-pam v0.0.0-20231014014135-14cbc0ffa19b h1:Bar4t1jVR0CO3Ejfvz
 github.com/3v1n0/go-pam v0.0.0-20231014014135-14cbc0ffa19b/go.mod h1:d2n0DCUK8rGecChV3JzvmsDjOY4R7AYbsNxAT+ftQl0=
 github.com/3v1n0/go-pam v0.0.0-20231014023118-da7d6e21f66b h1:9MEXLt5dw1jWo/+OshAdnbnCnlfrB0hnyKJuf24zbt4=
 github.com/3v1n0/go-pam v0.0.0-20231014023118-da7d6e21f66b/go.mod h1:d2n0DCUK8rGecChV3JzvmsDjOY4R7AYbsNxAT+ftQl0=
+github.com/3v1n0/go-pam v0.0.0-20231014040609-24bf30b09741 h1:/ZzwEcNKf1ZHFl0hkVQlqo2eihAsWm59gl+E+TJRArQ=
+github.com/3v1n0/go-pam v0.0.0-20231014040609-24bf30b09741/go.mod h1:d2n0DCUK8rGecChV3JzvmsDjOY4R7AYbsNxAT+ftQl0=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/atotto/clipboard v0.1.4 h1:EH0zSVneZPSuFR11BlR9YppQTVDbh5+16AmcJi4g1z4=

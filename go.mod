@@ -62,4 +62,6 @@ require (
 )
 
 // FIXME: Use released version once we have one!
-replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231014023118-da7d6e21f66b
+replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231014040609-24bf30b09741
+
+// replace github.com/msteinert/pam => /home/marco/Dev/go-pam
