@@ -1,4 +1,4 @@
-package main
+package pam_test
 
 import (
 	"testing"
@@ -9,14 +9,14 @@ import (
 
 func Test_ModuleTransactionDummy_SetItem(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	err := tx.SetItem(pam.User, "an user")
 	require.NoError(t, err, "SetItem should not return an error")
 }
 
 func Test_ModuleTransactionDummy_GetItem_Empty(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	val, err := tx.GetItem(pam.User)
 	require.NoError(t, err, "GetItem should not return an error")
 	require.Equal(t, "", val)
@@ -24,7 +24,7 @@ func Test_ModuleTransactionDummy_GetItem_Empty(t *testing.T) {
 
 func Test_ModuleTransactionDummy_GetSetItem(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	err := tx.SetItem(pam.User, "an user")
 	require.NoError(t, err, "SetItem should not return an error")
 	val, err := tx.GetItem(pam.User)
@@ -34,14 +34,14 @@ func Test_ModuleTransactionDummy_GetSetItem(t *testing.T) {
 
 func Test_ModuleTransactionDummy_GetEnv_Empty(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	val := tx.GetEnv("AN_ENV")
 	require.Equal(t, "", val)
 }
 
 func Test_ModuleTransactionDummy_PutEnvGetEnv(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	list, err := tx.GetEnvList()
 	require.NoError(t, err, "GetEnvList should not return an error")
 	require.Equal(t, map[string]string{}, list)
@@ -86,14 +86,14 @@ func Test_ModuleTransactionDummy_PutEnvGetEnv(t *testing.T) {
 
 func Test_ModuleTransactionDummy_PutEnv_Invalid(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	err := tx.PutEnv("=INVALID")
 	require.ErrorIs(t, err, pam.BadItem)
 }
 
 func Test_ModuleTransactionDummy_GetData_Missing(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 	data, err := tx.GetData("not set")
 	require.ErrorIs(t, err, pam.NoModuleData)
 	require.Equal(t, nil, data)
@@ -101,8 +101,8 @@ func Test_ModuleTransactionDummy_GetData_Missing(t *testing.T) {
 
 func Test_ModuleTransactionDummy_SetGetData(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
-	err := tx.SetData("some-data", PamModuleTransactionDummy{
+	tx := NewModuleTransactionDummy(nil)
+	err := tx.SetData("some-data", ModuleTransactionDummy{
 		Items: map[pam.Item]string{pam.Tty: "yay"},
 		Env:   map[string]string{"foo": "bar"},
 	})
@@ -110,7 +110,7 @@ func Test_ModuleTransactionDummy_SetGetData(t *testing.T) {
 
 	data, err := tx.GetData("some-data")
 	require.NoError(t, err)
-	require.Equal(t, PamModuleTransactionDummy{
+	require.Equal(t, ModuleTransactionDummy{
 		Items: map[pam.Item]string{pam.Tty: "yay"},
 		Env:   map[string]string{"foo": "bar"},
 	}, data)
@@ -118,7 +118,7 @@ func Test_ModuleTransactionDummy_SetGetData(t *testing.T) {
 
 func Test_ModuleTransactionDummy_GetUser_Preset(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(pam.ConversationFunc(
+	tx := NewModuleTransactionDummy(pam.ConversationFunc(
 		func(s pam.Style, msg string) (string, error) {
 			return "something-else", pam.ConvErr
 		}))
@@ -132,7 +132,7 @@ func Test_ModuleTransactionDummy_GetUser_Preset(t *testing.T) {
 
 func Test_ModuleTransactionDummy_GetUser_Unset_MissingConv(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(nil)
+	tx := NewModuleTransactionDummy(nil)
 
 	user, err := tx.GetUser("who are you?")
 	require.ErrorIs(t, err, pam.ConvErr)
@@ -141,7 +141,7 @@ func Test_ModuleTransactionDummy_GetUser_Unset_MissingConv(t *testing.T) {
 
 func Test_ModuleTransactionDummy_GetUser_Unset_ViaConv(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(pam.ConversationFunc(
+	tx := NewModuleTransactionDummy(pam.ConversationFunc(
 		func(s pam.Style, msg string) (string, error) {
 			switch s {
 			case pam.PromptEchoOn:
@@ -157,7 +157,7 @@ func Test_ModuleTransactionDummy_GetUser_Unset_ViaConv(t *testing.T) {
 
 func Test_ModuleTransactionDummy_StartStringConvf(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(pam.ConversationFunc(
+	tx := NewModuleTransactionDummy(pam.ConversationFunc(
 		func(s pam.Style, msg string) (string, error) {
 			switch s {
 			case pam.TextInfo:
@@ -177,7 +177,7 @@ func Test_ModuleTransactionDummy_StartStringConvf(t *testing.T) {
 
 func Test_ModuleTransactionDummy_StartStringConvFailing(t *testing.T) {
 	t.Parallel()
-	tx := NewPamModuleTransactionDummy(pam.ConversationFunc(
+	tx := NewModuleTransactionDummy(pam.ConversationFunc(
 		func(s pam.Style, msg string) (string, error) {
 			return "", pam.BufErr
 		}))
@@ -200,7 +200,7 @@ func (f binConvFunc) RespondPAM(pam.Style, string) (string, error) {
 func Test_ModuleTransactionDummy_StartBinaryConf(t *testing.T) {
 	t.Parallel()
 
-	tx := NewPamModuleTransactionDummy(binConvFunc(
+	tx := NewModuleTransactionDummy(binConvFunc(
 		func(ptr pam.BinaryPointer) ([]byte, error) {
 			require.NotNil(t, ptr)
 			bytes := getBinaryFromPointer(ptr, 3)
