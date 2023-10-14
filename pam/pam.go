@@ -148,7 +148,7 @@ func pam_sm_acct_mgmt(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.
 	return C.PAM_SUCCESS
 }
 
-// newClient returns a new GRPC client ready to emit requests
+// newClient returns a new GRPC client ready to emit requests.
 func newClient(argc C.int, argv **C.char) (client authd.PAMClient, close func(), err error) {
 	conn, err := grpc.Dial("unix://"+getSocketPath(argc, argv), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -176,10 +176,10 @@ func pam_sm_setcred(pamh *C.pam_handle_t, flags, argc C.int, argv **C.char) C.in
 	return C.PAM_IGNORE
 }
 
-// Simulating pam on the CLI for manual testing
+// Simulating pam on the CLI for manual testing.
 func main() {
 	log.SetLevel(log.DebugLevel)
-	f, err := os.OpenFile("/tmp/logdebug", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
+	f, err := os.OpenFile("/tmp/logdebug", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
 	if err != nil {
 		panic(err)
 	}
