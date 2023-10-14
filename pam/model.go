@@ -36,7 +36,7 @@ type sessionInfo struct {
 
 // model is the global models orchestrator.
 type model struct {
-	pamMt  *pam.ModuleTransaction
+	pamMt  PamModuleTransaction
 	client authd.PAMClient
 
 	height              int

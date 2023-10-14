@@ -10,7 +10,7 @@ import (
 type userSelectionModel struct {
 	textinput.Model
 
-	pamMt *pam.ModuleTransaction
+	pamMt PamModuleTransaction
 }
 
 // userSelected events to select a new username.
@@ -26,7 +26,7 @@ func sendUserSelected(username string) tea.Cmd {
 }
 
 // newUserSelectionModel returns an initialized userSelectionModel.
-func newUserSelectionModel(pamMt *pam.ModuleTransaction) userSelectionModel {
+func newUserSelectionModel(pamMt PamModuleTransaction) userSelectionModel {
 	u := textinput.New()
 	u.Prompt = "Username: " // TODO: i18n
 	u.Placeholder = "user name"
