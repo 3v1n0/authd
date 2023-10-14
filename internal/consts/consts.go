@@ -13,14 +13,15 @@ const (
 	TEXTDOMAIN = "adsys"
 
 	// DefaultLogLevel is the default logging level selected without any option.
-	DefaultLogLevel = log.WarnLevel
+	// DefaultLogLevel = log.DebugLevel
+	DefaultLogLevel = log.DebugLevel
 
 	// DefaultSocketPath is the default socket path.
-	DefaultSocketPath = "/run/authd.sock"
+	DefaultSocketPath = "/tmp/authd.sock"
 
 	// DefaultBrokersConfPath is the default configuration directory for the brokers.
 	DefaultBrokersConfPath = "/etc/authd/brokers.d/"
 
 	// DefaultCacheDir is the default directory for the cache.
-	DefaultCacheDir = "/var/cache/authd/"
+	DefaultCacheDir = "/tmp/authd-cache/"
 )
