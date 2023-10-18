@@ -1,0 +1,16 @@
+Name: Authd authentication
+Default: yes
+Priority: 128
+
+Auth-Type: Primary
+Auth:
+	[success=end default=ignore]	@pam_loader@ @loaded_module@ @loaded_module_args@
+Account:
+	[default=bad success=ok user_unknown=ignore]	@pam_loader@ @loaded_module@ @loaded_module_args@
+Session-Type: Additional
+Session-Interactive-Only: yes
+Session:
+	optional			@pam_loader@ @loaded_module@ @loaded_module_args@
+Password-Type: Primary
+Password:
+	sufficient			@pam_loader@ @loaded_module@ @loaded_module_args@
