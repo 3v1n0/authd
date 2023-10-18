@@ -16,6 +16,7 @@ import (
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/log"
+	"github.com/ubuntu/authd/pam/gdm"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -41,6 +42,12 @@ const (
 	auth    [success=3 default=die ignore=ignore]   pam_authd.so
 */
 
+func ForwardAndLogError(mt pam.ModuleTransaction, format string, args ...interface{}) {
+	if _, err := mt.StartStringConvf(pam.ErrorMsg, format, args); err != nil {
+		log.Errorf(context.TODO(), "Failed reporting error to pam: %v", err)
+	}
+}
+
 // Authenticate is the method that is invoked during pam_authenticate request.
 func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 	args []string) error {
@@ -50,7 +57,34 @@ func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 	// Attach logger and info handler.
 	// TODO
 
-	interactiveTerminal := term.IsTerminal(int(os.Stdin.Fd()))
+	// TODO: Get this value from argc or pam environment
+	log.SetLevel(log.DebugLevel)
+	fmt.Println("Authentication started!")
+
+	// TODO: Define user options, like disable interactive terminal always
+
+	// FIXME: Ignore root user
+
+	interactiveTerminal := false
+	isGdm := false
+
+	if gdm.IsPamExtensionSupported(gdm.PamExtensionPrivateString) {
+		isGdm = true
+
+		reply, err := (&gdm.Data{Type: "hello"}).SendParsed(mt)
+		if err != nil {
+			ForwardAndLogError(mt, "Gdm initialization failed: %v", err)
+			return pam.AuthinfoUnavail
+		}
+		if reply.Type != "hello" || reply.Data["version"] != float64(gdm.ProtoWireVersion) {
+			ForwardAndLogError(mt, "Gdm protocol initialization failed, type %s, version %v",
+				reply.Type, reply.Data["version"])
+			return pam.AuthinfoUnavail
+		}
+		log.Debugf(context.TODO(), "Gdm Reply is %v", reply)
+	} else {
+		interactiveTerminal = term.IsTerminal(int(os.Stdin.Fd()))
+	}
 
 	client, closeConn, err := newClient(args)
 	if err != nil {
@@ -63,6 +97,7 @@ func (h *pamModule) Authenticate(mt pam.ModuleTransaction, flags pam.Flags,
 		pamMt:               mt,
 		client:              client,
 		interactiveTerminal: interactiveTerminal,
+		gdm:                 isGdm,
 	}
 
 	if err := mt.SetData(authenticationBrokerIDKey, nil); err != nil {
