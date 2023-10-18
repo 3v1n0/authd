@@ -1,0 +1,13 @@
+option('pam-auth-update-support',
+       type: 'boolean',
+       value: true,
+       description: 'Whether to generate the pam-auth-update')
+
+option('loaded_module',
+       type: 'string',
+       value: 'pam_authd.so',
+       description: 'Module to load in the generated pam-auth-update')
+
+option('loaded_module_args',
+       type : 'array',
+       description: 'Module arguments to use in the generated pam-auth-update')
