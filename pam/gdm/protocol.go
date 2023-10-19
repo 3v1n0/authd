@@ -12,6 +12,9 @@ const (
 	ProtoVersion = int(1)
 )
 
+// FIXME: use this
+// import _ "golang.org/x/tools/cmd/stringer"
+
 // DataType represents the type of a communication event.
 type DataType int
 

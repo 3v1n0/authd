@@ -64,7 +64,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 		"request": {
 			gdmData: Data{
-				Type: Request, RequestType: UiLayoutCapabilities,
+				Type: Request, RequestType: UILayoutCapabilities,
 				RequestData: Object{"name": "foo"},
 			},
 			expectedJSON: `{"type":"request","requestType":"uiLayoutCapabilities",` +
@@ -83,7 +83,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 		"request with unexpected data": {
 			gdmData: Data{
-				Type: Request, RequestType: UiLayoutCapabilities,
+				Type: Request, RequestType: UILayoutCapabilities,
 				RequestData: Object{"name": "foo"},
 				EventData:   Object{"foo": "bar"},
 			},
@@ -288,7 +288,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 			JSON: `{"type":"request","requestType":"uiLayoutCapabilities",` +
 				`"requestData":{"name":"foo"}}`,
 			expectedData: Data{
-				Type: Request, RequestType: UiLayoutCapabilities,
+				Type: Request, RequestType: UILayoutCapabilities,
 				RequestData: Object{"name": "foo"},
 			},
 		},

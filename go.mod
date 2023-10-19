@@ -40,6 +40,7 @@ require (
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
+	github.com/msteinert/pam v1.2.0 // indirect
 	github.com/muesli/ansi v0.0.0-20211018074035-2e021307bc4b // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
@@ -65,4 +66,6 @@ require (
 )
 
 // FIXME: Use released version once we have one!
-replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231018002852-8179240f0de9
+// replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231018002852-8179240f0de9
+
+replace github.com/msteinert/pam => /home/marco/Dev/go-pam
