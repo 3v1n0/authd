@@ -19,6 +19,7 @@ func (f binConvFunc) RespondPAM(pam.Style, string) (string, error) {
 
 func TestModuleTransactionDummy(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		testFunc    func(*testing.T, pam.ModuleTransaction)
@@ -243,6 +244,7 @@ func TestModuleTransactionDummy(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 			tc.testFunc(t, NewModuleTransactionDummy(tc.convHandler))
 		})
 	}
