@@ -21,6 +21,7 @@ func bytesPointerDecoder(ptr pam.BinaryPointer) ([]byte, error) {
 
 func TestSetGetItem(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		item  pam.Item
@@ -63,6 +64,7 @@ func TestSetGetItem(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			// These test inputs can not be all unset
 			if tc.value == nil && tc.expectedValue == nil {
@@ -87,6 +89,7 @@ func TestSetGetItem(t *testing.T) {
 
 func TestSetPutEnv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		env          string
@@ -144,6 +147,7 @@ func TestSetPutEnv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			// These test inputs can not be all unset
 			if tc.skipPut && tc.expectedValue == nil {
@@ -205,6 +209,7 @@ func TestSetPutEnv(t *testing.T) {
 
 func TestSetGetData(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		key        string
@@ -255,6 +260,7 @@ func TestSetGetData(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			// These test inputs can not be all unset
 			if tc.skipGet && tc.skipSet {
@@ -286,6 +292,7 @@ func TestSetGetData(t *testing.T) {
 
 func TestGetUser(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		presetUser  string
@@ -332,6 +339,7 @@ func TestGetUser(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			tx := NewModuleTransactionDummy(tc.convHandler)
 
@@ -350,6 +358,7 @@ func TestGetUser(t *testing.T) {
 
 func TestStartStringConv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		prompt                string
@@ -401,6 +410,7 @@ func TestStartStringConv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			convFunCalled := false
 			tx := NewModuleTransactionDummy(func() pam.ConversationFunc {
@@ -449,6 +459,7 @@ func TestStartStringConv(t *testing.T) {
 
 func TestStartBinaryConv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		request     []byte
@@ -479,6 +490,7 @@ func TestStartBinaryConv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			convFunCalled := false
 			tx := NewModuleTransactionDummy(func() pam.BinaryConversationHandler {
@@ -522,6 +534,7 @@ func TestStartBinaryConv(t *testing.T) {
 
 func TestStartBinaryPointerConv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		request     []byte
@@ -562,6 +575,7 @@ func TestStartBinaryPointerConv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			convFunCalled := false
 			tx := NewModuleTransactionDummy(func() pam.BinaryPointerConversationHandler {
@@ -659,6 +673,7 @@ func (c *multiConvHandler) RespondPAMBinary(ptr pam.BinaryPointer) ([]byte, erro
 
 func TestStartConvMulti(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	tests := map[string]struct {
 		requests []pam.ConvRequest
@@ -728,6 +743,7 @@ func TestStartConvMulti(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			require.Equalf(t, len(tc.expectedResponses), len(tc.requests),
 				"Setup: mismatch on expectations / requests numbers")
