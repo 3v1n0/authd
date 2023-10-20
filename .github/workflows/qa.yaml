@@ -77,6 +77,9 @@ jobs:
       - name: Run tests (with race detector)
         run: |
           go test -race ./...
+      - name: Run PAM tests (with Address Sanitizer)
+        run: |
+          go test -C pam -asan ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
