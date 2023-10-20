@@ -15,6 +15,8 @@ func ptrValue[T any](value T) *T {
 
 func TestSetGetItem(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		item             pam.Item
@@ -56,6 +58,7 @@ func TestSetGetItem(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			require.True(t, tc.value != nil || tc.expectedValue != nil)
 
@@ -77,6 +80,7 @@ func TestSetGetItem(t *testing.T) {
 
 func TestSetPutEnv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		env              string
@@ -133,6 +137,7 @@ func TestSetPutEnv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			require.False(t, tc.skipPut && tc.expectedValue == nil)
 
@@ -191,6 +196,7 @@ func TestSetPutEnv(t *testing.T) {
 
 func TestSetGetData(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		key              string
@@ -240,6 +246,7 @@ func TestSetGetData(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			require.False(t, tc.skipGet && tc.skipSet)
 
@@ -268,6 +275,7 @@ func TestSetGetData(t *testing.T) {
 
 func TestGetUser(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		presetUser    string
@@ -313,6 +321,7 @@ func TestGetUser(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			tx := NewModuleTransactionDummy(tc.convHandler)
 
@@ -331,6 +340,7 @@ func TestGetUser(t *testing.T) {
 
 func TestStartStringConv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		prompt                string
@@ -381,6 +391,7 @@ func TestStartStringConv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			convFunCalled := false
 			tx := NewModuleTransactionDummy(func() pam.ConversationFunc {
@@ -427,6 +438,7 @@ func TestStartStringConv(t *testing.T) {
 
 func TestStartBinaryConv(t *testing.T) {
 	t.Parallel()
+	t.Cleanup(MaybeDoLeakCheck)
 
 	testCases := map[string]struct {
 		request       []byte
@@ -456,6 +468,7 @@ func TestStartBinaryConv(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			t.Cleanup(MaybeDoLeakCheck)
 
 			convFunCalled := false
 			var tx pam.ModuleTransaction
