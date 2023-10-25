@@ -9,6 +9,7 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/uuid v1.3.1
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/msteinert/pam v1.2.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
@@ -39,7 +40,6 @@ require (
 	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/muesli/ansi v0.0.0-20211018074035-2e021307bc4b // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
@@ -65,4 +65,6 @@ require (
 )
 
 // FIXME: Use released version once we have one!
-replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231020000205-618648927c8d
+// replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231020000205-618648927c8d
+
+replace github.com/msteinert/pam => /home/marco/Dev/go-pam

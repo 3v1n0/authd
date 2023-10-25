@@ -78,8 +78,10 @@ jobs:
         run: |
           go test -race ./...
       - name: Run PAM tests (with Address Sanitizer)
+        env:
+          CGO_CFLAGS: "-O0 -g3 -fno-omit-frame-pointer"
         run: |
-          go test -C pam -asan ./...
+          go test -C pam -asan -gcflags="-dwarflocationlists=true" ./...
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
