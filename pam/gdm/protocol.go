@@ -12,23 +12,42 @@ const (
 	ProtoVersion = int(1)
 )
 
+// FIXME: use this
+// import _ "golang.org/x/tools/cmd/stringer"
+
 // DataType represents the type of a communication event.
 type DataType int
 
 // Object is the type for any generic object data value.
-type Object = map[string]any
+type Object map[string]any
+
+// ToRawMessage generates a gdm.RawObject from an Object.
+func (o *Object) ToRawMessage() (RawObject, error) {
+	rawObj := RawObject{}
+	for key, value := range *o {
+		bytes, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		rawObj[key] = json.RawMessage(bytes)
+	}
+	return rawObj, nil
+}
+
+// RawObject is the type for any generic raw object data value.
+type RawObject = map[string]json.RawMessage
 
 // Data is the serializable structure that can be passed to Gdm and that
 // we expect gdm to return us.
 type Data struct {
-	Type             DataType    `json:"type"`
-	HelloData        *HelloData  `json:"helloData,omitempty"`
-	RequestType      RequestType `json:"requestType,omitempty"`
-	RequestData      Object      `json:"requestData,omitempty"`
-	ResponseData     []Object    `json:"responseData,omitempty"`
-	PollResponseData []Data      `json:"pollResponseData,omitempty"`
-	EventType        EventType   `json:"eventType,omitempty"`
-	EventData        Object      `json:"eventData,omitempty"`
+	Type             DataType          `json:"type"`
+	HelloData        *HelloData        `json:"helloData,omitempty"`
+	RequestType      RequestType       `json:"requestType,omitempty"`
+	RequestData      Object            `json:"requestData,omitempty"`
+	ResponseData     []json.RawMessage `json:"responseData,omitempty"`
+	PollResponseData []Data            `json:"pollResponseData,omitempty"`
+	EventType        EventType         `json:"eventType,omitempty"`
+	EventData        RawObject         `json:"eventData,omitempty"`
 }
 
 // NewDataFromJSON unmarshals data from json bytes.
@@ -85,6 +104,11 @@ func (d Data) Check() error {
 			return fmt.Errorf("missing event data")
 		}
 		if err := d.checkMembers([]string{"EventType", "EventData"}); err != nil {
+			return err
+		}
+
+	case EventAck:
+		if err := d.checkMembers([]string{}); err != nil {
 			return err
 		}
 
@@ -153,6 +177,8 @@ const (
 	Hello
 	// Event is an event DataType.
 	Event
+	// EventAck is an event DataType.
+	EventAck
 	// Request is a request DataType.
 	Request
 	// Response is a response DataType.
@@ -161,6 +187,9 @@ const (
 	Poll
 	// PollResponse is a poll response DataType.
 	PollResponse
+
+	// lastDataType is the last DataType value, so keep it as such.
+	lastDataType
 )
 
 func (t DataType) String() string {
@@ -169,6 +198,8 @@ func (t DataType) String() string {
 		return "hello"
 	case Event:
 		return "event"
+	case EventAck:
+		return "eventAck"
 	case Request:
 		return "request"
 	case Response:
@@ -188,23 +219,15 @@ func (t *DataType) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	switch s {
-	case "hello":
-		*t = Hello
-	case "event":
-		*t = Event
-	case "request":
-		*t = Request
-	case "response":
-		*t = Response
-	case "poll":
-		*t = Poll
-	case "pollResponse":
-		*t = PollResponse
-	default:
-		*t = UnknownType
+
+	for i := DataType(0); i < lastDataType; i++ {
+		if i.String() == s {
+			*t = i
+			return nil
+		}
 	}
 
+	*t = UnknownType
 	return nil
 }
 
@@ -222,16 +245,33 @@ type HelloData struct {
 type EventType int
 
 const (
-	// UnknownEvent is an unknown EventType
+	// UnknownEvent is an unknown EventType.
 	UnknownEvent EventType = iota
-	// UserSelected is an user selected EventType
+	// UserSelected is an user selected EventType.
 	UserSelected
-	// BrokerSelected is a broker selected EventType
+	// BrokersReceived is a broker received EventType.
+	BrokersReceived
+	// BrokerSelected is a broker selected EventType.
 	BrokerSelected
-	// AuthModeSelected is an auth mode-selected EventType
+	// AuthModesReceived is an auth modes received EventType.
+	AuthModesReceived
+	// AuthModeSelected is an auth mode selected EventType.
 	AuthModeSelected
-	// AuthEvent is an auth event EventType
+	// ReselectAuthMode is an reselect auth mode selected EventType.
+	ReselectAuthMode
+	// AuthEvent is an auth event EventType.
 	AuthEvent
+	// UILayoutReceived is an UI Layout Received EventType.
+	UILayoutReceived
+	// StartAuthentication is a start authentication EventType.
+	StartAuthentication
+	// IsAuthenticatedRequested is an authentication request EventType.
+	IsAuthenticatedRequested
+	// StageChanged is stage changed EventType.
+	StageChanged
+
+	// lastEventType is the last EventType value, so keep it as such.
+	lastEventType
 )
 
 func (e EventType) String() string {
@@ -240,10 +280,24 @@ func (e EventType) String() string {
 		return "userSelected"
 	case BrokerSelected:
 		return "brokerSelected"
+	case AuthModesReceived:
+		return "authModesReceived"
 	case AuthModeSelected:
 		return "authModeSelected"
+	case ReselectAuthMode:
+		return "reselectAuthMode"
 	case AuthEvent:
 		return "authEvent"
+	case BrokersReceived:
+		return "brokersReceived"
+	case UILayoutReceived:
+		return "uiLayoutReceived"
+	case StartAuthentication:
+		return "startAuthentication"
+	case IsAuthenticatedRequested:
+		return "isAuthenticatedRequested"
+	case StageChanged:
+		return "stageChanged"
 	default:
 		return ""
 	}
@@ -255,39 +309,22 @@ func (e *EventType) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	switch s {
-	case "userSelected":
-		*e = UserSelected
-	case "brokerSelected":
-		*e = BrokerSelected
-	case "authModeSelected":
-		*e = AuthModeSelected
-	case "authEvent":
-		*e = AuthEvent
-	default:
-		*e = UnknownEvent
+
+	for i := EventType(0); i < lastEventType; i++ {
+		if i.String() == s {
+			*e = i
+			return nil
+		}
 	}
+
+	*e = UnknownEvent
 
 	return nil
 }
 
 // MarshalJSON marshals EventType to JSON bytes.
 func (e EventType) MarshalJSON() ([]byte, error) {
-	var s string
-	switch e {
-	case UserSelected:
-		s = "userSelected"
-	case BrokerSelected:
-		s = "brokerSelected"
-	case AuthModeSelected:
-		s = "authModeSelected"
-	case AuthEvent:
-		s = "authEvent"
-	default:
-		s = "unknownEvent"
-	}
-
-	return json.Marshal(s)
+	return json.Marshal(e.String())
 }
 
 // RequestType represents the the supported requests.
@@ -302,6 +339,11 @@ const (
 	ComposeAuthenticationView
 	// UILayoutCapabilities is an ui layout capabilities RequestType.
 	UILayoutCapabilities
+	// ChangeStage is a change stage RequestType.
+	ChangeStage
+
+	// lastRequestType is the last RequestType value, so keep it as such.
+	lastRequestType
 )
 
 // UnmarshalJSON unmarshals a RequestType from json bytes.
@@ -310,33 +352,108 @@ func (r *RequestType) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	switch s {
-	case "updateBrokersList":
-		*r = UpdateBrokersList
-	case "composeAuthenticationView":
-		*r = ComposeAuthenticationView
-	case "uiLayoutCapabilities":
-		*r = UILayoutCapabilities
-	default:
-		*r = UnknownRequest
+
+	for i := RequestType(0); i < lastRequestType; i++ {
+		if i.String() == s {
+			*r = i
+			return nil
+		}
 	}
 
+	*r = UnknownRequest
 	return nil
+}
+
+func (r RequestType) String() string {
+	switch r {
+	case UpdateBrokersList:
+		return "updateBrokersList"
+	case ComposeAuthenticationView:
+		return "composeAuthenticationView"
+	case UILayoutCapabilities:
+		return "uiLayoutCapabilities"
+	case ChangeStage:
+		return "changeStage"
+	default:
+		return "unknownRequest"
+	}
 }
 
 // MarshalJSON marshals RequestType to JSON bytes.
 func (r RequestType) MarshalJSON() ([]byte, error) {
-	var s string
-	switch r {
-	case UpdateBrokersList:
-		s = "updateBrokersList"
-	case ComposeAuthenticationView:
-		s = "composeAuthenticationView"
-	case UILayoutCapabilities:
-		s = "uiLayoutCapabilities"
-	default:
-		s = "unknownRequest"
-	}
+	return json.Marshal(r.String())
+}
 
-	return json.Marshal(s)
+// ItemNotFound defines is the error when an item is not found in an object.
+type ItemNotFound struct {
+	error
+}
+
+// Is ensures that we check on error type more on its message
+func (ItemNotFound) Is(target error) bool { return target == ItemNotFound{} }
+
+// // ParseObject allows to parse an object value into a parsed structure.
+// func ParseObject[T any](o Object, item string) (*T, error) {
+// 	parsed := new(T)
+// 	if err := ParseObjectTo(o, item, parsed); err != nil {
+// 		return nil, err
+// 	}
+// 	return parsed, nil
+// }
+
+// // ParseObjectTo allows to parse an object value into a parsed structure.
+// func ParseObjectTo[T any](o Object, item string, dest *T) error {
+// 	value, ok := o[item]
+// 	if !ok {
+// 		return ItemNotFound{fmt.Errorf("no item '%s' found", item)}
+// 	}
+// 	// Using mapstructure would be nicer here, but it would require also do
+// 	// more mappings that we already did for JSON, so let's just do the
+// 	// conversion back and forth twice. It's not too bad.
+// 	bytes, err := json.Marshal(value)
+// 	if err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	if err := json.Unmarshal(bytes, dest); err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	return nil
+// }
+
+// ParseRawObject allows to parse an object value into a parsed structure.
+func ParseRawObject[T any](o RawObject, item string) (*T, error) {
+	parsed := new(T)
+	if err := ParseRawObjectTo(o, item, parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// ParseRawObjectTo allows to parse an object value into a parsed structure.
+func ParseRawObjectTo[T any](o RawObject, item string, dest *T) error {
+	value, ok := o[item]
+	if !ok {
+		return ItemNotFound{fmt.Errorf("no item '%s' found", item)}
+	}
+	if err := json.Unmarshal(value, dest); err != nil {
+		return fmt.Errorf("parsing raw object failed: %w", err)
+	}
+	return nil
+}
+
+// ParseRawJSON allows to parse a json.RawMessage into a parsed structure.
+func ParseRawJSON[T any](r json.RawMessage) (*T, error) {
+	parsed := new(T)
+	if err := ParseRawJSONTo(r, parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// ParseRawJSONTo allows to parse a json.RawMessage into a parsed structure.
+func ParseRawJSONTo[T any](r json.RawMessage, dest *T) error {
+	if err := json.Unmarshal(r, dest); err != nil {
+		return fmt.Errorf("parsing raw JSON failed: %w", err)
+	}
+	return nil
 }
