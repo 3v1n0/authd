@@ -404,3 +404,32 @@ func ParseRawJSONTo[T any](r json.RawMessage, dest *T) error {
 	}
 	return nil
 }
+
+// ObjectKeyNotFound defines is the error when an item is not found in an object.
+type ObjectKeyNotFound struct {
+	error
+}
+
+// Is ensures that we check on error type more on its message
+func (ObjectKeyNotFound) Is(target error) bool { return target == ObjectKeyNotFound{} }
+
+// ParseRawObject allows to parse an object value into a parsed structure.
+func ParseRawObject[T any](o RawObject, item string) (*T, error) {
+	parsed := new(T)
+	if err := ParseRawObjectTo(o, item, parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// ParseRawObjectTo allows to parse an object value into a parsed structure.
+func ParseRawObjectTo[T any](o RawObject, item string, dest *T) error {
+	value, ok := o[item]
+	if !ok {
+		return ObjectKeyNotFound{fmt.Errorf("no item '%s' found", item)}
+	}
+	if err := json.Unmarshal(value, dest); err != nil {
+		return fmt.Errorf("parsing raw object failed: %w", err)
+	}
+	return nil
+}
