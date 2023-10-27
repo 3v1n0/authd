@@ -500,6 +500,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 
 type rawValuesParser interface {
 	rawJSONToAny(t *testing.T, msg json.RawMessage) (any, error)
+	rawObjectItemToAny(t *testing.T, o RawObject, item string) (any, error)
 }
 
 type typedParser[T any] struct{}
@@ -507,6 +508,16 @@ type typedParser[T any] struct{}
 func (s *typedParser[T]) rawJSONToAny(t *testing.T, msg json.RawMessage) (any, error) {
 	t.Helper()
 	val, err := ParseRawJSON[T](msg)
+	if err != nil {
+		return nil, err
+	}
+	require.NotNil(t, val)
+	return *val, err
+}
+
+func (s *typedParser[T]) rawObjectItemToAny(t *testing.T, o RawObject, item string) (any, error) {
+	t.Helper()
+	val, err := ParseRawObject[T](o, item)
 	if err != nil {
 		return nil, err
 	}
@@ -639,6 +650,150 @@ func TestParseRawJSONFailures(t *testing.T) {
 			parsedValue, err := tc.specificParser.rawJSONToAny(t, rawValue)
 			require.Error(t, err)
 			require.Nil(t, parsedValue)
+		})
+	}
+}
+
+func TestParseRawObject(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		obj             Object
+		specificParsers map[string]rawValuesParser
+	}{
+		"nil": {},
+		"empty": {
+			obj: Object{},
+		},
+
+		"with simple values": {
+			obj: Object{
+				"nil":     nil,
+				"bool":    true,
+				"numeric": 123.45,
+				"stringy": "yeah!",
+			},
+		},
+
+		"with complex values": {
+			obj: Object{
+				"object": Object{"foo": "bar"},
+				"response": Data{
+					Type: Response,
+					ResponseData: valuesToRawJSON(t, nil, true, "foo", 134.45,
+						[]string{"a", "b", "c"}),
+				},
+				"event": Data{
+					Type:      Event,
+					EventType: AuthEvent,
+					EventData: objectToRaw(t, map[string]any{"uno": 1}),
+				},
+			},
+
+			specificParsers: map[string]rawValuesParser{
+				"object":   &typedParser[Object]{},
+				"response": &typedParser[Data]{},
+				"event":    &typedParser[Data]{},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rawObject := objectToRaw(t, tc.obj)
+			require.Len(t, rawObject, len(tc.obj))
+
+			for key, expected := range tc.obj {
+				if parser, ok := tc.specificParsers[key]; ok {
+					value, err := parser.rawObjectItemToAny(t, rawObject, key)
+					require.NoError(t, err)
+					require.Equal(t, expected, value)
+					continue
+				}
+
+				value, err := ParseRawObject[any](rawObject, key)
+				require.NoError(t, err)
+				require.NotNil(t, value)
+				require.Equal(t, expected, *value)
+			}
+
+			if _, ok := tc.obj[name]; ok {
+				return
+			}
+
+			value, err := ParseRawObject[any](rawObject, name)
+			require.ErrorIs(t, err, ObjectKeyNotFound{})
+			require.Nil(t, value)
+		})
+	}
+}
+
+func TestParseRawObjectFailures(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		obj             Object
+		specificParsers map[string]rawValuesParser
+	}{
+		"with simple values": {
+			obj: Object{
+				"bool":    true,
+				"numeric": -123.45,
+				"stringy": "yeah!",
+			},
+
+			specificParsers: map[string]rawValuesParser{
+				"bool":    &typedParser[float64]{},
+				"numeric": &typedParser[HelloData]{},
+				"stringy": &typedParser[bool]{},
+			},
+		},
+
+		"with complex values": {
+			obj: Object{
+				"object": Object{"foo": "bar"},
+				"response": Data{
+					Type: Response,
+					ResponseData: valuesToRawJSON(t, nil, true, "foo", 134.45,
+						[]string{"a", "b", "c"}),
+				},
+				"event": Data{
+					Type:      Event,
+					EventType: AuthEvent,
+					EventData: objectToRaw(t, map[string]any{"uno": 1}),
+				},
+			},
+
+			specificParsers: map[string]rawValuesParser{
+				"object":   &typedParser[int]{},
+				"response": &typedParser[bool]{},
+				"event":    &typedParser[string]{},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rawObject := objectToRaw(t, tc.obj)
+			require.Len(t, rawObject, len(tc.obj))
+
+			for key := range tc.obj {
+				parser, ok := tc.specificParsers[key]
+				require.Truef(t, ok, "parser not found for %s", key)
+				require.NotNilf(t, parser, "parser not found for %s", key)
+
+				value, err := parser.rawObjectItemToAny(t, rawObject, key)
+				require.ErrorContainsf(t, err, "parsing raw object failed",
+					"error for %s", key)
+				require.NotErrorIsf(t, err, ObjectKeyNotFound{},
+					"error for %s", key)
+				require.Nilf(t, value, "value for %s", key)
+			}
 		})
 	}
 }
