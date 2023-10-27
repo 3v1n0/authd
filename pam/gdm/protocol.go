@@ -18,19 +18,35 @@ const (
 type DataType int
 
 // Object is the type for any generic object data value.
-type Object = map[string]any
+type Object map[string]any
+
+// ToRawMessage generates a gdm.RawObject from an Object.
+func (o *Object) ToRawMessage() (RawObject, error) {
+	rawObj := RawObject{}
+	for key, value := range *o {
+		rawMsg, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		rawObj[key] = rawMsg
+	}
+	return rawObj, nil
+}
+
+// RawObject is the type for any generic raw object data value.
+type RawObject = map[string]json.RawMessage
 
 // Data is the serializable structure that can be passed to Gdm and that
 // we expect gdm to return us.
 type Data struct {
-	Type             DataType    `json:"type"`
-	HelloData        *HelloData  `json:"helloData,omitempty"`
-	RequestType      RequestType `json:"requestType,omitempty"`
-	RequestData      Object      `json:"requestData,omitempty"`
-	ResponseData     []any       `json:"responseData,omitempty"`
-	PollResponseData []Data      `json:"pollResponseData,omitempty"`
-	EventType        EventType   `json:"eventType,omitempty"`
-	EventData        Object      `json:"eventData,omitempty"`
+	Type             DataType          `json:"type"`
+	HelloData        *HelloData        `json:"helloData,omitempty"`
+	RequestType      RequestType       `json:"requestType,omitempty"`
+	RequestData      Object            `json:"requestData,omitempty"`
+	ResponseData     []json.RawMessage `json:"responseData,omitempty"`
+	PollResponseData []Data            `json:"pollResponseData,omitempty"`
+	EventType        EventType         `json:"eventType,omitempty"`
+	EventData        RawObject         `json:"eventData,omitempty"`
 }
 
 // NewDataFromJSON unmarshals data from json bytes.

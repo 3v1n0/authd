@@ -8,6 +8,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func objectToRaw(t *testing.T, obj Object) RawObject {
+	t.Helper()
+	raw, err := obj.ToRawMessage()
+	require.NoError(t, err)
+	return raw
+}
+
+func valueToRawJSON[T any](t *testing.T, value T) json.RawMessage {
+	t.Helper()
+	bytes, err := json.Marshal(value)
+	require.NoError(t, err)
+	return bytes
+}
+
+func valuesToRawJSON(t *testing.T, values ...any) []json.RawMessage {
+	t.Helper()
+	rawValues := make([]json.RawMessage, len(values))
+	for i, value := range values {
+		rawValues[i] = valueToRawJSON(t, value)
+	}
+	return rawValues
+}
+
 func TestGdmStructsMarshal(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {
@@ -30,7 +53,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Event packet": {
 			gdmData: Data{
 				Type: Event, EventType: BrokerSelected,
-				EventData: Object{"name": "foo"},
+				EventData: objectToRaw(t, Object{"name": "foo"}),
 			},
 			wantJSON: `{"type":"event","eventType":"brokerSelected",` +
 				`"eventData":{"name":"foo"}}`,
@@ -39,7 +62,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Event packet with capital name": {
 			gdmData: Data{
 				Type: Event, EventType: UILayoutReceived,
-				EventData: Object{"name": "bar"},
+				EventData: objectToRaw(t, Object{"name": "bar"}),
 			},
 			wantJSON: `{"type":"event","eventType":"uiLayoutReceived",` +
 				`"eventData":{"name":"bar"}}`,
@@ -72,7 +95,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Response packet": {
 			gdmData: Data{
 				Type:         Response,
-				ResponseData: []any{Object{"name": "foo"}, Object{"name": "bar"}},
+				ResponseData: valuesToRawJSON(t, Object{"name": "foo"}, Object{"name": "bar"}),
 			},
 			wantJSON: `{"type":"response","responseData":[{"name":"foo"},{"name":"bar"}]}`,
 		},
@@ -80,7 +103,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Response packet with empty data": {
 			gdmData: Data{
 				Type:         Response,
-				ResponseData: []any{},
+				ResponseData: []json.RawMessage{},
 			},
 			wantJSON:           `{"type":"response"}`,
 			ignoreReconversion: true,
@@ -89,9 +112,8 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Response packet with mixed data": {
 			gdmData: Data{
 				Type: Response,
-				ResponseData: []any{
-					Object{"name": "foo"}, true, "string", float64(12345), 0.55,
-				},
+				ResponseData: valuesToRawJSON(t,
+					Object{"name": "foo"}, true, "string", 12345, 0.55),
 			},
 			wantJSON: `{"type":"response","responseData":[{"name":"foo"},true,"string",12345,0.55]}`,
 		},
@@ -108,7 +130,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 					{
 						Type:      Event,
 						EventType: BrokerSelected,
-						EventData: Object{"foo": "bar"},
+						EventData: objectToRaw(t, Object{"foo": "bar"}),
 					},
 				},
 			},
@@ -153,14 +175,14 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Error event packet with unexpected data": {
 			gdmData: Data{
 				Type: Event, EventType: BrokerSelected,
-				EventData:   Object{"name": "foo"},
+				EventData:   objectToRaw(t, Object{"name": "foo"}),
 				RequestData: Object{"foo": "bar"},
 			},
 			wantError: "field RequestData should not be defined",
 		},
 
 		"Error event ack packet with unexpected data": {
-			gdmData:   Data{Type: EventAck, EventData: Object{}},
+			gdmData:   Data{Type: EventAck, EventData: RawObject{}},
 			wantError: "field EventData should not be defined",
 		},
 
@@ -178,7 +200,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 			gdmData: Data{
 				Type: Request, RequestType: UILayoutCapabilities,
 				RequestData: Object{"name": "foo"},
-				EventData:   Object{"foo": "bar"},
+				EventData:   objectToRaw(t, Object{"foo": "bar"}),
 			},
 			wantError: "field EventData should not be defined",
 		},
@@ -191,8 +213,8 @@ func TestGdmStructsMarshal(t *testing.T) {
 		"Error response packet with unexpected data": {
 			gdmData: Data{
 				Type:         Response,
-				ResponseData: []any{Object{"name": "foo"}},
-				EventData:    Object{"foo": "bar"},
+				ResponseData: valuesToRawJSON(t, []any{Object{"name": "foo"}}),
+				EventData:    objectToRaw(t, Object{"foo": "bar"}),
 			},
 			wantError: "field EventData should not be defined",
 		},
@@ -209,11 +231,11 @@ func TestGdmStructsMarshal(t *testing.T) {
 					{
 						Type:      Event,
 						EventType: BrokerSelected,
-						EventData: Object{"foo": "bar"},
+						EventData: objectToRaw(t, Object{"foo": "bar"}),
 					},
 					{
 						Type:      Event,
-						EventData: Object{"broken": "yes"},
+						EventData: objectToRaw(t, Object{"broken": "yes"}),
 					},
 				},
 			},
@@ -227,7 +249,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 					{
 						Type:      Event,
 						EventType: BrokerSelected,
-						EventData: Object{"foo": "bar"},
+						EventData: objectToRaw(t, Object{"foo": "bar"}),
 					},
 					{
 						Type: Poll,
@@ -241,7 +263,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 			gdmData: Data{
 				Type:             PollResponse,
 				PollResponseData: []Data{},
-				EventData:        Object{"foo": "bar"},
+				EventData:        objectToRaw(t, Object{"foo": "bar"}),
 			},
 			wantError: "field EventData should not be defined",
 		},
@@ -293,7 +315,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				`"eventData":{"name":"foo"}}`,
 			wantData: Data{
 				Type: Event, EventType: BrokerSelected,
-				EventData: Object{"name": "foo"},
+				EventData: objectToRaw(t, Object{"name": "foo"}),
 			},
 		},
 
@@ -302,7 +324,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				`"eventData":{"name":"bar"}}`,
 			wantData: Data{
 				Type: Event, EventType: UILayoutReceived,
-				EventData: Object{"name": "bar"},
+				EventData: objectToRaw(t, Object{"name": "bar"}),
 			},
 		},
 
@@ -329,7 +351,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 			JSON: `{"type":"response","responseData":[{"name":"foo"},{"name":"bar"}]}`,
 			wantData: Data{
 				Type:         Response,
-				ResponseData: []any{Object{"name": "foo"}, Object{"name": "bar"}},
+				ResponseData: valuesToRawJSON(t, Object{"name": "foo"}, Object{"name": "bar"}),
 			},
 		},
 
@@ -337,7 +359,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 			JSON: `{"type":"response","responseData":[]}`,
 			wantData: Data{
 				Type:         Response,
-				ResponseData: []any{},
+				ResponseData: valuesToRawJSON(t),
 			},
 			ignoreReconversion: true,
 		},
@@ -346,9 +368,9 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 			JSON: `{"type":"response","responseData":[{"name":"foo"},true,"string",12345,0.55]}`,
 			wantData: Data{
 				Type: Response,
-				ResponseData: []any{
-					Object{"name": "foo"}, true, "string", float64(12345), 0.55,
-				},
+				ResponseData: valuesToRawJSON(t,
+					Object{"name": "foo"}, true, "string", 12345, 0.55,
+				),
 			},
 		},
 
@@ -366,7 +388,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 					{
 						Type:      Event,
 						EventType: BrokerSelected,
-						EventData: Object{"foo": "bar"},
+						EventData: objectToRaw(t, Object{"foo": "bar"}),
 					},
 				},
 			},
@@ -378,7 +400,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				Type:             PollResponse,
 				PollResponseData: nil,
 			},
-			ignoreReconversion: true,
 		},
 
 		// Error cases
