@@ -13,23 +13,42 @@ const (
 	ProtoVersion = int(1)
 )
 
+// FIXME: use this
+// import _ "golang.org/x/tools/cmd/stringer"
+
 // DataType represents the type of a communication event.
 type DataType int
 
 // Object is the type for any generic object data value.
-type Object = map[string]any
+type Object map[string]any
+
+// ToRawMessage generates a gdm.RawObject from an Object.
+func (o *Object) ToRawMessage() (RawObject, error) {
+	rawObj := RawObject{}
+	for key, value := range *o {
+		rawMsg, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		rawObj[key] = rawMsg
+	}
+	return rawObj, nil
+}
+
+// RawObject is the type for any generic raw object data value.
+type RawObject = map[string]json.RawMessage
 
 // Data is the serializable structure that can be passed to Gdm and that
 // we expect gdm to return us.
 type Data struct {
-	Type             DataType    `json:"type"`
-	HelloData        *HelloData  `json:"helloData,omitempty"`
-	RequestType      RequestType `json:"requestType,omitempty"`
-	RequestData      Object      `json:"requestData,omitempty"`
-	ResponseData     []Object    `json:"responseData,omitempty"`
-	PollResponseData []Data      `json:"pollResponseData,omitempty"`
-	EventType        EventType   `json:"eventType,omitempty"`
-	EventData        Object      `json:"eventData,omitempty"`
+	Type             DataType          `json:"type"`
+	HelloData        *HelloData        `json:"helloData,omitempty"`
+	RequestType      RequestType       `json:"requestType,omitempty"`
+	RequestData      Object            `json:"requestData,omitempty"`
+	ResponseData     []json.RawMessage `json:"responseData,omitempty"`
+	PollResponseData []Data            `json:"pollResponseData,omitempty"`
+	EventType        EventType         `json:"eventType,omitempty"`
+	EventData        RawObject         `json:"eventData,omitempty"`
 }
 
 // NewDataFromJSON unmarshals data from json bytes.
@@ -372,4 +391,76 @@ func (r RequestType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.String())
 }
 
+// ObjectKeyNotFound defines is the error when an item is not found in an object.
+type ObjectKeyNotFound struct {
+	error
+}
+
+// Is ensures that we check on error type more on its message
+func (ObjectKeyNotFound) Is(target error) bool { return target == ObjectKeyNotFound{} }
+
+// // ParseObject allows to parse an object value into a parsed structure.
+// func ParseObject[T any](o Object, item string) (*T, error) {
+// 	parsed := new(T)
+// 	if err := ParseObjectTo(o, item, parsed); err != nil {
+// 		return nil, err
+// 	}
+// 	return parsed, nil
+// }
+
+// // ParseObjectTo allows to parse an object value into a parsed structure.
+// func ParseObjectTo[T any](o Object, item string, dest *T) error {
+// 	value, ok := o[item]
+// 	if !ok {
+// 		return ItemNotFound{fmt.Errorf("no item '%s' found", item)}
+// 	}
+// 	// Using mapstructure would be nicer here, but it would require also do
+// 	// more mappings that we already did for JSON, so let's just do the
+// 	// conversion back and forth twice. It's not too bad.
+// 	bytes, err := json.Marshal(value)
+// 	if err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	if err := json.Unmarshal(bytes, dest); err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	return nil
+// }
+
+// ParseRawJSON allows to parse a json.RawMessage into a parsed structure.
+func ParseRawJSON[T any](r json.RawMessage) (*T, error) {
+	parsed := new(T)
+	if err := ParseRawJSONTo(r, parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// ParseRawJSONTo allows to parse a json.RawMessage into a parsed structure.
+func ParseRawJSONTo[T any](r json.RawMessage, dest *T) error {
+	if err := json.Unmarshal(r, dest); err != nil {
+		return fmt.Errorf("parsing raw JSON failed: %w", err)
+	}
+	return nil
+}
+
+// ParseRawObject allows to parse an object value into a parsed structure.
+func ParseRawObject[T any](o RawObject, item string) (*T, error) {
+	parsed := new(T)
+	if err := ParseRawObjectTo(o, item, parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// ParseRawObjectTo allows to parse an object value into a parsed structure.
+func ParseRawObjectTo[T any](o RawObject, item string, dest *T) error {
+	value, ok := o[item]
+	if !ok {
+		return ObjectKeyNotFound{fmt.Errorf("no item '%s' found", item)}
+	}
+	if err := json.Unmarshal(value, dest); err != nil {
+		return fmt.Errorf("parsing raw object failed: %w", err)
+	}
+	return nil
 }
