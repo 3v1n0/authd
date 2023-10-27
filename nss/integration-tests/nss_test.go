@@ -88,7 +88,7 @@ func TestIntegration(t *testing.T) {
 			var daemonStopped chan struct{}
 			if !tc.noDaemon && !tc.noCustomSocket {
 				ctx, cancel := context.WithCancel(context.Background())
-				socketPath, daemonStopped = runDaemon(ctx, t, tc.cacheDB)
+				socketPath, daemonStopped = testutils.RunDaemon(ctx, t, daemonPath, testutils.WithCacheDB(tc.cacheDB))
 				t.Cleanup(func() {
 					cancel()
 					<-daemonStopped
@@ -124,7 +124,7 @@ func TestMain(m *testing.M) {
 	testutils.InstallUpdateFlag()
 	flag.Parse()
 
-	execPath, cleanup, err := buildDaemon()
+	execPath, cleanup, err := testutils.BuildDaemon(false)
 	if err != nil {
 		log.Printf("Setup: failed to build daemon: %v", err)
 		os.Exit(1)
