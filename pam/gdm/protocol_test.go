@@ -497,3 +497,148 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 		})
 	}
 }
+
+type rawValuesParser interface {
+	rawJSONToAny(t *testing.T, msg json.RawMessage) (any, error)
+}
+
+type typedParser[T any] struct{}
+
+func (s *typedParser[T]) rawJSONToAny(t *testing.T, msg json.RawMessage) (any, error) {
+	t.Helper()
+	val, err := ParseRawJSON[T](msg)
+	if err != nil {
+		return nil, err
+	}
+	require.NotNil(t, val)
+	return *val, err
+}
+
+func TestParseRawJSON(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		value          any
+		specificParser rawValuesParser
+	}{
+		"nil": {
+			value: nil,
+		},
+
+		"simple values": {
+			value: []any{nil, true, 123.45, "yeah!"},
+		},
+
+		"empty object": {
+			value:          Object{},
+			specificParser: &typedParser[Object]{},
+		},
+
+		"filled object": {
+			value: Object{
+				"nil":     nil,
+				"bool":    true,
+				"numeric": 123.45,
+				"stringy": "yeah!",
+			},
+			specificParser: &typedParser[Object]{},
+		},
+
+		"event": {
+			value: Data{
+				Type:      Event,
+				EventType: AuthEvent,
+				EventData: objectToRaw(t, map[string]any{"uno": 1}),
+			},
+			specificParser: &typedParser[Data]{},
+		},
+
+		"response data": {
+			value: Data{
+				Type: Response,
+				ResponseData: valuesToRawJSON(t, nil, true, "foo", 134.45,
+					[]string{"a", "b", "c"}),
+			},
+			specificParser: &typedParser[Data]{},
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rawValue := valueToRawJSON(t, tc.value)
+			if tc.specificParser != nil {
+				parsedValue, err := tc.specificParser.rawJSONToAny(t, rawValue)
+				require.NoError(t, err)
+				require.Equal(t, tc.value, parsedValue)
+				return
+			}
+
+			value, err := ParseRawJSON[any](rawValue)
+			require.NoError(t, err)
+			require.NotNil(t, value)
+			require.Equal(t, tc.value, *value)
+		})
+	}
+}
+
+func TestParseRawJSONFailures(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		value          any
+		specificParser rawValuesParser
+	}{
+		"simple values": {
+			value:          []any{nil, true, 123.45, "yeah!"},
+			specificParser: &typedParser[[]int]{},
+		},
+
+		"empty object": {
+			value:          Object{},
+			specificParser: &typedParser[string]{},
+		},
+
+		"filled object": {
+			value: Object{
+				"nil":     nil,
+				"bool":    true,
+				"numeric": 123.45,
+				"stringy": "yeah!",
+			},
+			specificParser: &typedParser[[]string]{},
+		},
+
+		"event": {
+			value: Data{
+				Type:      Event,
+				EventType: AuthEvent,
+				EventData: objectToRaw(t, map[string]any{"uno": 1}),
+			},
+			specificParser: &typedParser[int]{},
+		},
+
+		"response data": {
+			value: Data{
+				Type: Response,
+				ResponseData: valuesToRawJSON(t, nil, true, "foo", 134.45,
+					[]string{"a", "b", "c"}),
+			},
+			specificParser: &typedParser[float32]{},
+		},
+	}
+
+	for name, tc := range tests {
+		tc := tc
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			rawValue := valueToRawJSON(t, tc.value)
+			parsedValue, err := tc.specificParser.rawJSONToAny(t, rawValue)
+			require.Error(t, err)
+			require.Nil(t, parsedValue)
+		})
+	}
+}
