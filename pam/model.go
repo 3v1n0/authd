@@ -19,7 +19,7 @@ type stage int
 
 const (
 	// stageUserSelection is to select a user.
-	stageUserSelection stage = iota
+	stageUserSelection stage = iota + 1
 	// stageUserSelection is to select a broker.
 	stageBrokerSelection
 	// stageUserSelection is to select an authentication mode.
@@ -261,39 +261,39 @@ func (m *model) currentStage() stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *model) changeStage(s stage) tea.Cmd {
+	if m.currentStage() == s {
+		return nil
+	}
+
+	if m.brokerSelectionModel.Focused() {
+		m.brokerSelectionModel.Blur()
+	}
+	if m.authModeSelectionModel.Focused() {
+		m.authModeSelectionModel.Blur()
+	}
+	if m.authenticationModel.Focused() {
+		m.authenticationModel.Blur()
+	}
+	if m.userSelectionModel.Model.Focused() {
+		m.userSelectionModel.Blur()
+	}
+
 	switch s {
 	case stageUserSelection:
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		// The session should be ended when going back to previous state, but we don’t quit the stage immediately
 		// and so, we should always ensure we cancel previous session.
 		return tea.Sequence(endSession(m.client, m.currentSession), m.userSelectionModel.Focus())
 
 	case stageBrokerSelection:
-		m.userSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		m.authModeSelectionModel.Reset()
-
 		return tea.Sequence(endSession(m.client, m.currentSession), m.brokerSelectionModel.Focus())
 
 	case stageAuthModeSelection:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		m.authenticationModel.Reset()
 
 		return m.authModeSelectionModel.Focus()
 
 	case stageChallenge:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-
 		return m.authenticationModel.Focus()
 	}
 
