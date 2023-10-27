@@ -387,3 +387,20 @@ func (r RequestType) String() string {
 func (r RequestType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.String())
 }
+
+// ParseRawJSON allows to parse a json.RawMessage into a parsed structure.
+func ParseRawJSON[T any](r json.RawMessage) (*T, error) {
+	parsed := new(T)
+	if err := ParseRawJSONTo(r, parsed); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// ParseRawJSONTo allows to parse a json.RawMessage into a parsed structure.
+func ParseRawJSONTo[T any](r json.RawMessage, dest *T) error {
+	if err := json.Unmarshal(r, dest); err != nil {
+		return fmt.Errorf("parsing raw JSON failed: %w", err)
+	}
+	return nil
+}
