@@ -250,39 +250,35 @@ func (m *model) currentStage() adapter.Stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *model) changeStage(s adapter.Stage) tea.Cmd {
+	if m.currentStage() != s {
+		switch m.currentStage() {
+		case adapter.Stage_userSelection:
+			m.userSelectionModel.Blur()
+		case adapter.Stage_brokerSelection:
+			m.brokerSelectionModel.Blur()
+		case adapter.Stage_authModeSelection:
+			m.authModeSelectionModel.Blur()
+		case adapter.Stage_challenge:
+			m.authenticationModel.Blur()
+		}
+	}
+
 	switch s {
 	case adapter.Stage_userSelection:
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		// The session should be ended when going back to previous state, but we don’t quit the stage immediately
 		// and so, we should always ensure we cancel previous session.
 		return tea.Sequence(endSession(m.client, m.currentSession), m.userSelectionModel.Focus())
 
 	case adapter.Stage_brokerSelection:
-		m.userSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		m.authModeSelectionModel.Reset()
-
 		return tea.Sequence(endSession(m.client, m.currentSession), m.brokerSelectionModel.Focus())
 
 	case adapter.Stage_authModeSelection:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authenticationModel.Blur()
-
 		m.authenticationModel.Reset()
 
 		return m.authModeSelectionModel.Focus()
 
 	case adapter.Stage_challenge:
-		m.userSelectionModel.Blur()
-		m.brokerSelectionModel.Blur()
-		m.authModeSelectionModel.Blur()
-
 		return m.authenticationModel.Focus()
 	}
 
