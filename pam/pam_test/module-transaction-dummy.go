@@ -234,6 +234,7 @@ func (m *ModuleTransactionDummy) StartConvMulti(requests []pam.ConvRequest) (
 					pam.ConvErr)
 			}
 			binReq, _ := req.(*pam.BinaryConvRequest)
+			fmt.Println("Got request with ptr", binReq.Pointer())
 			reply, err := handler.RespondPAMBinary(binReq.Pointer())
 			if err != nil {
 				return nil, err
@@ -308,5 +309,5 @@ func (b BinaryResponseDummy) Decode(decoder pam.BinaryDecoder) (
 	if decoder == nil {
 		return nil, errors.New("nil decoder provided")
 	}
-	return decoder(b.ptr)
+	return decoder(b.Data())
 }
