@@ -13,6 +13,9 @@ const (
 	ProtoVersion = int(1)
 )
 
+// FIXME: use this
+// import _ "golang.org/x/tools/cmd/stringer"
+
 // DataType represents the type of a communication event.
 type DataType int
 
@@ -387,6 +390,34 @@ func (r RequestType) String() string {
 func (r RequestType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.String())
 }
+
+// // ParseObject allows to parse an object value into a parsed structure.
+// func ParseObject[T any](o Object, item string) (*T, error) {
+// 	parsed := new(T)
+// 	if err := ParseObjectTo(o, item, parsed); err != nil {
+// 		return nil, err
+// 	}
+// 	return parsed, nil
+// }
+
+// // ParseObjectTo allows to parse an object value into a parsed structure.
+// func ParseObjectTo[T any](o Object, item string, dest *T) error {
+// 	value, ok := o[item]
+// 	if !ok {
+// 		return ItemNotFound{fmt.Errorf("no item '%s' found", item)}
+// 	}
+// 	// Using mapstructure would be nicer here, but it would require also do
+// 	// more mappings that we already did for JSON, so let's just do the
+// 	// conversion back and forth twice. It's not too bad.
+// 	bytes, err := json.Marshal(value)
+// 	if err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	if err := json.Unmarshal(bytes, dest); err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	return nil
+// }
 
 // ParseRawJSON allows to parse a json.RawMessage into a parsed structure.
 func ParseRawJSON[T any](r json.RawMessage) (*T, error) {

@@ -61,7 +61,7 @@ func New() *App {
 				Paths: systemPaths{
 					BrokersConf: consts.DefaultBrokersConfPath,
 					Cache:       consts.DefaultCacheDir,
-					Socket:      "",
+					Socket:      consts.DefaultSocketPath,
 				},
 			}
 
