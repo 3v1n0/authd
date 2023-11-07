@@ -31,7 +31,7 @@ func NewModuleTransactionDummy(convHandler pam.ConversationHandler) pam.ModuleTr
 
 // InvokeHandler is called by the C code to invoke the proper handler.
 func (m *ModuleTransactionDummy) InvokeHandler(handler pam.ModuleHandlerFunc,
-	flags pam.Flags, args []string) (pam.Status, error) {
+	flags pam.Flags, args []string) (pam.RetError, error) {
 	return pam.Abort, pam.Abort
 }
 
@@ -342,5 +342,5 @@ func (b BinaryResponseDummy) Decode(decoder pam.BinaryDecoder) (
 	if decoder == nil {
 		return nil, errors.New("nil decoder provided")
 	}
-	return decoder(b.ptr)
+	return decoder(b.Data())
 }
