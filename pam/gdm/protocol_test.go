@@ -7,12 +7,54 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// func objectToRaw(obj Object) RawObject {
+// 	rawObj := RawObject{}
+// 	for key, value := range obj {
+// 		bytes, err := json.Marshal(value)
+// 		if err != nil {
+// 			panic(err)
+// 		}
+// 		rawObj[key] = json.RawMessage(bytes)
+// 	}
+// 	return rawObj
+// }
+
+// func valuesToRawJSON(rawObjects []Object) []RawObject {
+// 	objects := make([]RawObject, len(rawObjects))
+// 	for i, obj := range rawObjects {
+// 		objects[i] = objectToRaw(obj)
+// 	}
+// 	return objects
+// }
+
 func objectToRaw(t *testing.T, obj Object) RawObject {
 	t.Helper()
 	raw, err := obj.ToRawMessage()
 	require.NoError(t, err)
 	return raw
 }
+
+// func valuesToRawJSON[T any](t *testing.T, values []T) []json.RawMessage {
+// 	t.Helper()
+// 	rawValues := make([]json.RawMessage, len(values))
+// 	for i, value := range values {
+// 		bytes, err := json.Marshal(value)
+// 		require.NoError(t, err)
+// 		rawValues[i] = bytes
+// 	}
+// 	return rawValues
+// }
+
+// func valuesToRawJSON[T any](t *testing.T, values []T) []json.RawMessage {
+// 	t.Helper()
+// 	rawValues := make([]json.RawMessage, len(values))
+// 	for i, value := range values {
+// 		bytes, err := json.Marshal(value)
+// 		require.NoError(t, err)
+// 		rawValues[i] = bytes
+// 	}
+// 	return rawValues
+// }
 
 func valueToRawJSON[T any](t *testing.T, value T) json.RawMessage {
 	t.Helper()

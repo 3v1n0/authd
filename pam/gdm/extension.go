@@ -7,7 +7,6 @@ import "C"
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"unsafe"
 
@@ -99,6 +98,34 @@ func (msg *stringProtoMessage) encode() pam.BinaryPointer {
 	return pam.BinaryPointer(msg)
 }
 
+// func (msg *stringProtoMessage) toBytes() []byte {
+// 	return C.GoBytes(unsafe.Pointer(msg), (C.int)(unsafe.Sizeof(*msg)))
+// }
+
+// func (msg *stringProtoMessage) toPointer() pam.BinaryPointer {
+// 	return pam.BinaryPointer(C.CBytes(msg.toBytes()))
+// }
+
+//	func stringProtoMessagePointerFinalizer(ptr pam.BinaryPointer) {
+//		if ptr == nil {
+//			return
+//		}
+//		msg := (*stringProtoMessage)(ptr)
+//		C.free(unsafe.Pointer(msg.value))
+//	}
+// func stringProtoMessagePointerFinalizer(ptr pam.BinaryPointer) {
+// 	(*stringProtoMessage)(ptr).release()
+// }
+
+// func stringProtoMessageReplyPointerFinalizer(ptr pam.BinaryPointer) {
+// 	if ptr == nil {
+// 		return
+// 	}
+// 	msg := (*stringProtoMessage)(ptr)
+// 	C.free(unsafe.Pointer(msg.value))
+// 	C.free(unsafe.Pointer(msg))
+// }
+
 // NewBinaryStringProtoRequest returns a new pam.BinaryConvRequest from the
 // provided data.
 func NewBinaryStringProtoRequest(data []byte) *pam.BinaryConvRequest {
@@ -108,12 +135,14 @@ func NewBinaryStringProtoRequest(data []byte) *pam.BinaryConvRequest {
 		func(ptr pam.BinaryPointer) { (*stringProtoMessage)(ptr).release() })
 }
 
-func decodeResponse(response pam.BinaryPointer) ([]byte, error) {
+func decodeStringProtoMessage(response pam.BinaryPointer) ([]byte, error) {
 	reply := (*stringProtoMessage)(response)
 
-	if C.GoString((*C.char)(unsafe.Pointer(&reply.protocol_name))) != StringProtoName ||
+	protoName := C.GoString((*C.char)(unsafe.Pointer(&reply.protocol_name)))
+	if protoName != StringProtoName ||
 		uint(reply.version) != StringProtoVersion {
-		return nil, errors.New("protocol name or version mismatch")
+		return nil, fmt.Errorf("protocol name or version mismatch: got %s v%d, expected %s v%d",
+			protoName, reply.version, StringProtoName, StringProtoVersion)
 	}
 
 	if reply.value == nil {

@@ -104,7 +104,7 @@ func TestGdmStringProto(t *testing.T) {
 			require.NotNil(t, req.Pointer())
 			require.Equal(t, pam.BinaryPrompt, req.Style())
 
-			decoded, err := decodeResponse(req.Pointer())
+			decoded, err := decodeStringProtoMessage(req.Pointer())
 			require.NoError(t, err)
 			if tc.value != "" {
 				require.Equal(t, tc.value, string(decoded))
@@ -151,7 +151,7 @@ func TestGdmStringProtoErrors(t *testing.T) {
 			require.NotNil(t, binReq.Pointer())
 			require.Equal(t, pam.BinaryPrompt, binReq.Style())
 
-			decoded, err := decodeResponse(binReq.Pointer())
+			decoded, err := decodeStringProtoMessage(binReq.Pointer())
 			require.ErrorContains(t, err, "protocol name or version mismatch")
 			require.Nil(t, decoded)
 		})
