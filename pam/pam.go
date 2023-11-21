@@ -17,6 +17,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"unsafe"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sirupsen/logrus"
@@ -195,7 +196,15 @@ func main() {
 	defer f.Close()
 	logrus.SetOutput(f)
 
-	authResult := pam_sm_authenticate(nil, 0, 0, nil)
+	argc := C.int(len(os.Args))
+	argv := make([]*C.char, len(os.Args))
+	for i, arg := range os.Args {
+		s := C.CString(arg)
+		defer C.free(unsafe.Pointer(s))
+		argv[i] = s
+	}
+
+	authResult := pam_sm_authenticate(nil, 0, argc, &argv[0])
 	fmt.Println("Auth return:", authResult)
 
 	// Simulate setting auth broker as default.
