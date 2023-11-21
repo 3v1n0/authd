@@ -35,7 +35,7 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 					access: responses.AuthCancelled,
 				}
 			}
-			return newPamStatus(pam.ErrSystem,
+			return pam.NewTransactionError(pam.ErrSystem,
 				fmt.Errorf("authentication status failure: %v", err))
 		}
 

@@ -11,10 +11,8 @@ type pamReturnStatus interface {
 	Error() string
 }
 
-// newPamStatus returns a new pamStatus.
-func newPamStatus(status pam.StatusError, err error) pamReturnStatus {
-	return pam.NewTransactionError(err, status)
-}
+// ensure that [pam.NewTransactionError] implements [pamReturnStatus]
+var _ pamReturnStatus = pam.NewTransactionError(nil, pam.ErrAbort)
 
 // pamStatus signals PAM module to return with provided pam.Success and Quit tea.Model.
 type pamSuccess struct {
