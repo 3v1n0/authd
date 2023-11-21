@@ -9,7 +9,7 @@ on:
 
 env:
   apt_deps: >-
-    libpam0g-dev
+    libpam0g-dev ffmpeg
   # In Rust the grpc stubs are generated at build time
   # so we always need to install the protobuf compilers
   # when building the NSS crate.
@@ -80,6 +80,15 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version-file: go.mod
+      - name: Install VHS and ttyd for integration tests
+        run: |
+          set -eu
+          go install github.com/charmbracelet/vhs@latest
+
+          wget https://github.com/tsl0922/ttyd/releases/download/1.7.4/ttyd.x86_64
+          chmod +x ttyd.x86_64
+          sudo mv ttyd.x86_64 /usr/bin/ttyd
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
