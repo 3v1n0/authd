@@ -67,6 +67,13 @@ var (
 		"user-mfa":         {},
 		"user-needs-reset": {},
 		"user-can-reset":   {},
+
+		// Integration test users // These do not envolve any special treatment.
+		"user-max-attempts":     {},
+		"user-form-with-button": {},
+		"user-local":            {},
+		"user-remember-mode":    {},
+		"user-switch-mode":      {},
 	}
 )
 
@@ -477,7 +484,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Send notification to phone1 and wait on server signal to return if OK or not
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(2 * time.Second):
 		case <-ctx.Done():
 			return responses.AuthCancelled, "", nil
 		}
@@ -502,7 +509,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// simulate direct exchange with the FIDO device
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(2 * time.Second):
 		case <-ctx.Done():
 			return responses.AuthCancelled, "", nil
 		}
@@ -513,7 +520,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
-		case <-time.After(4 * time.Second):
+		case <-time.After(2 * time.Second):
 		case <-ctx.Done():
 			return responses.AuthCancelled, "", nil
 		}
