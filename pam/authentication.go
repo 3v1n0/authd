@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,6 +26,8 @@ var (
 // The event will contain the returned value from the broker.
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID, content string) tea.Cmd {
 	return func() tea.Msg {
+		fmt.Printf("sendIsAuthenticated: '%s'\n", content)
+		log.Debugf(context.TODO(), "sendIsAuthenticated: '%s'\n", content)
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: content,
@@ -32,6 +35,7 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				return isAuthenticatedResultReceived{
+					res:    nil,
 					access: responses.AuthCancelled,
 				}
 			}
@@ -40,6 +44,7 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 		}
 
 		return isAuthenticatedResultReceived{
+			res:    res,
 			access: res.Access,
 			msg:    res.Msg,
 		}
@@ -49,12 +54,33 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 // isAuthenticatedRequested is the internal events signalling that authentication
 // with the given challenge or wait has been requested.
 type isAuthenticatedRequested struct {
-	content string
+	challenge *string
+	wait      *bool
+	skip      *bool
 }
+
+// MarshalJSON marshals DataType to JSON bytes.
+func (r isAuthenticatedRequested) MarshalJSON() ([]byte, error) {
+	m := map[string]any{}
+	if r.challenge != nil {
+		m["challenge"] = *r.challenge
+	}
+	if r.wait != nil {
+		m["wait"] = strconv.FormatBool(*r.wait)
+	}
+	if r.skip != nil {
+		m["skip"] = *r.skip
+	}
+	return json.Marshal(m)
+}
+
+// isAuthenticatedCancelled is the event to cancel the auth request.
+type isAuthenticatedCancelled struct{}
 
 // isAuthenticatedResultReceived is the internal event with the authentication access result
 // and data that was retrieved.
 type isAuthenticatedResultReceived struct {
+	res    *authd.IAResponse
 	access string
 	msg    string
 }
@@ -115,11 +141,23 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		m.cancelIsAuthenticated()
 		return *m, sendEvent(AuthModeSelected{})
 
+	case isAuthenticatedCancelled:
+		// fmt.Printf("Cancellation func is %v\n", reflect.TypeOf(m.cancelIsAuthenticated))
+		fmt.Printf("Cancellation func")
+		m.cancelIsAuthenticated()
+		return *m, nil
+
 	case isAuthenticatedRequested:
 		m.cancelIsAuthenticated()
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
-		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, msg.content)
+		marshalled, err := json.Marshal(msg)
+		if err != nil {
+			return *m, sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
+		}
+		fmt.Println("sendIsAuthenticated: Marshalled is", string(marshalled))
+		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID,
+			string(marshalled))
 
 	case isAuthenticatedResultReceived:
 		log.Infof(context.TODO(), "isAuthenticatedResultReceived: %v", msg.access)
