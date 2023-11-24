@@ -87,7 +87,7 @@ func (d Data) checkMembers(acceptedMembers []string) error {
 func (d Data) Check() error {
 	switch d.Type {
 	case UnknownType:
-		return fmt.Errorf("unexpected type %v", d.Type.String())
+		return fmt.Errorf("unexpected type %v", d.Type.CamelCaseName())
 
 	case Hello:
 		if err := d.checkMembers([]string{"HelloData"}); err != nil {
@@ -146,7 +146,7 @@ func (d Data) Check() error {
 			case Event:
 			default:
 				return fmt.Errorf("poll response data member %v unsupported type: %v",
-					i, response.Type.String())
+					i, response.Type.CamelCaseName())
 			}
 			if err := response.Check(); err != nil {
 				return fmt.Errorf("poll response data member %v invalid: %v", i, err)
@@ -154,7 +154,7 @@ func (d Data) Check() error {
 		}
 
 	default:
-		return fmt.Errorf("unhandled type %v", d.Type)
+		return fmt.Errorf("unhandled type %v", d.Type.CamelCaseName())
 	}
 
 	return nil
@@ -172,6 +172,22 @@ func (d *Data) JSON() ([]byte, error) {
 	}
 
 	return bytes, err
+}
+
+func toLowerFirst(s string) string {
+	if s[0] < 'A' || s[0] > 'Z' {
+		return s
+	}
+	c := s[0] + 'a' - 'A'
+	return string(c) + s[1:]
+}
+
+func toUpperFirst(s string) string {
+	if s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	c := s[0] + 'A' - 'a'
+	return string(c) + s[1:]
 }
 
 const (
@@ -196,26 +212,7 @@ const (
 	lastDataType
 )
 
-func (t DataType) String() string {
-	switch t {
-	case Hello:
-		return "hello"
-	case Event:
-		return "event"
-	case EventAck:
-		return "eventAck"
-	case Request:
-		return "request"
-	case Response:
-		return "response"
-	case Poll:
-		return "poll"
-	case PollResponse:
-		return "pollResponse"
-	default:
-		return "unknownType"
-	}
-}
+//go:generate go run golang.org/x/tools/cmd/stringer -type=DataType
 
 // UnmarshalJSON unmarshals a DataType from json bytes.
 func (t *DataType) UnmarshalJSON(b []byte) error {
@@ -224,6 +221,7 @@ func (t *DataType) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	s = toUpperFirst(s)
 	for i := DataType(0); i < lastDataType; i++ {
 		if i.String() == s {
 			*t = i
@@ -235,9 +233,17 @@ func (t *DataType) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// CamelCaseName returns the DataType value name.
+func (t DataType) CamelCaseName() string {
+	if t >= lastDataType {
+		return "unknownType"
+	}
+	return toLowerFirst(t.String())
+}
+
 // MarshalJSON marshals DataType to JSON bytes.
 func (t DataType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
+	return json.Marshal(t.CamelCaseName())
 }
 
 // HelloData represents the struct type for an Hello message.
@@ -278,33 +284,43 @@ const (
 	lastEventType
 )
 
-func (e EventType) String() string {
-	switch e {
-	case UserSelected:
-		return "userSelected"
-	case BrokerSelected:
-		return "brokerSelected"
-	case AuthModesReceived:
-		return "authModesReceived"
-	case AuthModeSelected:
-		return "authModeSelected"
-	case ReselectAuthMode:
-		return "reselectAuthMode"
-	case AuthEvent:
-		return "authEvent"
-	case BrokersReceived:
-		return "brokersReceived"
-	case UILayoutReceived:
-		return "uiLayoutReceived"
-	case StartAuthentication:
-		return "startAuthentication"
-	case IsAuthenticatedRequested:
-		return "isAuthenticatedRequested"
-	case StageChanged:
-		return "stageChanged"
-	default:
+//go:generate go run golang.org/x/tools/cmd/stringer -type=EventType
+
+// func (e EventType) String() string {
+// 	switch e {
+// 	case UserSelected:
+// 		return "userSelected"
+// 	case BrokerSelected:
+// 		return "brokerSelected"
+// 	case AuthModesReceived:
+// 		return "authModesReceived"
+// 	case AuthModeSelected:
+// 		return "authModeSelected"
+// 	case ReselectAuthMode:
+// 		return "reselectAuthMode"
+// 	case AuthEvent:
+// 		return "authEvent"
+// 	case BrokersReceived:
+// 		return "brokersReceived"
+// 	case UILayoutReceived:
+// 		return "uiLayoutReceived"
+// 	case StartAuthentication:
+// 		return "startAuthentication"
+// 	case IsAuthenticatedRequested:
+// 		return "isAuthenticatedRequested"
+// 	case StageChanged:
+// 		return "stageChanged"
+// 	default:
+// 		return "unknownEvent"
+// 	}
+// }
+
+// CamelCaseName returns the EventType value name.
+func (e EventType) CamelCaseName() string {
+	if e >= lastEventType {
 		return "unknownEvent"
 	}
+	return toLowerFirst(e.String())
 }
 
 // UnmarshalJSON unmarshals a EventType from json bytes.
@@ -314,6 +330,7 @@ func (e *EventType) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
+	s = toUpperFirst(s)
 	for i := EventType(0); i < lastEventType; i++ {
 		if i.String() == s {
 			*e = i
@@ -328,7 +345,7 @@ func (e *EventType) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON marshals EventType to JSON bytes.
 func (e EventType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
+	return json.Marshal(e.CamelCaseName())
 }
 
 // RequestType represents the the supported requests.
@@ -387,6 +404,34 @@ func (r RequestType) String() string {
 func (r RequestType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(r.String())
 }
+
+// // ParseObject allows to parse an object value into a parsed structure.
+// func ParseObject[T any](o Object, item string) (*T, error) {
+// 	parsed := new(T)
+// 	if err := ParseObjectTo(o, item, parsed); err != nil {
+// 		return nil, err
+// 	}
+// 	return parsed, nil
+// }
+
+// // ParseObjectTo allows to parse an object value into a parsed structure.
+// func ParseObjectTo[T any](o Object, item string, dest *T) error {
+// 	value, ok := o[item]
+// 	if !ok {
+// 		return ItemNotFound{fmt.Errorf("no item '%s' found", item)}
+// 	}
+// 	// Using mapstructure would be nicer here, but it would require also do
+// 	// more mappings that we already did for JSON, so let's just do the
+// 	// conversion back and forth twice. It's not too bad.
+// 	bytes, err := json.Marshal(value)
+// 	if err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	if err := json.Unmarshal(bytes, dest); err != nil {
+// 		return fmt.Errorf("parsing GDM object failed: %w", err)
+// 	}
+// 	return nil
+// }
 
 // ParseRawJSON allows to parse a json.RawMessage into a parsed structure.
 func ParseRawJSON[T any](r json.RawMessage) (*T, error) {
