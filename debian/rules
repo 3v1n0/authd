@@ -1,0 +1,102 @@
+#!/usr/bin/make -f
+#export DH_VERBOSE = 1
+
+export GOCACHE := $(shell mktemp -d /tmp/gocache-XXXX)
+export GOFLAGS := -ldflags=-X=github.com/ubuntu/authd/internal/consts.Version=$(shell dpkg-parsechangelog -S Version) --mod=vendor -buildmode=pie
+
+export DEB_BUILD_MAINT_OPTIONS := optimize=-lto
+
+# Strict symbols checking
+export DPKG_GENSYMBOLS_CHECK_LEVEL := 4
+
+# Copy in build directory all content to embed
+export DH_GOLANG_INSTALL_ALL := 1
+
+# The following definitions are necessary because of the manual steps
+# we need to do to work around some issues with either dh-cargo,
+# the wrapper, or cargo
+include /usr/share/rustc/architecture.mk
+CARGO := /usr/share/cargo/bin/cargo
+
+# Needed for Rust vendored sources tracking
+DH_CARGO_VENDORED_SOURCES := /usr/share/cargo/bin/dh-cargo-vendored-sources
+export CARGO_VENDOR_DIR = vendor_rust
+
+%:
+	dh $@ --buildsystem=golang --with=golang,apport
+
+override_dh_auto_clean:
+	dh_auto_clean
+	dh_auto_clean --buildsystem=cargo
+
+	# Create the vendor directory when building the source package
+	[ -d vendor/ ] || go mod vendor
+
+	# Some crates are shipped with .a files, which get removed by the helpers during the package build as a safety measure.
+	# This results in cargo failing to compile, since the files (which are listed in the checksums) are not there anymore.
+	# For those crates, we need to replace their checksum with a more general one that only lists the crate checksum, instead of each file.
+	if [ ! -d $(CARGO_VENDOR_DIR)/ ]; then \
+		$(CARGO) vendor $(CARGO_VENDOR_DIR); \
+		[ ! -e $(DH_CARGO_VENDORED_SOURCES) ] || $(DH_CARGO_VENDORED_SOURCES); \
+		\
+		[ -e /usr/bin/jq ] || (echo "jq is required to run this script. Try installing it with 'sudo apt install jq'" && exit 1); \
+		\
+		for dep in $$(ls vendor_rust -1); do \
+			checksum_file="vendor_rust/$${dep}/.cargo-checksum.json"; \
+			a_files=$$(cat $${checksum_file} | jq '.files | keys | map(select(.|test(".a$$")))'); \
+			if [ "$$a_files" = "[]" ]; then \
+				continue; \
+			fi; \
+			pkg_checksum=$$(cat "$${checksum_file}" | jq '.package'); \
+			echo "{\"files\": {}, \"package\": $${pkg_checksum}}" >"$${checksum_file}"; \
+		done; \
+	fi
+
+override_dh_auto_configure:
+	dh_auto_configure
+
+	[ ! -e $(DH_CARGO_VENDORED_SOURCES) ] || $(DH_CARGO_VENDORED_SOURCES)
+	DEB_HOST_GNU_TYPE=$(DEB_HOST_GNU_TYPE) DEB_HOST_RUST_TYPE=$(DEB_HOST_RUST_TYPE) \
+		CARGO_HOME=$(CURDIR)/debian/cargo_home DEB_CARGO_CRATE=nss_$(shell dpkg-parsechangelog --show-field Version) \
+		RUSTFLAGS="--cfg=rustix_use_libc" \
+		$(CARGO) prepare-debian $(CARGO_VENDOR_DIR)
+
+override_dh_auto_build:
+	# Build PAM library & Go loader
+	go generate -x ./pam
+
+	# Build the NSS library
+	DEB_HOST_GNU_TYPE=$(DEB_HOST_GNU_TYPE) \
+	DEB_HOST_RUST_TYPE=$(DEB_HOST_RUST_TYPE) \
+	CARGO_HOME=$(CURDIR)/debian/cargo_home \
+	$(CARGO) build --release
+
+	# Build the CLI
+	DH_GOLANG_BUILDPKG=github.com/ubuntu/authd/cmd/authd dh_auto_build
+
+override_dh_auto_test:
+	# We need to specify these Rust related variables to the Go tests in order to build the NSS lib
+	# with the cargo wrapper in the integration tests in order to force cargo to use vendored deps
+	# instead of querying crates.io for them.
+	DEB_HOST_GNU_TYPE=$(DEB_HOST_GNU_TYPE) \
+	DEB_HOST_RUST_TYPE=$(DEB_HOST_RUST_TYPE) \
+	CARGO_HOME=$(CURDIR)/debian/cargo_home \
+	CARGO_PATH=$(CARGO) \
+	dh_auto_test
+
+override_dh_auto_install:
+	dh_auto_install -- --no-source
+
+	# Install daemon in /sbin
+	mv debian/authd/usr/bin/ debian/authd/usr/sbin
+
+	# Install PAM module configuration
+	mkdir -p debian/authd/usr/share/pam-configs
+	cp pam/go-loader/libpam-authd.pam-auth-update debian/authd/usr/share/pam-configs/authd
+
+	# Install PAM
+	mkdir -p debian/authd/usr/lib/$(DEB_HOST_GNU_TYPE)/security
+	cp pam/go-loader/pam_go_loader.so pam/pam_authd.so debian/authd/usr/lib/$(DEB_HOST_GNU_TYPE)/security/
+
+	# Install NSS
+	cp target/$(DEB_HOST_RUST_TYPE)/release/libnss_authd.so debian/authd/usr/lib/$(DEB_HOST_GNU_TYPE)/libnss_authd.so.2
