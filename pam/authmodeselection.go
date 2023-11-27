@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -243,16 +242,13 @@ func getAuthenticationModes(client authd.PAMClient, sessionID string, uiLayouts 
 
 		gamResp, err := client.GetAuthenticationModes(context.Background(), gamReq)
 		if err != nil {
-			return pam.NewTransactionError(pam.ErrSystem,
-				fmt.Errorf("could not get authentication modes: %v", err))
+			return pamError{status: pam.ErrSystem,
+				msg: fmt.Sprintf("could not get authentication modes: %v", err)}
 		}
 
 		authModes := gamResp.GetAuthenticationModes()
 		if len(authModes) == 0 {
-			return newPamIgnore(
-				// TODO: probably go back to broker selection here
-				"",
-				errors.New("no supported authentication mode available for this provider"))
+			return pamIgnore{msg: "no supported authentication mode available for this provider"}
 		}
 		log.Info(context.TODO(), authModes)
 

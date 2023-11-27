@@ -6,36 +6,59 @@ import (
 
 // Various signalling return messaging to PAM.
 
+// pamReturnStatus is the interface that all PAM return types should implement.
 type pamReturnStatus interface {
+	Message() string
+}
+
+// pamReturnError is an interface that PAM errors return types should implement.
+type pamReturnError interface {
+	pamReturnStatus
 	Status() pam.StatusError
-	Error() string
 }
 
-// TODO: Remove this when we've tests coverage that ensures this is the case.
-// ensure that [pam.NewTransactionError] implements [pamReturnStatus].
-var _ pamReturnStatus = pam.NewTransactionError(pam.ErrAbort, nil)
-
-// pamStatus signals PAM module to return with provided pam.Success and Quit tea.Model.
+// pamSuccess signals PAM module to return with provided pam.Success and Quit tea.Model.
 type pamSuccess struct {
-	pam.TransactionError
 	brokerID string
+	msg      string
 }
 
-// newPamSuccess returns a new pamSuccess.
-func newPamSuccess(brokerID string) pamSuccess {
-	return pamSuccess{TransactionError: nil, brokerID: brokerID}
+// Message returns the message that should be sent to pam as info message.
+func (p pamSuccess) Message() string {
+	return p.msg
 }
 
 // pamIgnore signals PAM module to return pam.Ignore and Quit tea.Model.
 type pamIgnore struct {
-	pam.TransactionError
+	msg           string
 	localBrokerID string // Only set for local broker to store it globally.
 }
 
-// newPamIgnore returns a new pamIgnore.
-func newPamIgnore(localBrokerID string, err error) pamIgnore {
-	return pamIgnore{
-		TransactionError: pam.NewTransactionError(pam.ErrIgnore, err),
-		localBrokerID:    localBrokerID,
+// Status returns [pam.ErrIgnore]
+func (p pamIgnore) Status() pam.StatusError {
+	return pam.ErrIgnore
+}
+
+// Message returns the message that should be sent to pam as info message.
+func (p pamIgnore) Message() string {
+	return p.msg
+}
+
+// pamIgnore signals PAM module to return the provided error message and Quit tea.Model.
+type pamError struct {
+	msg    string
+	status pam.StatusError
+}
+
+// Status returns the PAM exit status code.
+func (p pamError) Status() pam.StatusError {
+	return p.status
+}
+
+// Message returns the message that should be sent to pam as error message.
+func (p pamError) Message() string {
+	if p.msg != "" {
+		return p.msg
 	}
+	return p.status.Error()
 }

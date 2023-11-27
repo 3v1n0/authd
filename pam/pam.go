@@ -84,35 +84,36 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
 		return pam.ErrAbort
 	}
 
-	var status = pam.NewTransactionError(pam.ErrSystem, errors.New("unknown exit code"))
-
 	switch exitStatus := appState.exitStatus.(type) {
 	case pamSuccess:
 		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.brokerID); err != nil {
 			return err
 		}
+		if _, err := mTx.StartStringConv(pam.TextInfo, exitStatus.msg); err != nil {
+			log.Errorf(context.TODO(), "Failed sending info to pam: %v", err)
+		}
 		return nil
+
 	case pamIgnore:
 		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
 		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.localBrokerID); err != nil {
 			return err
 		}
-		status = exitStatus
-	case pamReturnStatus:
-		status = exitStatus
-	}
-
-	if status.Status() != pam.ErrIgnore {
-		if _, err := mTx.StartStringConv(pam.ErrorMsg, status.Error()); err != nil {
-			log.Errorf(context.TODO(), "Failed reporting error to pam: %v", err)
+		if exitStatus.msg == "" {
+			return exitStatus.Status()
 		}
-	} else if status.Error() != "" {
-		if _, err := mTx.StartStringConv(pam.TextInfo, status.Error()); err != nil {
+		if _, err := mTx.StartStringConv(pam.TextInfo, exitStatus.msg); err != nil {
 			log.Errorf(context.TODO(), "Failed sending info to pam: %v", err)
 		}
+
+	case pamReturnError:
+		if _, err := mTx.StartStringConv(pam.ErrorMsg, exitStatus.Message()); err != nil {
+			log.Errorf(context.TODO(), "Failed reporting error to pam: %v", err)
+		}
+		return pam.NewTransactionError(exitStatus.Status(), errors.New(exitStatus.Message()))
 	}
 
-	return status
+	return pam.NewTransactionError(pam.ErrSystem, errors.New("unknown exit code"))
 }
 
 // AcctMgmt sets any used brokerID as default for the user.

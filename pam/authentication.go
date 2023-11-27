@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,8 +34,8 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 					access: responses.AuthCancelled,
 				}
 			}
-			return pam.NewTransactionError(pam.ErrSystem,
-				fmt.Errorf("authentication status failure: %v", err))
+			return pamError{status: pam.ErrSystem,
+				msg: fmt.Sprintf("authentication status failure: %v", err)}
 		}
 
 		return isAuthenticatedResultReceived{
@@ -125,12 +124,12 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		log.Infof(context.TODO(), "isAuthenticatedResultReceived: %v", msg.access)
 		switch msg.access {
 		case responses.AuthGranted:
-			return *m, sendEvent(newPamSuccess(m.currentBrokerID))
+			return *m, sendEvent(pamSuccess{brokerID: m.currentBrokerID})
 
 		case responses.AuthRetry:
 			errorMsg, err := dataToMsg(msg.msg)
 			if err != nil {
-				return *m, sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
+				return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 			}
 			m.errorMsg = errorMsg
 			return *m, sendEvent(startAuthentication{})
@@ -138,11 +137,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		case responses.AuthDenied:
 			errMsg := "Access denied"
 			if msg, err := dataToMsg(msg.msg); err != nil {
-				return *m, sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
+				return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 			} else if errMsg != "" {
 				errMsg = msg
 			}
-			return *m, sendEvent(pam.NewTransactionError(pam.ErrAuth, errors.New(errMsg)))
+			return *m, sendEvent(pamError{status: pam.ErrAuth, msg: errMsg})
 
 		case responses.AuthNext:
 			return *m, sendEvent(GetAuthenticationModesRequested{})
@@ -212,7 +211,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, layout *authd.
 	case "qrcode":
 		qrcodeModel, err := newQRCodeModel(layout.GetContent(), layout.GetLabel(), layout.GetButton(), layout.GetWait() == "true")
 		if err != nil {
-			return sendEvent(pam.NewTransactionError(pam.ErrSystem, err))
+			return sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 		}
 		m.currentModel = qrcodeModel
 
@@ -221,8 +220,8 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, layout *authd.
 		m.currentModel = newPasswordModel
 
 	default:
-		return sendEvent(pam.NewTransactionError(pam.ErrSystem,
-			fmt.Errorf("unknown layout type: %q", layout.Type)))
+		return sendEvent(pamError{status: pam.ErrSystem,
+			msg: fmt.Sprintf("unknown layout type: %q", layout.Type)})
 	}
 
 	return sendEvent(startAuthentication{})

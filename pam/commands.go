@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,7 +23,7 @@ func sendEvent(msg tea.Msg) tea.Cmd {
 func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.Cmd {
 	return func() tea.Msg {
 		if brokerID == "local" {
-			return newPamIgnore(brokerID, nil)
+			return pamIgnore{localBrokerID: brokerID}
 		}
 
 		// Start a transaction for this user with the broker.
@@ -46,19 +45,16 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 
 		sbResp, err := client.SelectBroker(context.TODO(), sbReq)
 		if err != nil {
-			return pam.NewTransactionError(pam.ErrSystem,
-				fmt.Errorf("can't select broker: %v", err))
+			return pamError{status: pam.ErrSystem, msg: fmt.Sprintf("can't select broker: %v", err)}
 		}
 
 		sessionID := sbResp.GetSessionId()
 		if sessionID == "" {
-			return pam.NewTransactionError(pam.ErrSystem,
-				errors.New("no session ID returned by broker"))
+			return pamError{status: pam.ErrSystem, msg: "no session ID returned by broker"}
 		}
 		encryptionKey := sbResp.GetEncryptionKey()
 		if encryptionKey == "" {
-			return pam.NewTransactionError(pam.ErrSystem,
-				errors.New("no encryption key returned by broker"))
+			return pamError{status: pam.ErrSystem, msg: "no encryption key returned by broker"}
 		}
 
 		return SessionStarted{
@@ -78,15 +74,15 @@ func getLayout(client authd.PAMClient, sessionID, authModeID string) tea.Cmd {
 		}
 		uiInfo, err := client.SelectAuthenticationMode(context.TODO(), samReq)
 		if err != nil {
-			return pam.NewTransactionError(pam.ErrSystem,
-				// TODO: probably go back to broker selection here
-				fmt.Errorf("can't select authentication mode: %v", err))
+			return pamError{status: pam.ErrSystem, msg:
+			// TODO: probably go back to broker selection here
+			fmt.Sprintf("can't select authentication mode: %v", err)}
 		}
 
 		if uiInfo.UiLayoutInfo == nil {
-			return pam.NewTransactionError(pam.ErrSystem,
-				// TODO: probably go back to broker selection here
-				errors.New("invalid empty UI Layout information from broker"))
+			return pamError{status: pam.ErrSystem, msg:
+			// TODO: probably go back to broker selection here
+			"invalid empty UI Layout information from broker"}
 		}
 
 		return UILayoutReceived{
