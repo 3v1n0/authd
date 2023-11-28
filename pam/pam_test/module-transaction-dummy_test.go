@@ -171,23 +171,21 @@ func TestSetPutEnv(t *testing.T) {
 				err := tx.PutEnv(env)
 				require.ErrorIs(t, err, tc.wantPutError)
 
-				if tc.wantPutError == nil {
-					environment, err := tx.GetEnvList()
-					require.NoError(t, err)
-
-					if tc.value != nil && tc.wantValue != nil {
-						require.Equal(t, map[string]string{
-							tc.env: *tc.wantValue}, environment)
-					} else if tc.value != nil {
-						require.Equal(t, map[string]string{tc.env: *tc.value},
-							environment)
-					} else {
-						require.Equal(t, map[string]string{}, environment)
-					}
-				} else {
+				if tc.wantPutError != nil || tc.value == nil {
 					environment, err := tx.GetEnvList()
 					require.NoError(t, err)
 					require.Equal(t, map[string]string{}, environment)
+				} else {
+					environment, err := tx.GetEnvList()
+					require.NoError(t, err)
+
+					if tc.wantValue != nil {
+						require.Equal(t, map[string]string{
+							tc.env: *tc.wantValue}, environment)
+					} else {
+						require.Equal(t, map[string]string{tc.env: *tc.value},
+							environment)
+					}
 				}
 			}
 
