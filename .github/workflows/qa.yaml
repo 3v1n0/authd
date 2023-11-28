@@ -2,7 +2,7 @@ name: QA & sanity checks
 on:
   push:
     branches:
-      - main
+      - gdm-json-protocol
     tags:
       - "*"
   pull_request:
