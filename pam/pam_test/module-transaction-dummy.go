@@ -180,6 +180,65 @@ func (m *ModuleTransactionDummy) StartConv(req pam.ConvRequest) (
 	return resp[0], nil
 }
 
+func (m *ModuleTransactionDummy) handleStringRequest(req pam.ConvRequest) (pam.StringConvResponse, error) {
+	msgStyle := req.Style()
+	if m.convHandler == nil {
+		return nil, pam.NewTransactionError(pam.ErrConv,
+			fmt.Errorf("no conversation handler provided for style %v",
+				msgStyle),
+		)
+	}
+	reply, err := m.convHandler.RespondPAM(msgStyle,
+		req.(pam.StringConvRequest).Prompt())
+	if err != nil {
+		return nil, err
+	}
+
+	return StringResponseDummy{
+		msgStyle,
+		reply,
+	}, nil
+}
+
+func (m *ModuleTransactionDummy) handleBinaryRequest(req pam.ConvRequest) (pam.BinaryConvResponse, error) {
+	if m.convHandler == nil {
+		return nil, pam.NewTransactionError(pam.ErrConv,
+			errors.New("no binary handler provided"),
+		)
+	}
+
+	//nolint:forcetypeassert
+	// req must be a pam.BinaryConvRequester, if that's not the case we should
+	// just panic since this code is only expected to run in tests.
+	binReq := req.(pam.BinaryConvRequester)
+
+	switch handler := m.convHandler.(type) {
+	case pam.BinaryConversationHandler:
+		r, err := handler.RespondPAMBinary(binReq.Pointer())
+		if err != nil {
+			return nil, err
+		}
+		return binReq.CreateResponse(pam.BinaryPointer(&r)), nil
+
+	case pam.BinaryPointerConversationHandler:
+		r, err := handler.RespondPAMBinary(binReq.Pointer())
+		if err != nil {
+			if r != nil {
+				resp := binReq.CreateResponse(r)
+				resp.Release()
+			}
+			return nil, err
+		}
+		return binReq.CreateResponse(r), nil
+
+	default:
+		return nil, pam.NewTransactionError(pam.ErrConv,
+			fmt.Errorf(
+				"unsupported conversation handler %#v", handler),
+		)
+	}
+}
+
 // StartConvMulti initiates a PAM conversation with multiple ConvRequest's.
 func (m *ModuleTransactionDummy) StartConvMulti(requests []pam.ConvRequest) (
 	[]pam.ConvResponse, error) {
@@ -199,58 +258,16 @@ func (m *ModuleTransactionDummy) StartConvMulti(requests []pam.ConvRequest) (
 		case pam.ErrorMsg:
 			fallthrough
 		case pam.TextInfo:
-			if m.convHandler == nil {
-				return nil, pam.NewTransactionError(pam.ErrConv,
-					fmt.Errorf("no conversation handler provided for style %v",
-						msgStyle),
-				)
-			}
-			reply, err := m.convHandler.RespondPAM(msgStyle,
-				req.(pam.StringConvRequest).Prompt())
+			response, err := m.handleStringRequest(req)
 			if err != nil {
 				return nil, err
 			}
-			goReplies = append(goReplies, StringResponseDummy{
-				msgStyle,
-				reply,
-			})
+			goReplies = append(goReplies, response)
 		case pam.BinaryPrompt:
-			if m.convHandler == nil {
-				return nil, pam.NewTransactionError(pam.ErrConv,
-					errors.New("no binary handler provided"),
-				)
+			response, err := m.handleBinaryRequest(req)
+			if err != nil {
+				return nil, err
 			}
-
-			//nolint:forcetypeassert
-			// req must be a pam.BinaryConvRequester, if that's not the case we should
-			// just panic since this code is only expected to run in tests.
-			binReq := req.(pam.BinaryConvRequester)
-			var response pam.BinaryConvResponse
-
-			switch handler := m.convHandler.(type) {
-			case pam.BinaryConversationHandler:
-				r, err := handler.RespondPAMBinary(binReq.Pointer())
-				if err != nil {
-					return nil, err
-				}
-				response = binReq.CreateResponse(pam.BinaryPointer(&r))
-			case pam.BinaryPointerConversationHandler:
-				r, err := handler.RespondPAMBinary(binReq.Pointer())
-				if err != nil {
-					if r != nil {
-						resp := binReq.CreateResponse(r)
-						resp.Release()
-					}
-					return nil, err
-				}
-				response = binReq.CreateResponse(r)
-			default:
-				return nil, pam.NewTransactionError(pam.ErrConv,
-					fmt.Errorf(
-						"unsupported conversation handler %#v", handler),
-				)
-			}
-
 			goReplies = append(goReplies, response)
 		default:
 			return nil, pam.NewTransactionError(pam.ErrConv,
