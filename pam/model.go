@@ -109,6 +109,11 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	log.Debugf(context.TODO(), "%+v", msg)
 
+	if ret, ok := msg.(pamReturnStatus); ok {
+		m.exitStatus = ret
+		return m, m.quit()
+	}
+
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
@@ -137,11 +142,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.brokerSelectionModel.SetHeight(m.height - 3)
 		m.brokerSelectionModel.SetWidth(m.width)
-
-	// Exit cases
-	case pamReturnStatus:
-		m.exitStatus = msg
-		return m, m.quit()
 
 	// Events
 	case UsernameOrBrokerListReceived:
