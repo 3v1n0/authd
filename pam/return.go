@@ -46,8 +46,8 @@ func (p pamIgnore) Message() string {
 
 // pamIgnore signals PAM module to return the provided error message and Quit tea.Model.
 type pamError struct {
-	msg    string
 	status pam.StatusError
+	msg    string
 }
 
 // Status returns the PAM exit status code.
