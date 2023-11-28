@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+
+	// We need the stringer command to generate code, so let's blank-import it.
+	_ "golang.org/x/tools/cmd/stringer"
 )
 
 const (
