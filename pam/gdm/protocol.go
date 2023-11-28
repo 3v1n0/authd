@@ -88,7 +88,7 @@ func (d Data) checkMembers(acceptedMembers []string) error {
 func (d Data) Check() error {
 	switch d.Type {
 	case UnknownType:
-		return fmt.Errorf("unexpected type %v", d.Type.String())
+		return fmt.Errorf("unexpected type %v", d.Type.CamelCaseName())
 
 	case Hello:
 		if err := d.checkMembers([]string{"HelloData"}); err != nil {
@@ -147,7 +147,7 @@ func (d Data) Check() error {
 			case Event:
 			default:
 				return fmt.Errorf("poll response data member %v unsupported type: %v",
-					i, response.Type.String())
+					i, response.Type.CamelCaseName())
 			}
 			if err := response.Check(); err != nil {
 				return fmt.Errorf("poll response data member %v invalid: %v", i, err)
@@ -155,7 +155,7 @@ func (d Data) Check() error {
 		}
 
 	default:
-		return fmt.Errorf("unhandled type %v", d.Type)
+		return fmt.Errorf("unhandled type %v", d.Type.CamelCaseName())
 	}
 
 	return nil
@@ -173,6 +173,29 @@ func (d *Data) JSON() ([]byte, error) {
 	}
 
 	return bytes, err
+}
+
+func isLower(c byte) bool {
+	return c < 'A' || c > 'Z'
+}
+
+func toLowerFirst(s string) string {
+	if isLower(s[0]) {
+		return s
+	}
+
+	prefix := make([]byte, 0, len(s))
+	i := 0
+	for ; i < len(s); i++ {
+		if isLower(s[i]) {
+			break
+		}
+		if i > 0 && i < len(s)-1 && isLower(s[i+1]) {
+			break
+		}
+		prefix = append(prefix, s[i]+'a'-'A')
+	}
+	return string(prefix) + s[i:]
 }
 
 const (
@@ -197,26 +220,7 @@ const (
 	lastDataType
 )
 
-func (t DataType) String() string {
-	switch t {
-	case Hello:
-		return "hello"
-	case Event:
-		return "event"
-	case EventAck:
-		return "eventAck"
-	case Request:
-		return "request"
-	case Response:
-		return "response"
-	case Poll:
-		return "poll"
-	case PollResponse:
-		return "pollResponse"
-	default:
-		return "unknownType"
-	}
-}
+//go:generate go run golang.org/x/tools/cmd/stringer -type=DataType
 
 // UnmarshalJSON unmarshals a DataType from json bytes.
 func (t *DataType) UnmarshalJSON(b []byte) error {
@@ -226,7 +230,7 @@ func (t *DataType) UnmarshalJSON(b []byte) error {
 	}
 
 	for i := DataType(0); i < lastDataType; i++ {
-		if i.String() == s {
+		if toLowerFirst(i.String()) == s {
 			*t = i
 			return nil
 		}
@@ -236,9 +240,17 @@ func (t *DataType) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// CamelCaseName returns the DataType value name.
+func (t DataType) CamelCaseName() string {
+	if t >= lastDataType {
+		return "unknownType"
+	}
+	return toLowerFirst(t.String())
+}
+
 // MarshalJSON marshals DataType to JSON bytes.
 func (t DataType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
+	return json.Marshal(t.CamelCaseName())
 }
 
 // HelloData represents the struct type for an Hello message.
@@ -279,33 +291,14 @@ const (
 	lastEventType
 )
 
-func (e EventType) String() string {
-	switch e {
-	case UserSelected:
-		return "userSelected"
-	case BrokerSelected:
-		return "brokerSelected"
-	case AuthModesReceived:
-		return "authModesReceived"
-	case AuthModeSelected:
-		return "authModeSelected"
-	case ReselectAuthMode:
-		return "reselectAuthMode"
-	case AuthEvent:
-		return "authEvent"
-	case BrokersReceived:
-		return "brokersReceived"
-	case UILayoutReceived:
-		return "uiLayoutReceived"
-	case StartAuthentication:
-		return "startAuthentication"
-	case IsAuthenticatedRequested:
-		return "isAuthenticatedRequested"
-	case StageChanged:
-		return "stageChanged"
-	default:
+//go:generate go run golang.org/x/tools/cmd/stringer -type=EventType
+
+// CamelCaseName returns the EventType value name.
+func (e EventType) CamelCaseName() string {
+	if e >= lastEventType {
 		return "unknownEvent"
 	}
+	return toLowerFirst(e.String())
 }
 
 // UnmarshalJSON unmarshals a EventType from json bytes.
@@ -316,7 +309,7 @@ func (e *EventType) UnmarshalJSON(b []byte) error {
 	}
 
 	for i := EventType(0); i < lastEventType; i++ {
-		if i.String() == s {
+		if toLowerFirst(i.String()) == s {
 			*e = i
 			return nil
 		}
@@ -329,7 +322,7 @@ func (e *EventType) UnmarshalJSON(b []byte) error {
 
 // MarshalJSON marshals EventType to JSON bytes.
 func (e EventType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
+	return json.Marshal(e.CamelCaseName())
 }
 
 // RequestType represents the the supported requests.
