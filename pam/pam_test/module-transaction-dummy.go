@@ -19,9 +19,6 @@ type ModuleTransactionDummy struct {
 	convHandler pam.ConversationHandler
 }
 
-// ModuleTransactionDummy type check.
-var _ pam.ModuleTransaction = &ModuleTransactionDummy{}
-
 // NewModuleTransactionDummy returns a new PamModuleTransactionDummy.
 func NewModuleTransactionDummy(convHandler pam.ConversationHandler) pam.ModuleTransaction {
 	return &ModuleTransactionDummy{
@@ -316,9 +313,6 @@ type StringResponseDummy struct {
 	content string
 }
 
-// StringResponseDummy type check.
-var _ pam.StringConvResponse = StringResponseDummy{}
-
 // Style returns the conversation style of the StringResponseDummy.
 func (s StringResponseDummy) Style() pam.Style {
 	return s.style
@@ -333,9 +327,6 @@ func (s StringResponseDummy) Response() string {
 type BinaryResponseDummy struct {
 	ptr pam.BinaryPointer
 }
-
-// BinaryResponseDummy type check.
-var _ pam.ConvResponse = &BinaryResponseDummy{}
 
 // Style returns the response style for the response, so always BinaryPrompt.
 func (b BinaryResponseDummy) Style() pam.Style {
