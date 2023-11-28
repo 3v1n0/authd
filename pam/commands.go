@@ -74,15 +74,19 @@ func getLayout(client authd.PAMClient, sessionID, authModeID string) tea.Cmd {
 		}
 		uiInfo, err := client.SelectAuthenticationMode(context.TODO(), samReq)
 		if err != nil {
-			return pamError{status: pam.ErrSystem, msg:
 			// TODO: probably go back to broker selection here
-			fmt.Sprintf("can't select authentication mode: %v", err)}
+			return pamError{
+				status: pam.ErrSystem,
+				msg:    fmt.Sprintf("can't select authentication mode: %v", err),
+			}
 		}
 
 		if uiInfo.UiLayoutInfo == nil {
-			return pamError{status: pam.ErrSystem, msg:
 			// TODO: probably go back to broker selection here
-			"invalid empty UI Layout information from broker"}
+			return pamError{
+				status: pam.ErrSystem,
+				msg:    "invalid empty UI Layout information from broker",
+			}
 		}
 
 		return UILayoutReceived{

@@ -242,8 +242,10 @@ func getAuthenticationModes(client authd.PAMClient, sessionID string, uiLayouts 
 
 		gamResp, err := client.GetAuthenticationModes(context.Background(), gamReq)
 		if err != nil {
-			return pamError{status: pam.ErrSystem,
-				msg: fmt.Sprintf("could not get authentication modes: %v", err)}
+			return pamError{
+				status: pam.ErrSystem,
+				msg:    fmt.Sprintf("could not get authentication modes: %v", err),
+			}
 		}
 
 		authModes := gamResp.GetAuthenticationModes()

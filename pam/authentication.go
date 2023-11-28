@@ -34,8 +34,10 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 					access: responses.AuthCancelled,
 				}
 			}
-			return pamError{status: pam.ErrSystem,
-				msg: fmt.Sprintf("authentication status failure: %v", err)}
+			return pamError{
+				status: pam.ErrSystem,
+				msg:    fmt.Sprintf("authentication status failure: %v", err),
+			}
 		}
 
 		return isAuthenticatedResultReceived{
@@ -135,11 +137,12 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(startAuthentication{})
 
 		case responses.AuthDenied:
-			errMsg := "Access denied"
-			if msg, err := dataToMsg(msg.msg); err != nil {
+			errMsg, err := dataToMsg(msg.msg)
+			if err != nil {
 				return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
-			} else if errMsg != "" {
-				errMsg = msg
+			}
+			if errMsg == "" {
+				errMsg = "Access denied"
 			}
 			return *m, sendEvent(pamError{status: pam.ErrAuth, msg: errMsg})
 
@@ -220,8 +223,10 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, layout *authd.
 		m.currentModel = newPasswordModel
 
 	default:
-		return sendEvent(pamError{status: pam.ErrSystem,
-			msg: fmt.Sprintf("unknown layout type: %q", layout.Type)})
+		return sendEvent(pamError{
+			status: pam.ErrSystem,
+			msg:    fmt.Sprintf("unknown layout type: %q", layout.Type),
+		})
 	}
 
 	return sendEvent(startAuthentication{})
