@@ -114,8 +114,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return m, sendEvent(pamError{status: pam.ErrAbort,
-				msg: "cancel requested"})
+			return m, sendEvent(pamError{
+				status: pam.ErrAbort,
+				msg:    "cancel requested",
+			})
 		case "esc":
 			if m.brokerSelectionModel.WillCaptureEscape() || m.authModeSelectionModel.WillCaptureEscape() {
 				break
@@ -186,7 +188,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ID == "" {
 			return m, sendEvent(pamError{
 				status: pam.ErrSystem,
-				msg:    "reselection of current auth mode without current ID"})
+				msg:    "reselection of current auth mode without current ID",
+			})
 		}
 		return m, getLayout(m.client, m.currentSession.sessionID, msg.ID)
 
