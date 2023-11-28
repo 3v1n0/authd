@@ -61,8 +61,7 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus pamReturnStatus
 }
 
 // Authenticate is the method that is invoked during pam_authenticate request.
-func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
-	args []string) error {
+func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
 	// Initialize localization
 	// TODO
 
@@ -124,8 +123,7 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags,
 }
 
 // AcctMgmt sets any used brokerID as default for the user.
-func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags,
-	args []string) error {
+func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
 	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
 	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
 		return pam.ErrIgnore
