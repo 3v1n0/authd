@@ -30,8 +30,8 @@ func (p pamSuccess) Message() string {
 
 // pamIgnore signals PAM module to return pam.Ignore and Quit tea.Model.
 type pamIgnore struct {
-	msg           string
 	localBrokerID string // Only set for local broker to store it globally.
+	msg           string
 }
 
 // Status returns [pam.ErrIgnore].
