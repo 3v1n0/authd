@@ -68,4 +68,4 @@ require (
 // The branch below includes changes from these upstream PR's:
 // - https://github.com/msteinert/pam/pull/15
 // - https://github.com/msteinert/pam/pull/13
-replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231127184522-9e3cc204d0dd
+replace github.com/msteinert/pam => github.com/3v1n0/go-pam v0.0.0-20231129145539-41ffb5df3040

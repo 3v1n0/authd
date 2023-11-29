@@ -2,7 +2,7 @@
 
 //go:build !pam_binary_cli
 
-//go:generate go build "-ldflags=-extldflags -Wl,-soname,pam_authd.so" -buildmode=c-shared -o pam_authd.so -tags asPamModule
+//go:generate go build "-ldflags=-extldflags -Wl,-soname,pam_authd.so" -buildmode=c-shared -o pam_authd.so -tags go_pam_module
 
 // Package main is the package for the PAM module library.
 package main
@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/msteinert/pam"
+	"os"
 	"unsafe"
 )
 
@@ -33,6 +34,7 @@ func sliceFromArgv(argc C.int, argv **C._const_char_t) []string {
 	return r
 }
 
+// handlePamCall is the function that translates C pam requests to Go.
 func handlePamCall(pamh *C.pam_handle_t, flags C.int, argc C.int,
 	argv **C._const_char_t, moduleFunc pam.ModuleHandlerFunc) pam.StatusError {
 	if pamModuleHandler == nil {
@@ -47,7 +49,7 @@ func handlePamCall(pamh *C.pam_handle_t, flags C.int, argc C.int,
 	err := mt.InvokeHandler(moduleFunc, pam.Flags(flags), sliceFromArgv(argc, argv))
 	if err != nil {
 		if (pam.Flags(flags)&pam.Silent) == 0 && !errors.Is(err, pam.ErrIgnore) {
-			fmt.Printf("module returned error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "module returned error: %v\n", err)
 		}
 		txErr, ok := err.(pam.TransactionError)
 		if !ok {
