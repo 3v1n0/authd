@@ -1,5 +1,8 @@
 Output remember_auth_mode.txt
 Output remember_auth_mode.gif
+
+# Configuration header to standardize the output.
+# Does not work with the "Source" command.
 Set Width 1800
 Set Height 800
 Set FontFamily "Ubuntu Mono"
@@ -7,6 +10,7 @@ Set FontSize 20
 Set Padding 0
 Set Margin 0
 Set Shell bash
+
 Hide
 Type "./pam_authd socket=/tmp/authd.sock"
 Enter
