@@ -17,7 +17,8 @@ import (
 // authModeSelectionModel is the model list to select supported authentication modes.
 type authModeSelectionModel struct {
 	list.Model
-	focused bool
+	focused    bool
+	clientType PamClientType
 
 	supportedUILayouts        []*authd.UILayout
 	supportedUILayoutsMu      *sync.Mutex
@@ -50,7 +51,7 @@ func selectAuthMode(id string) tea.Cmd {
 }
 
 // newAuthModeSelectionModel initializes an empty list with default options of authModeSelectionModel.
-func newAuthModeSelectionModel() authModeSelectionModel {
+func newAuthModeSelectionModel(clientType PamClientType) authModeSelectionModel {
 	l := list.New(nil, itemLayout{}, 80, 24)
 	l.Title = "Select your authentication method"
 	l.SetShowStatusBar(false)
@@ -63,14 +64,18 @@ func newAuthModeSelectionModel() authModeSelectionModel {
 
 	return authModeSelectionModel{
 		Model:                l,
+		clientType:           clientType,
 		supportedUILayoutsMu: &sync.Mutex{},
 	}
 }
 
 // Init initializes authModeSelectionModel.
 func (m *authModeSelectionModel) Init() tea.Cmd {
+	if m.clientType == Gdm {
+		// This is handled by the GDM model!
+		return nil
+	}
 	return func() tea.Msg {
-		// TODO: call to 3rd party like gdm, to support dynamic ui layouts
 		required, optional := "required", "optional"
 		supportedEntries := "optional:chars,chars_password"
 		requiredWithBooleans := "required:true,false"
@@ -107,6 +112,7 @@ func (m *authModeSelectionModel) Init() tea.Cmd {
 func (m authModeSelectionModel) Update(msg tea.Msg) (authModeSelectionModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case supportedUILayoutsReceived:
+		fmt.Printf("Got layouts %#v - len: %d\n", msg.layouts, len(msg.layouts))
 		if len(msg.layouts) == 0 {
 			return m, sendEvent(pamError{
 				status: pam.ErrCredUnavail,

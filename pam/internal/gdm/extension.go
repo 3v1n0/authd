@@ -4,6 +4,7 @@ package gdm
 // FIXME: Use pkg-config to include extension protocol headers once available
 //#cgo pkg-config: gdm-pam-extensions
 #include "extension.h"
+// FIXME: Use pkg-config to get gdm extensions definitions from system.
 */
 import "C"
 
@@ -139,6 +140,34 @@ func (msg *jsonProtoMessage) JSON() ([]byte, error) {
 func (msg *jsonProtoMessage) encode() pam.BinaryPointer {
 	return pam.BinaryPointer(msg)
 }
+
+// func (msg *jsonProtoMessage) toBytes() []byte {
+// 	return C.GoBytes(unsafe.Pointer(msg), (C.int)(unsafe.Sizeof(*msg)))
+// }
+
+// func (msg *jsonProtoMessage) toPointer() pam.BinaryPointer {
+// 	return pam.BinaryPointer(C.CBytes(msg.toBytes()))
+// }
+
+//	func jsonProtoMessagePointerFinalizer(ptr pam.BinaryPointer) {
+//		if ptr == nil {
+//			return
+//		}
+//		msg := (*jsonProtoMessage)(ptr)
+//		C.free(unsafe.Pointer(msg.value))
+//	}
+// func jsonProtoMessagePointerFinalizer(ptr pam.BinaryPointer) {
+// 	(*jsonProtoMessage)(ptr).release()
+// }
+
+// func jsonProtoMessageReplyPointerFinalizer(ptr pam.BinaryPointer) {
+// 	if ptr == nil {
+// 		return
+// 	}
+// 	msg := (*jsonProtoMessage)(ptr)
+// 	C.free(unsafe.Pointer(msg.value))
+// 	C.free(unsafe.Pointer(msg))
+// }
 
 // NewBinaryJSONProtoRequest returns a new pam.BinaryConvRequest from the
 // provided data.

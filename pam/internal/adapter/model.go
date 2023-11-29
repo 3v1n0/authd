@@ -24,6 +24,8 @@ const (
 	Native PamClientType = iota
 	// InteractiveTerminal indicates an interactive terminal we can directly write our interface to.
 	InteractiveTerminal
+	// Gdm is a gnome-shell client via GDM display manager.
+	Gdm
 )
 
 var debug string
@@ -53,6 +55,7 @@ type UIModel struct {
 	brokerSelectionModel   brokerSelectionModel
 	authModeSelectionModel authModeSelectionModel
 	authenticationModel    authenticationModel
+	gdmModel               gdmModel
 
 	exitStatus PamReturnStatus
 }
@@ -61,6 +64,9 @@ type UIModel struct {
 
 // UsernameOrBrokerListReceived is received either when the user name is filled (pam or manually) and we got the broker list.
 type UsernameOrBrokerListReceived struct{}
+
+// UsernameAndBrokerListReceived is received either when the user name is filled (pam or manually) and we got the broker list.
+type UsernameAndBrokerListReceived struct{}
 
 // BrokerSelected signifies that the broker has been chosen.
 type BrokerSelected struct {
@@ -93,14 +99,21 @@ type SessionEnded struct{}
 // Init initializes the main model orchestrator.
 func (m *UIModel) Init() tea.Cmd {
 	m.exitStatus = pamError{status: pam.ErrSystem, msg: "model did not return anything"}
-	m.userSelectionModel = newUserSelectionModel(m.PamMTx)
 	var cmds []tea.Cmd
+
+	if m.ClientType == Gdm {
+		m.gdmModel = newGdmModel(m.PamMTx)
+		cmds = append(cmds, m.gdmModel.Init())
+		// return tea.Batch(cmds...)
+	}
+
+	m.userSelectionModel = newUserSelectionModel(m.ClientType, m.PamMTx)
 	cmds = append(cmds, m.userSelectionModel.Init())
 
-	m.brokerSelectionModel = newBrokerSelectionModel(m.Client)
+	m.brokerSelectionModel = newBrokerSelectionModel(m.ClientType, m.Client)
 	cmds = append(cmds, m.brokerSelectionModel.Init())
 
-	m.authModeSelectionModel = newAuthModeSelectionModel()
+	m.authModeSelectionModel = newAuthModeSelectionModel(m.ClientType)
 	cmds = append(cmds, m.authModeSelectionModel.Init())
 
 	m.authenticationModel = newAuthenticationModel(m.Client)
@@ -112,6 +125,18 @@ func (m *UIModel) Init() tea.Cmd {
 
 // Update handles events and actions to be done from the main model orchestrator.
 func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Debugf(context.TODO(), "%+v", msg)
+
+	if m.ClientType == Gdm {
+		// if ret, ok := msg.(pamReturnStatus); ok {
+		// 	m.exitStatus = ret
+		// 	return m, m.quit()
+		// }
+		// var cmd tea.Cmd
+		// m.gdmModel, cmd = m.gdmModel.Update(msg)
+		// return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
@@ -150,6 +175,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Events
 	case UsernameOrBrokerListReceived:
+		fmt.Println("Username or broker got", m.username(), m.availableBrokers())
 		if m.username() == "" {
 			return m, nil
 		}
@@ -162,9 +188,16 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.changeStage(pam_proto.Stage_brokerSelection),
 			AutoSelectForUser(m.Client, m.username()))
 
+		// // Let's wait to see if we can get a BrokerSelected event earlier
+		// tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg { return nil }),
+		// sendEvent(UsernameAndBrokerListReceived{}))
+
 	case BrokerSelected:
 		return m, startBrokerSession(m.Client, msg.BrokerID, m.username())
-
+		// var cmd tea.Cmd
+		// m.gdmModel, cmd = m.gdmModel.Update(msg)
+		// return m, tea.Batch(
+		// 	cmd, startBrokerSession(m.client, msg.BrokerID, m.username()))
 	case SessionStarted:
 		pubASN1, err := base64.StdEncoding.DecodeString(msg.encryptionKey)
 		if err != nil {
@@ -222,8 +255,14 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case UILayoutReceived:
 		log.Info(context.TODO(), "UILayoutReceived")
 
+		var gdmCmd tea.Cmd
+		if m.ClientType == Gdm {
+			m.gdmModel, gdmCmd = m.gdmModel.Update(msg)
+		}
+
 		return m, tea.Sequence(
 			m.authenticationModel.Compose(m.currentSession.brokerID, m.currentSession.sessionID, m.currentSession.encryptionKey, msg.layout),
+			gdmCmd,
 			m.changeStage(pam_proto.Stage_challenge))
 
 	case SessionEnded:
@@ -242,13 +281,23 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.authenticationModel, cmd = m.authenticationModel.Update(msg)
 	cmds = append(cmds, cmd)
 
+	if m.ClientType == Gdm {
+		m.gdmModel, cmd = m.gdmModel.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
 // View renders a text view of the whole UI.
 func (m *UIModel) View() string {
+	if m.ClientType != InteractiveTerminal {
+		return ""
+	}
 	var view strings.Builder
 
+	log.Debugf(context.TODO(), "View, current stage %v", m.currentStage())
+	// dbg.PrintStack()
 	switch m.currentStage() {
 	case pam_proto.Stage_userSelection:
 		view.WriteString(m.userSelectionModel.View())
@@ -288,6 +337,7 @@ func (m *UIModel) currentStage() pam_proto.Stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
+	var commands []tea.Cmd
 	if m.currentStage() != s {
 		switch m.currentStage() {
 		case pam_proto.Stage_userSelection:
@@ -299,29 +349,32 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 		case pam_proto.Stage_challenge:
 			m.authenticationModel.Blur()
 		}
+
+		if m.ClientType == Gdm {
+			commands = append(commands, m.gdmModel.changeStage(s))
+		}
 	}
 
 	switch s {
 	case pam_proto.Stage_userSelection:
 		// The session should be ended when going back to previous state, but we don’t quit the stage immediately
 		// and so, we should always ensure we cancel previous session.
-		return tea.Sequence(endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
+		commands = append(commands, endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
 
 	case pam_proto.Stage_brokerSelection:
 		m.authModeSelectionModel.Reset()
-		return tea.Sequence(endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
+		commands = append(commands, endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
 
 	case pam_proto.Stage_authModeSelection:
 		m.authenticationModel.Reset()
-
-		return m.authModeSelectionModel.Focus()
+		commands = append(commands, m.authModeSelectionModel.Focus())
 
 	case pam_proto.Stage_challenge:
-		return m.authenticationModel.Focus()
+		commands = append(commands, m.authenticationModel.Focus())
 	}
 
 	// TODO: error
-	return nil
+	return tea.Sequence(commands...)
 }
 
 // ExitStatus exposes the [PamReturnStatus] externally.
