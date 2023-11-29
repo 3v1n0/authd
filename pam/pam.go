@@ -113,10 +113,10 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.localBrokerID); err != nil {
 			return err
 		}
-		return pam.NewTransactionError(exitStatus.Status(), errors.New(exitStatus.Message()))
+		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
 
 	case pamReturnError:
-		return pam.NewTransactionError(exitStatus.Status(), errors.New(exitStatus.Message()))
+		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
 	}
 
 	return fmt.Errorf("%w: unknown exit code", pam.ErrSystem)

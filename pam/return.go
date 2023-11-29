@@ -14,7 +14,7 @@ type pamReturnStatus interface {
 // pamReturnError is an interface that PAM errors return types should implement.
 type pamReturnError interface {
 	pamReturnStatus
-	Status() pam.StatusError
+	Status() pam.Error
 }
 
 // pamSuccess signals PAM module to return with provided pam.Success and Quit tea.Model.
@@ -35,7 +35,7 @@ type pamIgnore struct {
 }
 
 // Status returns [pam.ErrIgnore].
-func (p pamIgnore) Status() pam.StatusError {
+func (p pamIgnore) Status() pam.Error {
 	return pam.ErrIgnore
 }
 
@@ -46,12 +46,12 @@ func (p pamIgnore) Message() string {
 
 // pamIgnore signals PAM module to return the provided error message and Quit tea.Model.
 type pamError struct {
-	status pam.StatusError
+	status pam.Error
 	msg    string
 }
 
 // Status returns the PAM exit status code.
-func (p pamError) Status() pam.StatusError {
+func (p pamError) Status() pam.Error {
 	return p.status
 }
 
