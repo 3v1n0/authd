@@ -18,6 +18,7 @@ import (
 type authModeSelectionModel struct {
 	list.Model
 	focused bool
+	gdm     bool
 
 	supportedUILayouts        []*authd.UILayout
 	supportedUILayoutsMu      *sync.Mutex
@@ -50,7 +51,7 @@ func selectAuthMode(id string) tea.Cmd {
 }
 
 // newAuthModeSelectionModel initializes an empty list with default options of authModeSelectionModel.
-func newAuthModeSelectionModel() authModeSelectionModel {
+func newAuthModeSelectionModel(p *Parameters) authModeSelectionModel {
 	l := list.New(nil, itemLayout{}, 80, 24)
 	l.Title = "Select your authentication method"
 	l.SetShowStatusBar(false)
@@ -63,14 +64,18 @@ func newAuthModeSelectionModel() authModeSelectionModel {
 
 	return authModeSelectionModel{
 		Model:                l,
+		gdm:                  p.gdm,
 		supportedUILayoutsMu: &sync.Mutex{},
 	}
 }
 
 // Init initializes authModeSelectionModel.
 func (m *authModeSelectionModel) Init() tea.Cmd {
+	if m.gdm {
+		// This is handled by the GDM model!
+		return nil
+	}
 	return func() tea.Msg {
-		// TODO: call to 3rd party like gdm, to support dynamic ui layouts
 		required, optional := "required", "optional"
 		supportedEntries := "optional:chars,chars_password"
 		requiredWithBooleans := "required:true,false"
