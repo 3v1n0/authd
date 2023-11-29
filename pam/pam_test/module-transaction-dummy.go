@@ -127,8 +127,7 @@ func (m *ModuleTransactionDummy) GetData(key string) (any, error) {
 func (m *ModuleTransactionDummy) StartStringConv(style pam.Style, prompt string) (
 	pam.StringConvResponse, error) {
 	if style == pam.BinaryPrompt {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			errors.New("binary style is not supported"))
+		return nil, fmt.Errorf("%w: binary style is not supported", pam.ErrConv)
 	}
 
 	res, err := m.StartConv(pam.NewStringConvRequest(style, prompt))
@@ -138,8 +137,7 @@ func (m *ModuleTransactionDummy) StartStringConv(style pam.Style, prompt string)
 
 	stringRes, ok := res.(pam.StringConvResponse)
 	if !ok {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			errors.New("can't convert to pam.StringConvResponse"))
+		return nil, fmt.Errorf("%w: can't convert to pam.StringConvResponse", pam.ErrConv)
 	}
 	return stringRes, nil
 }
@@ -160,8 +158,7 @@ func (m *ModuleTransactionDummy) StartBinaryConv(bytes []byte) (
 
 	binaryRes, ok := res.(pam.BinaryConvResponse)
 	if !ok {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			errors.New("can't convert to pam.BinaryConvResponse"))
+		return nil, fmt.Errorf("%w: can't convert to pam.BinaryConvResponse", pam.ErrConv)
 	}
 	return binaryRes, nil
 }
@@ -174,8 +171,7 @@ func (m *ModuleTransactionDummy) StartConv(req pam.ConvRequest) (
 		return nil, err
 	}
 	if len(resp) != 1 {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			errors.New("not enough values returned"))
+		return nil, fmt.Errorf("%w: not enough values returned", pam.ErrConv)
 	}
 	return resp[0], nil
 }
@@ -183,10 +179,7 @@ func (m *ModuleTransactionDummy) StartConv(req pam.ConvRequest) (
 func (m *ModuleTransactionDummy) handleStringRequest(req pam.ConvRequest) (pam.StringConvResponse, error) {
 	msgStyle := req.Style()
 	if m.convHandler == nil {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			fmt.Errorf("no conversation handler provided for style %v",
-				msgStyle),
-		)
+		return nil, fmt.Errorf("no conversation handler provided for style %v", msgStyle)
 	}
 	reply, err := m.convHandler.RespondPAM(msgStyle,
 		req.(pam.StringConvRequest).Prompt())
@@ -202,9 +195,7 @@ func (m *ModuleTransactionDummy) handleStringRequest(req pam.ConvRequest) (pam.S
 
 func (m *ModuleTransactionDummy) handleBinaryRequest(req pam.ConvRequest) (pam.BinaryConvResponse, error) {
 	if m.convHandler == nil {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			errors.New("no binary handler provided"),
-		)
+		return nil, errors.New("no binary handler provided")
 	}
 
 	//nolint:forcetypeassert
@@ -232,10 +223,7 @@ func (m *ModuleTransactionDummy) handleBinaryRequest(req pam.ConvRequest) (pam.B
 		return binReq.CreateResponse(r), nil
 
 	default:
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			fmt.Errorf(
-				"unsupported conversation handler %#v", handler),
-		)
+		return nil, fmt.Errorf("unsupported conversation handler %#v", handler)
 	}
 }
 
@@ -243,8 +231,7 @@ func (m *ModuleTransactionDummy) handleBinaryRequest(req pam.ConvRequest) (pam.B
 func (m *ModuleTransactionDummy) StartConvMulti(requests []pam.ConvRequest) (
 	[]pam.ConvResponse, error) {
 	if len(requests) == 0 {
-		return nil, pam.NewTransactionError(pam.ErrConv,
-			errors.New("no requests defined"))
+		return nil, fmt.Errorf("%w: no requests defined", pam.ErrConv)
 	}
 
 	goReplies := make([]pam.ConvResponse, 0, len(requests))
@@ -260,20 +247,18 @@ func (m *ModuleTransactionDummy) StartConvMulti(requests []pam.ConvRequest) (
 		case pam.TextInfo:
 			response, err := m.handleStringRequest(req)
 			if err != nil {
-				return nil, err
+				return nil, errors.Join(pam.ErrConv, err)
 			}
 			goReplies = append(goReplies, response)
 		case pam.BinaryPrompt:
 			response, err := m.handleBinaryRequest(req)
 			if err != nil {
-				return nil, err
+				return nil, errors.Join(pam.ErrConv, err)
 			}
 			goReplies = append(goReplies, response)
 		default:
-			return nil, pam.NewTransactionError(pam.ErrConv,
-				fmt.Errorf(
-					"unsupported conversation type %v", msgStyle),
-			)
+			return nil, fmt.Errorf("%w: unsupported conversation type %v",
+				pam.ErrConv, msgStyle)
 		}
 	}
 
