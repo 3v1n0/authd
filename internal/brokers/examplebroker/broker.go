@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -419,6 +420,8 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 			return "", "", fmt.Errorf("authentication data is not a valid json value: %w", err)
 		}
 	}
+
+	log.Printf("In mode %s, auth data is %v", sessionInfo.selectedMode, authData)
 
 	// Handles the context that will be assigned for the IsAuthenticated handler
 	b.isAuthenticatedCallsMu.Lock()
