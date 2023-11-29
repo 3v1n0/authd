@@ -28,6 +28,8 @@ var (
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
+		fmt.Printf("sendIsAuthenticated: '%#v'\n", authData)
+		log.Debugf(context.TODO(), "sendIsAuthenticated: '%s'\n", authData)
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
@@ -35,6 +37,7 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				return isAuthenticatedResultReceived{
+					res:    nil,
 					access: responses.AuthCancelled,
 				}
 			}
@@ -45,6 +48,7 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		}
 
 		return isAuthenticatedResultReceived{
+			res:    res,
 			access: res.Access,
 			msg:    res.Msg,
 		}
@@ -59,9 +63,13 @@ type isAuthenticatedRequested struct {
 	skip      *bool
 }
 
+// isAuthenticatedCancelled is the event to cancel the auth request.
+type isAuthenticatedCancelled struct{}
+
 // isAuthenticatedResultReceived is the internal event with the authentication access result
 // and data that was retrieved.
 type isAuthenticatedResultReceived struct {
+	res    *authd.IAResponse
 	access string
 	msg    string
 }
@@ -124,13 +132,21 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		m.cancelIsAuthenticated()
 		return *m, sendEvent(AuthModeSelected{})
 
+	case isAuthenticatedCancelled:
+		// fmt.Printf("Cancellation func is %v\n", reflect.TypeOf(m.cancelIsAuthenticated))
+		fmt.Printf("Cancellation func")
+		m.cancelIsAuthenticated()
+		return *m, nil
+
 	case isAuthenticatedRequested:
 		m.cancelIsAuthenticated()
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
+		fmt.Println("sendIsAuthenticated: %#v", msg)
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
 		}
+		fmt.Println("sendIsAuthenticated, encrypted: %#v", msg)
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{
 			Challenge: msg.challenge,
 			Wait:      msg.wait,
