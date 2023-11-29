@@ -181,10 +181,8 @@ func TestSetPutEnv(t *testing.T) {
 					}
 				}
 				gotEnv, err := tx.GetEnvList()
-				require.NoError(t, err,
-					"Always put msgs on the requires so you can pinpoint the failure faster")
-				require.Equal(t, wantEnv, gotEnv,
-					"Always put msgs on the requires so you can pinpoint the failure faster")
+				require.NoError(t, err, "tx.GetEnvList should not return an error")
+				require.Equal(t, wantEnv, gotEnv, "returned env lits should match expected")
 			}
 
 			if tc.wantValue != nil {
