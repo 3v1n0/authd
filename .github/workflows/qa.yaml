@@ -1,11 +1,6 @@
 name: QA & sanity checks
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "*"
-  pull_request:
 
 env:
   apt_deps: >-
