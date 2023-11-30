@@ -142,23 +142,41 @@ func TestDataSend(t *testing.T) {
 		},
 
 		"nil return": {
-			value: &Data{Type: Event, EventType: BrokersReceived,
-				EventData: objectToRaw(t, Object{})},
+			value: &Data{
+				Type: DataType_event,
+				Event: &EventData{
+					Type: EventType_brokerSelected,
+					Data: &EventData_BrokerSelected{},
+				},
+			},
+
 			wantReturn: []byte("null"),
 		},
 
 		"version data": {
 			value: &Data{
-				Type:      Hello,
-				HelloData: &HelloData{Version: 12345},
+				Type:  DataType_hello,
+				Hello: &HelloData{Version: 12345},
 			},
 			wantReturn: []byte(`"hello gdm!"`),
 		},
 
-		"wrong data": {
+		"Error on missing data return": {
 			value: &Data{
-				Type:        Event,
-				RequestData: Object{"something": "wrong definition on purpose"},
+				Type: DataType_event,
+				Event: &EventData{
+					Type: EventType_brokerSelected,
+					Data: nil,
+				},
+			},
+
+			wantError: errors.New("missing event data"),
+		},
+
+		"Error on wrong data": {
+			value: &Data{
+				Type:    DataType_event,
+				Request: &RequestData{},
 			},
 			wantError: errors.New("missing event type"),
 		},

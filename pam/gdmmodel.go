@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -41,19 +40,19 @@ func (m *gdmModel) Init() tea.Cmd {
 }
 
 func (m *gdmModel) protoHello() tea.Cmd {
-	reply, err := (&gdm.Data{Type: gdm.Hello}).SendParsed(m.pamMt)
+	reply, err := (&gdm.Data{Type: gdm.DataType_hello}).SendParsed(m.pamMt)
 	if err != nil {
 		return sendEvent(pamError{
 			status: pam.ErrAuthinfoUnavail,
 			msg:    fmt.Sprintf("gdm initialization failed: %v", err),
 		})
 	}
-	if reply.Type != gdm.Hello || reply.HelloData == nil ||
-		reply.HelloData.Version != gdm.ProtoVersion {
+	if reply.Type != gdm.DataType_hello || reply.Hello == nil ||
+		reply.Hello.Version != gdm.ProtoVersion {
 		return sendEvent(pamError{
 			status: pam.ErrAuthinfoUnavail,
-			msg: fmt.Sprintf("Gdm protocol initialization failed, type %s, data %d",
-				reply.Type.String(), reply.HelloData),
+			msg: fmt.Sprintf("Gdm protocol initialization failed, type %s, data %#v",
+				reply.Type, reply.Hello),
 		})
 	}
 	log.Debugf(context.TODO(), "Gdm Reply is %v", reply)
@@ -62,8 +61,9 @@ func (m *gdmModel) protoHello() tea.Cmd {
 
 func (m *gdmModel) requestUICapabilities() tea.Cmd {
 	return func() tea.Msg {
-		responseData, err := gdm.SendRequest(m.pamMt, gdm.UILayoutCapabilities,
-			gdm.Object{})
+		// res, err := gdm.SendRequest(m.pamMt, &gdm.RequestData_UiLayoutCapabilities{})
+		res, err := gdm.SendRequestTyped[*gdm.ResponseData_UiLayoutCapabilities](m.pamMt,
+			&gdm.RequestData_UiLayoutCapabilities{})
 		if err != nil {
 			return pamError{
 				status: pam.ErrSystem,
@@ -71,24 +71,22 @@ func (m *gdmModel) requestUICapabilities() tea.Cmd {
 			}
 		}
 		// log.Debugf(context.TODO(), "Gdm Request response is %v", responseData)
-		if len(responseData) == 0 {
+		if res == nil {
 			return supportedUILayoutsReceived{}
 		}
-		if len(responseData) != 1 {
-			return pamError{
-				status: pam.ErrSystem,
-				msg: fmt.Sprintf("unexpected number of capabilities returned: %d",
-					len(responseData))}
-		}
-		capabilities, err := gdm.ParseRawJSON[[]*authd.UILayout](responseData[0])
-		log.Debugf(context.TODO(), "Gdm ui capabilities are %v", capabilities)
-		if err != nil {
-			return pamError{
-				status: pam.ErrSystem,
-				msg:    fmt.Sprintf("parsing GDM response failed: %v", err),
-			}
-		}
-		return supportedUILayoutsReceived{*capabilities}
+		// res, ok := responseData.(*gdm.ResponseData_UiLayoutCapabilities)
+		// if !ok {
+		// 	log.Debugf(context.TODO(), "Gdm ui capabilities are %v", capabilities)
+		// }
+		// capabilities := res.UiLayoutCapabilities.SupportedUiLayouts
+		// log.Debugf(context.TODO(), "Gdm ui capabilities are %v", capabilities)
+		// if err != nil {
+		// 	return pamError{
+		// 		status: pam.ErrSystem,
+		// 		msg:    fmt.Sprintf("parsing GDM response failed: %v", err),
+		// 	}
+		// }
+		return supportedUILayoutsReceived{res.UiLayoutCapabilities.SupportedUiLayouts}
 	}
 }
 
@@ -113,73 +111,58 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 	commands := []tea.Cmd{sendEvent(gdmPollDone{})}
 
 	for _, result := range gdmPollResults {
-		if result.Type == gdm.Event {
-			switch result.EventType {
-			case gdm.BrokerSelected:
-				brokerID, err := gdm.ParseRawObject[string](result.EventData,
-					"brokerId")
-				if err != nil {
-					return sendEvent(pamError{
-						status: pam.ErrSystem, msg: err.Error(),
-					})
-				}
-				commands = append(commands, sendEvent(brokerSelected{
-					brokerID: *brokerID,
+		switch res := result.Data.(type) {
+		case *gdm.EventData_BrokerSelected:
+			if res.BrokerSelected != nil {
+				return sendEvent(pamError{status: pam.ErrSystem,
+					msg: "missing broker selected",
+				})
+			}
+			commands = append(commands, sendEvent(brokerSelected{
+				brokerID: res.BrokerSelected.BrokerId,
+			}))
+
+		case *gdm.EventData_AuthModeSelected:
+			if res.AuthModeSelected == nil {
+				return sendEvent(pamError{
+					status: pam.ErrSystem, msg: "missing auth mode id",
+				})
+			}
+			commands = append(commands, sendEvent(authModeSelected{
+				id: res.AuthModeSelected.AuthModeId,
+			}))
+
+		case *gdm.EventData_IsAuthenticatedRequested:
+			if res.IsAuthenticatedRequested == nil {
+				return sendEvent(pamError{
+					status: pam.ErrSystem, msg: "missing auth requested",
+				})
+			}
+			if res.IsAuthenticatedRequested.Challenge != nil {
+				commands = append(commands, sendEvent(isAuthenticatedRequested{
+					challenge: res.IsAuthenticatedRequested.Challenge,
 				}))
+			}
 
-			case gdm.AuthModeSelected:
-				id, err := gdm.ParseRawObject[string](result.EventData, "id")
-				if err != nil {
-					return sendEvent(pamError{
-						status: pam.ErrSystem, msg: err.Error(),
-					})
-				}
-				commands = append(commands, sendEvent(authModeSelected{id: *id}))
+			if res.IsAuthenticatedRequested.Wait != nil {
+				commands = append(commands, sendEvent(isAuthenticatedRequested{
+					wait: res.IsAuthenticatedRequested.Wait,
+				}))
+			}
 
-			case gdm.IsAuthenticatedRequested:
-				challenge, err := gdm.ParseRawObject[string](result.EventData,
-					"challenge")
-				if err != nil && !errors.Is(err, gdm.ObjectKeyNotFound{}) {
-					return sendEvent(pamError{
-						status: pam.ErrSystem,
-						msg:    fmt.Sprintf("Failed to parse event challenge value: %v", err),
-					})
-				}
-				if challenge != nil {
-					commands = append(commands, sendEvent(isAuthenticatedRequested{
-						challenge: challenge,
-					}))
-				}
+		case *gdm.EventData_ReselectAuthMode:
+			commands = append(commands, sendEvent(reselectAuthMode{}))
 
-				wait, err := gdm.ParseRawObject[bool](result.EventData, "wait")
-				if err != nil && !errors.Is(err, gdm.ObjectKeyNotFound{}) {
-					return sendEvent(pamError{
-						status: pam.ErrSystem,
-						msg:    fmt.Sprintf("Failed to parse event wait value: %v", err),
-					})
-				}
-				if wait != nil {
-					commands = append(commands, sendEvent(isAuthenticatedRequested{
-						wait: wait,
-					}))
-				}
+		case *gdm.EventData_StageChanged:
+			if res.StageChanged == nil {
+				return sendEvent(pamError{
+					status: pam.ErrSystem, msg: "missing stage changed",
+				})
+			}
+			log.Debugf(context.TODO(), "GDM Stage changed to %d", res.StageChanged.Stage)
 
-			case gdm.ReselectAuthMode:
-				commands = append(commands, sendEvent(reselectAuthMode{}))
-
-			case gdm.StageChanged:
-				stage, _ := gdm.ParseRawObject[stage](result.EventData, "stage")
-				if err != nil {
-					return sendEvent(pamError{
-						status: pam.ErrSystem,
-						msg:    fmt.Sprintf("Failed to parse event stage value: %v", err),
-					})
-				}
-				log.Debugf(context.TODO(), "GDM Stage changed to %d", *stage)
-
-				if *stage != stageChallenge {
-					commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
-				}
+			if stage(res.StageChanged.Stage) != stageChallenge {
+				commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
 			}
 		}
 	}
@@ -187,9 +170,9 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 	// }
 }
 
-func (m *gdmModel) emitEvent(eventType gdm.EventType, reqData gdm.Object) tea.Cmd {
+func (m *gdmModel) emitEvent(event gdm.Event) tea.Cmd {
 	return func() tea.Msg {
-		err := gdm.EmitEvent(m.pamMt, eventType, reqData)
+		err := gdm.EmitEvent(m.pamMt, event)
 		if err != nil {
 			return pamError{
 				status: pam.ErrSystem,
@@ -214,24 +197,28 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		return m, sendEvent(supportedUILayoutsReceived{msg.uiLayouts})
 
 	case brokersListReceived:
-		return m, m.emitEvent(gdm.BrokersReceived, gdm.Object{
-			"brokers": msg.brokers,
+		return m, m.emitEvent(&gdm.EventData_BrokersReceived{
+			BrokersReceived: &gdm.Events_BrokersReceived{BrokersInfos: msg.brokers},
 		})
+
 	case brokerSelected:
-		return m, m.emitEvent(gdm.BrokerSelected, gdm.Object{
-			"brokerId": msg.brokerID,
+		return m, m.emitEvent(&gdm.EventData_BrokerSelected{
+			BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: msg.brokerID},
 		})
+
 	case authModesReceived:
-		return m, m.emitEvent(gdm.AuthModesReceived, gdm.Object{
-			"authModes": msg.authModes,
+		return m, m.emitEvent(&gdm.EventData_AuthModesReceived{
+			AuthModesReceived: &gdm.Events_AuthModesReceived{AuthModes: msg.authModes},
 		})
+
 	case authModeSelected:
-		return m, m.emitEvent(gdm.AuthModeSelected, gdm.Object{
-			"authMode": msg.id,
+		return m, m.emitEvent(&gdm.EventData_AuthModeSelected{
+			AuthModeSelected: &gdm.Events_AuthModeSelected{AuthModeId: msg.id},
 		})
+
 	case UILayoutReceived:
-		return m, m.emitEvent(gdm.UILayoutReceived, gdm.Object{
-			"layout": msg.layout,
+		return m, m.emitEvent(&gdm.EventData_UiLayoutReceived{
+			UiLayoutReceived: &gdm.Events_UiLayoutReceived{UiLayout: msg.layout},
 		})
 
 	case isAuthenticatedResultReceived:
@@ -243,8 +230,8 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 				status: pam.ErrSystem,
 				msg:    "No authentication result"})
 		}
-		return m, m.emitEvent(gdm.AuthEvent, gdm.Object{
-			"result": msg.res,
+		return m, m.emitEvent(&gdm.EventData_AuthEvent{
+			AuthEvent: &gdm.Events_AuthEvent{Response: msg.res},
 		})
 	}
 	return m, nil
@@ -252,8 +239,8 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 
 func (m *gdmModel) changeStage(s stage) tea.Cmd {
 	return func() tea.Msg {
-		_, err := gdm.SendRequest(m.pamMt, gdm.ChangeStage, gdm.Object{
-			"stage": s,
+		_, err := gdm.SendRequest(m.pamMt, &gdm.RequestData_ChangeStage{
+			ChangeStage: &gdm.Requests_ChangeStage{Stage: int32(s)},
 		})
 		/* FIXME: handle logical errors */
 		if err != nil {

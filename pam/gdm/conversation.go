@@ -3,21 +3,20 @@ package gdm
 import "C"
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/msteinert/pam"
 )
 
-func sendToGdm(pamMt pam.ModuleTransaction, data []byte) ([]byte, error) {
+func sendToGdm(pamMTx pam.ModuleTransaction, data []byte) ([]byte, error) {
 	binReq, err := NewBinaryJSONProtoRequest(data)
 	if err != nil {
 		return nil, err
 	}
 	defer binReq.Release()
 	// fmt.Println("Sending to GDM\n", hex.Dump(data))
-	res, err := pamMt.StartConv(binReq)
+	res, err := pamMTx.StartConv(binReq)
 	// fmt.Println("Sending ptr", binReq.Pointer())
 	if err != nil {
 		return nil, err
@@ -38,47 +37,47 @@ func sendToGdm(pamMt pam.ModuleTransaction, data []byte) ([]byte, error) {
 }
 
 // Send sends the data to the PAM Module, returning the JSON data.
-func (d *Data) Send(pamMt pam.ModuleTransaction) ([]byte, error) {
+func (d *Data) Send(pamMTx pam.ModuleTransaction) ([]byte, error) {
 	bytes, err := d.JSON()
 	if err != nil {
 		return nil, err
 	}
 
-	return sendToGdm(pamMt, bytes)
+	return sendToGdm(pamMTx, bytes)
 }
 
 // SendParsed sends the data to the PAM Module and returns the parsed Data.
-func (d *Data) SendParsed(pamMt pam.ModuleTransaction) (Data, error) {
+func (d *Data) SendParsed(pamMTx pam.ModuleTransaction) (*Data, error) {
 	bytes, err := d.JSON()
 	if err != nil {
-		return Data{}, err
+		return nil, err
 	}
 
 	fmt.Println("Sending to GDM", string(bytes))
-	jsonValue, err := sendToGdm(pamMt, bytes)
+	jsonValue, err := sendToGdm(pamMTx, bytes)
 	if err != nil {
-		return Data{}, err
+		return nil, err
 	}
 
 	gdmData, err := NewDataFromJSON(jsonValue)
 	if err != nil {
-		return Data{}, err
+		return nil, err
 	}
-	return *gdmData, nil
+	return gdmData, nil
 }
 
 // SendPoll sends a PollEvent to Gdm.
-func SendPoll(pamMt pam.ModuleTransaction) ([]Data, error) {
-	gdmData, err := (&Data{Type: Poll}).SendParsed(pamMt)
+func SendPoll(pamMTx pam.ModuleTransaction) ([]*EventData, error) {
+	gdmData, err := (&Data{Type: DataType_poll}).SendParsed(pamMTx)
 	if err != nil {
 		return nil, err
 	}
 
-	if gdmData.Type != PollResponse {
+	if gdmData.Type != DataType_pollResponse {
 		return nil, fmt.Errorf("gdm replied with an unexpected type: %v",
 			gdmData.Type.String())
 	}
-	return gdmData.PollResponseData, nil
+	return gdmData.GetPollResponse(), nil
 }
 
 // type RawResponse RawObject
@@ -96,47 +95,83 @@ func SendPoll(pamMt pam.ModuleTransaction) ([]Data, error) {
 // }
 
 // SendRequest sends a Request to Gdm.
-func SendRequest(pamMt pam.ModuleTransaction, requestType RequestType, reqData Object) (
-	[]json.RawMessage, error) {
-	// bytes, err := json.Marshal(reqData)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// rawReq := RawObject{}
-	// if err := json.Unmarshal(bytes, &rawReq); err != nil {
-	// 	return nil, err
-	// }
+func SendRequest(pamMTx pam.ModuleTransaction, req Request) (Response, error) {
+	var reqType RequestType
+	switch req.(type) {
+	case *RequestData_UiLayoutCapabilities:
+		reqType = RequestType_uiLayoutCapabilities
+	case *RequestData_ChangeStage:
+		reqType = RequestType_changeStage
+	default:
+		return nil, fmt.Errorf("no known request type %#v", req)
+	}
 	gdmData, err := (&Data{
-		Type:        Request,
-		RequestType: requestType,
-		RequestData: reqData,
-	}).SendParsed(pamMt)
+		Type:    DataType_request,
+		Request: &RequestData{Type: reqType, Data: req},
+	}).SendParsed(pamMTx)
 
 	if err != nil {
 		return nil, err
 	}
 
-	if gdmData.Type != Response {
+	if gdmData.Type != DataType_response {
 		return nil, fmt.Errorf("gdm replied with an unexpected type: %v",
 			gdmData.Type.String())
 	}
-	if gdmData.ResponseData == nil {
+	if gdmData.Response == nil {
 		return nil, fmt.Errorf("gdm replied with no response")
 	}
-	return gdmData.ResponseData, nil
+	if gdmData.Response.Type != reqType {
+		return nil, fmt.Errorf("gdm replied with invalid response type: %v for %v request",
+			gdmData.Response.Type, reqType)
+	}
+	return gdmData.Response.GetData(), nil
+}
+
+// SendRequestTyped allows to parse an object value into a parsed structure.
+func SendRequestTyped[T Response](pamMTx pam.ModuleTransaction, req Request) (T, error) {
+	res, err := SendRequest(pamMTx, req)
+	if err != nil {
+		return *new(T), err
+	}
+	v, ok := res.(T)
+	if !ok {
+		return *new(T), fmt.Errorf("impossible to convert %#v", v)
+	}
+
+	return v, nil
 }
 
 // EmitEvent sends an Event to Gdm.
-func EmitEvent(pamMt pam.ModuleTransaction, eventType EventType, evData Object) error {
-	rawObject, err := evData.ToRawMessage()
-	if err != nil {
-		return err
+func EmitEvent(pamMTx pam.ModuleTransaction, event Event) error {
+	var evType EventType
+	switch event.(type) {
+	case *EventData_BrokersReceived:
+		evType = EventType_brokersReceived
+	case *EventData_BrokerSelected:
+		evType = EventType_brokerSelected
+	case *EventData_AuthModesReceived:
+		evType = EventType_authModesReceived
+	case *EventData_AuthModeSelected:
+		evType = EventType_authModeSelected
+	case *EventData_IsAuthenticatedRequested:
+		evType = EventType_isAuthenticatedRequested
+	case *EventData_StageChanged:
+		evType = EventType_stageChanged
+	case *EventData_UiLayoutReceived:
+		evType = EventType_uiLayoutReceived
+	case *EventData_AuthEvent:
+		evType = EventType_authEvent
+	case *EventData_ReselectAuthMode:
+		evType = EventType_reselectAuthMode
+	default:
+		return fmt.Errorf("no known event type %#v", event)
 	}
-	_, err = (&Data{
-		Type:      Event,
-		EventType: eventType,
-		EventData: rawObject,
-	}).SendParsed(pamMt)
+
+	_, err := (&Data{
+		Type:  DataType_event,
+		Event: &EventData{Type: evType, Data: event},
+	}).SendParsed(pamMTx)
 
 	if err != nil {
 		return err

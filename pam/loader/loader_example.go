@@ -28,24 +28,24 @@ func exampleHandleGdmData(gdmData *gdm.Data) (*gdm.Data, error) {
 	log.Debugf(context.TODO(), "Handling authd protocol: %#v", gdmData)
 
 	switch gdmData.Type {
-	case gdm.Hello:
+	case gdm.DataType_hello:
 		return &gdm.Data{
-			Type:      gdm.Hello,
-			HelloData: &gdm.HelloData{Version: gdm.ProtoVersion},
+			Type:  gdm.DataType_hello,
+			Hello: &gdm.HelloData{Version: gdm.ProtoVersion},
 		}, nil
 
-	case gdm.Request:
+	case gdm.DataType_request:
 		return exampleHandleAuthDRequest(gdmData)
 
-	case gdm.Poll:
+	case gdm.DataType_poll:
 		return &gdm.Data{
-			Type:             gdm.PollResponse,
-			PollResponseData: []gdm.Data{},
+			Type:         gdm.DataType_pollResponse,
+			PollResponse: []*gdm.EventData{},
 		}, nil
 
-	case gdm.Event:
+	case gdm.DataType_event:
 		return &gdm.Data{
-			Type: gdm.EventAck,
+			Type: gdm.DataType_eventAck,
 		}, nil
 	}
 
@@ -54,43 +54,53 @@ func exampleHandleGdmData(gdmData *gdm.Data) (*gdm.Data, error) {
 }
 
 func exampleHandleAuthDRequest(gdmData *gdm.Data) (*gdm.Data, error) {
-	switch gdmData.RequestType {
-	case gdm.UILayoutCapabilities:
+	switch gdmData.Request.Type {
+	case gdm.RequestType_uiLayoutCapabilities:
 		required, _ := "required", "optional"
 		supportedEntries := "optional:chars,chars_password"
 		// requiredWithBooleans := "required:true,false"
 		optionalWithBooleans := "optional:true,false"
+
 		return &gdm.Data{
-			Type: gdm.Response,
-			ResponseData: valuesToRawJSON([]any{
-				[]authd.UILayout{
-					{
-						Type:  "form",
-						Label: &required,
-						Entry: &supportedEntries,
-						Wait:  &optionalWithBooleans,
-						// Button: &optional,
-					},
-					{
-						Type:  "newpassword",
-						Label: &required,
-						Entry: &supportedEntries,
-						// Button: &optional,
+			Type: gdm.DataType_response,
+			Response: &gdm.ResponseData{
+				Type: gdmData.Request.Type,
+				Data: &gdm.ResponseData_UiLayoutCapabilities{
+					UiLayoutCapabilities: &gdm.Responses_UiLayoutCapabilities{
+						SupportedUiLayouts: []*authd.UILayout{
+							{
+								Type:  "form",
+								Label: &required,
+								Entry: &supportedEntries,
+								Wait:  &optionalWithBooleans,
+								// Button: &optional,
+							},
+							{
+								Type:  "newpassword",
+								Label: &required,
+								Entry: &supportedEntries,
+								// Button: &optional,
+							},
+						},
 					},
 				},
-			}),
+			},
 		}, nil
 
-	case gdm.ChangeStage:
-		s, ok := gdmData.RequestData["stage"].(float64)
-		if !ok {
+	case gdm.RequestType_changeStage:
+		if gdmData.Request.Data == nil {
 			return nil, fmt.Errorf("missing stage data")
 		}
+		s := gdmData.Request.Data.(*gdm.RequestData_ChangeStage).ChangeStage.Stage
 		currentStage = int(s)
 		log.Debugf(context.TODO(), "Switching to stage %d", currentStage)
+
 		return &gdm.Data{
-			Type:         gdm.Response,
-			ResponseData: valuesToRawJSON([]any{true}),
+			Type: gdm.DataType_response,
+			Response: &gdm.ResponseData{
+				Type: gdmData.Request.Type,
+				Data: &gdm.ResponseData_Ack{},
+			},
 		}, nil
 
 	default:

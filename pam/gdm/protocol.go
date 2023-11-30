@@ -21,6 +21,10 @@ const (
 	ProtoVersion = uint32(1)
 )
 
+type Request = isRequestData_Data
+type Response = isResponseData_Data
+type Event = isEventData_Data
+
 // NewDataFromJSON unmarshals data from json bytes.
 func NewDataFromJSON(bytes []byte) (*Data, error) {
 	var gdmData Data

@@ -68,7 +68,7 @@ func LoadModule() (pamHandle, error) {
 	log.Debugf(context.TODO(), "Creating service file at %s", serviceFile)
 
 	if err := os.WriteFile(serviceFile,
-		[]byte(fmt.Sprintf("auth requisite %s", libPath)),
+		[]byte(fmt.Sprintf("auth requisite %s socket=/tmp/authd.sock", libPath)),
 		0600); err != nil {
 		return nil, fmt.Errorf("can't create service file %v", err)
 	}
