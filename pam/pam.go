@@ -133,9 +133,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	if !ok {
 		msg := fmt.Sprintf("broker data as an invalid type %#v", brokerData)
 		log.Errorf(context.TODO(), msg)
-		if _, err := mTx.StartStringConv(pam.ErrorMsg, msg); err != nil {
-			log.Errorf(context.TODO(), "Failed sending info to pam: %v", err)
-		}
+		sendReturnMessageToPam(mTx, pamError{status: pam.ErrSystem, msg: msg})
 		return pam.ErrIgnore
 	}
 
