@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ubuntu/authd"
@@ -49,6 +50,8 @@ type model struct {
 	authModeSelectionModel authModeSelectionModel
 	authenticationModel    authenticationModel
 
+	mutex *sync.Mutex
+
 	exitMsg fmt.Stringer
 }
 
@@ -87,6 +90,7 @@ type SessionEnded struct{}
 
 // Init initializes the main model orchestrator.
 func (m *model) Init() tea.Cmd {
+	m.mutex = &sync.Mutex{}
 	m.userSelectionModel = newUserSelectionModel(m.pamh)
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.userSelectionModel.Init())
