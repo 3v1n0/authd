@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/msteinert/pam"
+	"github.com/msteinert/pam/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/pam/pam_test"
 )

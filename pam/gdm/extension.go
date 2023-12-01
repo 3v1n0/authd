@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/msteinert/pam"
+	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/internal/log"
 )
 
