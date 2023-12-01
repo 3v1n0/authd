@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-integration-remember-mode
+
+
+
+
+
+
+
 
 
 
@@ -75,6 +89,13 @@ Username: user-integration-remember-mode
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your authentication method
@@ -86,6 +107,13 @@ Username: user-integration-remember-mode
   5. Use your phone +1…
   6. Use a QR code
   7. Authentication code
+
+
+
+
+
+
+
 
 
 
@@ -127,6 +155,13 @@ Enter your one time credential
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
@@ -135,6 +170,13 @@ Enter your one time credential
 Auth return: <nil>
 Acct mgmt return: <nil>
 >
+
+
+
+
+
+
+
 
 
 
@@ -179,6 +221,13 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
@@ -188,6 +237,13 @@ Auth return: <nil>
 Acct mgmt return: <nil>
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-integration-remember-mode
+
+
+
+
+
+
+
 
 
 
@@ -231,25 +287,6 @@ Enter your one time credential
 
 
 
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/pam-cli-tests.sock
-Enter your one time credential
-> temporary pass0
-
-Auth return: <nil>
-Acct mgmt return: <nil>
-> ./pam_authd socket=/tmp/pam-cli-tests.sock
-Enter your one time credential
-> temporary pass0
-
-Auth return: <nil>
-Acct mgmt return: <nil>
->
-
-
-
-
-
 
 
 
@@ -271,6 +308,46 @@ Enter your one time credential
 Auth return: <nil>
 Acct mgmt return: <nil>
 >
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
+> temporary pass0
+
+Auth return: <nil>
+Acct mgmt return: <nil>
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
+> temporary pass0
+
+Auth return: <nil>
+Acct mgmt return: <nil>
+>
+
+
+
+
+
+
+
 
 
 

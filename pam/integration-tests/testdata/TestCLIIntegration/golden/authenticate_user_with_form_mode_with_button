@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-integration-form-w-button
+
+
+
+
+
+
+
 
 
 
@@ -75,10 +89,24 @@ Username: user-integration-form-w-button
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
+
+
+
+
+
+
+
 
 
 
@@ -127,25 +155,6 @@ Gimme your password
 
 
 
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/pam-cli-tests.sock
-Enter your one time credential
->
-
-  [ Resend sms ]
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -179,12 +188,59 @@ Enter your one time credential
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 >
 
   [ Resend sms ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
+>
+
+  [ Resend sms ]
+
+
+
+
+
+
+
 
 
 
@@ -231,6 +287,13 @@ Acct mgmt return: <nil>
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
@@ -239,6 +302,13 @@ Enter your one time credential
 Auth return: <nil>
 Acct mgmt return: <nil>
 >
+
+
+
+
+
+
+
 
 
 

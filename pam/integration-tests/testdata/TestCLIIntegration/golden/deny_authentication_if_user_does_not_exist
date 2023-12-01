@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-unexistent
+
+
+
+
+
+
+
 
 
 
@@ -75,6 +89,13 @@ Username: user-unexistent
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
@@ -98,8 +119,15 @@ Username: user-unexistent
 
 
 
-Auth return: System error: can't select broker: rpc error: code = Unknown desc = can't start auth
-entication transaction: user "user-unexistent" does not exist
+
+
+
+
+
+
+
+Auth return: System error: can't select broker: rpc error: code = Unknown desc = can't start aut
+hentication transaction: user "user-unexistent" does not exist
 Acct mgmt return: The return value should be ignored by PAM dispatch
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
@@ -124,7 +152,14 @@ Acct mgmt return: The return value should be ignored by PAM dispatch
 
 
 
-Auth return: System error: can't select broker: rpc error: code = Unknown desc = can't start auth
-entication transaction: user "user-unexistent" does not exist
+
+
+
+
+
+
+
+Auth return: System error: can't select broker: rpc error: code = Unknown desc = can't start aut
+hentication transaction: user "user-unexistent" does not exist
 Acct mgmt return: The return value should be ignored by PAM dispatch
 ────────────────────────────────────────────────────────────────────────────────

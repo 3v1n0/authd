@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-integration-max-attempts
+
+
+
+
+
+
+
 
 
 
@@ -75,10 +89,57 @@ Username: user-integration-max-attempts
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Gimme your password
+>
+invalid password, should be goodpass
+
+
+
+
+
+
 
 
 
@@ -127,25 +188,6 @@ invalid password, should be goodpass
 
 
 
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/pam-cli-tests.sock
-Gimme your password
->
-invalid password, should be goodpass
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -179,11 +221,25 @@ invalid password, should be goodpass
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
 invalid password, should be goodpass
+
+
+
+
+
+
+
 
 
 
@@ -231,6 +287,13 @@ Acct mgmt return: The return value should be ignored by PAM dispatch
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
@@ -238,6 +301,13 @@ Gimme your password
 Auth return: Authentication failure: invalid password, should be goodpass
 Acct mgmt return: The return value should be ignored by PAM dispatch
 >
+
+
+
+
+
+
+
 
 
 

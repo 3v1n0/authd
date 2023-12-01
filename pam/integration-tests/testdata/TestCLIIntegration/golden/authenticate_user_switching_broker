@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-integration-switch-broker
+
+
+
+
+
+
+
 
 
 
@@ -75,10 +89,24 @@ Username: user-integration-switch-broker
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
+
+
+
+
+
+
+
 
 
 
@@ -127,6 +155,13 @@ Gimme your password
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
@@ -153,12 +188,26 @@ Gimme your password
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
   2. ExampleBroker
+
+
+
+
+
+
+
 
 
 
@@ -185,6 +234,13 @@ Acct mgmt return: The return value should be ignored by PAM dispatch
 
 > 1. local
   2. ExampleBroker
+
+
+
+
+
+
+
 
 
 

@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-integration-switch-mode
+
+
+
+
+
+
+
 
 
 
@@ -75,10 +89,24 @@ Username: user-integration-switch-mode
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
+
+
+
+
+
+
+
 
 
 
@@ -127,10 +155,24 @@ Gimme your password
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Click on the link received at user-integration-switch-mode@gmail.com or enter the code:
 >
+
+
+
+
+
+
+
 
 
 
@@ -179,9 +221,23 @@ Click on the link received at user-integration-switch-mode@gmail.com or enter th
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Plug your fido device and press with your thumb
+
+
+
+
+
+
+
 
 
 
@@ -231,10 +287,57 @@ Plug your fido device and press with your thumb
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Gimme your password
+Auth return: <nil>
+Acct mgmt return: <nil>
+>
+
+
+
+
+
 
 
 
@@ -270,25 +373,6 @@ Acct mgmt return: <nil>
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/pam-cli-tests.sock
-Gimme your password
-Auth return: <nil>
-Acct mgmt return: <nil>
->
 
 
 

@@ -23,9 +23,23 @@ Username: user name
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-mfa
+
+
+
+
+
+
+
 
 
 
@@ -75,10 +89,24 @@ Username: user-mfa
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
+
+
+
+
+
+
+
 
 
 
@@ -127,6 +155,13 @@ Gimme your password
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
@@ -153,9 +188,23 @@ Gimme your password
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Plug your fido device and press with your thumb
+
+
+
+
+
+
+
 
 
 
@@ -205,6 +254,13 @@ Plug your fido device and press with your thumb
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Plug your fido device and press with your thumb
@@ -231,9 +287,23 @@ Plug your fido device and press with your thumb
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Unlock your phone +33… or accept request on web interface:
+
+
+
+
+
+
+
 
 
 
@@ -283,6 +353,13 @@ Unlock your phone +33… or accept request on web interface:
 
 
 
+
+
+
+
+
+
+
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Unlock your phone +33… or accept request on web interface:
@@ -309,25 +386,6 @@ Unlock your phone +33… or accept request on web interface:
 
 
 
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/pam-cli-tests.sock
-Auth return: <nil>
-Acct mgmt return: <nil>
->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -340,6 +398,46 @@ Acct mgmt return: <nil>
 Auth return: <nil>
 Acct mgmt return: <nil>
 >
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Auth return: <nil>
+Acct mgmt return: <nil>
+>
+
+
+
+
+
+
+
 
 
 
