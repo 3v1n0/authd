@@ -3,7 +3,6 @@ package nss_test
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -125,19 +124,7 @@ func TestMain(m *testing.M) {
 	testutils.InstallUpdateFlag()
 	flag.Parse()
 
-<<<<<<< HEAD
-	// Start system bus mock.
-	cleanup, err := testutils.StartSystemBusMock()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		os.Exit(1)
-	}
-	defer cleanup()
-
-	execPath, cleanup, err := buildDaemon()
-=======
 	execPath, cleanup, err := testutils.BuildDaemon(false)
->>>>>>> 10ad098 (Move helper functions to testutils)
 	if err != nil {
 		log.Printf("Setup: failed to build daemon: %v", err)
 		os.Exit(1)
