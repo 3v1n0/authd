@@ -3,8 +3,8 @@ Output simple_auth.gif # If we don't specify a .gif output, it will create a def
 
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
-Set Width 1800
-Set Height 800
+Set Width 1200
+Set Height 600
 Set FontFamily "Ubuntu Mono"
 Set FontSize 20
 Set Padding 0
@@ -12,7 +12,7 @@ Set Margin 0
 Set Shell bash
 
 Hide
-Type "./pam_authd socket=/tmp/authd.sock"
+Type "./pam_authd socket=/tmp/pam-cli-tests.sock"
 Enter
 Sleep 100ms
 Show
@@ -20,7 +20,7 @@ Show
 Hide
 Escape
 Backspace
-Type "1"
+Type "user1"
 Sleep 100ms
 Show
 
@@ -28,7 +28,6 @@ Hide
 Enter
 Sleep 100ms
 Show
-
 
 Hide
 Type "2"

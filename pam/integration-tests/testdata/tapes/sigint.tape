@@ -1,5 +1,5 @@
-Output max_attempts.txt
-Output max_attempts.gif # If we don't specify a .gif output, it will create a default out.gif file.
+Output sigint.txt
+Output sigint.gif # If we don't specify a .gif output, it will create a default out.gif file.
 
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
@@ -20,7 +20,7 @@ Show
 Hide
 Escape
 Backspace
-Type "user-integration-max-attempts"
+Type "user-integration-sigint"
 Sleep 100ms
 Show
 
@@ -35,32 +35,7 @@ Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
+Ctrl+C
 Sleep 100ms
 Show
 

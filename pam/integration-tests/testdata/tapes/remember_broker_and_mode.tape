@@ -1,5 +1,5 @@
-Output max_attempts.txt
-Output max_attempts.gif # If we don't specify a .gif output, it will create a default out.gif file.
+Output remember_broker_and_mode.txt
+Output remember_broker_and_mode.gif
 
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
@@ -20,7 +20,7 @@ Show
 Hide
 Escape
 Backspace
-Type "user-integration-max-attempts"
+Type "user-integration-remember-mode"
 Sleep 100ms
 Show
 
@@ -32,34 +32,41 @@ Show
 Hide
 Type "2"
 Sleep 100ms
+Escape
+Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
+Type "7"
+Sleep 100ms
+Show
+
+Hide
+Type "temporary pass0"
 Enter
 Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
+Type "./pam_authd socket=/tmp/pam-cli-tests.sock"
 Enter
 Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
+Escape
+Backspace
+Type "user-integration-remember-mode"
+Sleep 100ms
+Show
+
+Hide
 Enter
 Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
+Type "temporary pass0"
 Enter
 Sleep 100ms
 Show

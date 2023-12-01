@@ -15,7 +15,7 @@ import (
 
 type daemonOptions struct {
 	cachePath  string
-	cacheDB    string
+	existentDB string
 	socketPath string
 }
 
@@ -29,10 +29,10 @@ func WithCachePath(path string) DaemonOption {
 	}
 }
 
-// WithCacheDB overrides the default cache database of the daemon.
-func WithCacheDB(db string) DaemonOption {
+// WithPreviousDBState initializes the cache of the daemon with a preexistent database.
+func WithPreviousDBState(db string) DaemonOption {
 	return func(o *daemonOptions) {
-		o.cacheDB = db
+		o.existentDB = db
 	}
 }
 
@@ -63,8 +63,8 @@ func RunDaemon(ctx context.Context, t *testing.T, execPath string, args ...Daemo
 		require.NoError(t, os.MkdirAll(opts.cachePath, 0700), "Setup: failed to create cache dir")
 	}
 
-	if opts.cacheDB != "" {
-		CreateDBFromYAML(t, filepath.Join("testdata", "db", opts.cacheDB+".db.yaml"), opts.cachePath)
+	if opts.existentDB != "" {
+		CreateDBFromYAML(t, filepath.Join("testdata", "db", opts.existentDB+".db.yaml"), opts.cachePath)
 	}
 
 	if opts.socketPath == "" {
@@ -86,25 +86,31 @@ paths:
 	cmd.Stderr = os.Stderr
 	cmd.Env = AppendCovEnv(os.Environ())
 
+	// Start the daemon
 	stopped = make(chan struct{})
 	go func() {
-		require.NoError(t, cmd.Start(), "Setup: daemon should start with no error")
-		<-ctx.Done()
-		// The daemon can trigger some background tasks so, in order to stop it gracefully, we need to send either
-		// SIGTERM or SIGINT to tell it that it's time to cleanup and stop.
-		require.NoError(t, cmd.Process.Signal(os.Signal(syscall.SIGTERM)), "Teardown: Failed to send signal to stop daemon")
-		require.NoError(t, cmd.Wait(), "Teardown: daemon should stop with no error")
+		err := cmd.Run()
+		require.NoError(t, err, "Setup: error when running the daemon (%v): %s", err, cmd.Stdout)
 		close(stopped)
 	}()
 
 	// Give some time for the daemon to start.
 	time.Sleep(time.Second)
 
+	// Stops the daemon when the context is cancelled.
+	go func() {
+		<-ctx.Done()
+		// The daemon can trigger some background tasks so, in order to stop it gracefully, we need to send either
+		// SIGTERM or SIGINT to tell it that it's time to cleanup and stop.
+		require.NoError(t, cmd.Process.Signal(os.Signal(syscall.SIGTERM)), "Teardown: Failed to send signal to stop daemon")
+		<-stopped
+	}()
+
 	return opts.socketPath, stopped
 }
 
 // BuildDaemon builds the daemon executable and returns the binary path.
-func BuildDaemon(brokerNeeded bool) (execPath string, cleanup func(), err error) {
+func BuildDaemon(withExampleBroker bool) (execPath string, cleanup func(), err error) {
 	projectRoot := ProjectRoot()
 
 	tempDir, err := os.MkdirTemp("", "authd-tests-daemon")
@@ -120,14 +126,14 @@ func BuildDaemon(brokerNeeded bool) (execPath string, cleanup func(), err error)
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
-	if brokerNeeded {
+	if withExampleBroker {
 		cmd.Args = append(cmd.Args, "-tags=withexamplebroker")
 	}
 	cmd.Args = append(cmd.Args, "-o", execPath, "./cmd/authd")
 
-	if err := cmd.Run(); err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("failed to build daemon: %w", err)
+		return "", nil, fmt.Errorf("failed to build daemon(%v): %s", err, out)
 	}
 
 	return execPath, cleanup, err

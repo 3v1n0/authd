@@ -1,5 +1,5 @@
-Output max_attempts.txt
-Output max_attempts.gif # If we don't specify a .gif output, it will create a default out.gif file.
+Output unexistent_user.txt
+Output unexistent_user.gif # If we don't specify a .gif output, it will create a default out.gif file.
 
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
@@ -20,7 +20,7 @@ Show
 Hide
 Escape
 Backspace
-Type "user-integration-max-attempts"
+Type "user-unexistent"
 Sleep 100ms
 Show
 
@@ -31,36 +31,6 @@ Show
 
 Hide
 Type "2"
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
 Sleep 100ms
 Show
 

@@ -88,7 +88,7 @@ func TestIntegration(t *testing.T) {
 			var daemonStopped chan struct{}
 			if !tc.noDaemon && !tc.noCustomSocket {
 				ctx, cancel := context.WithCancel(context.Background())
-				socketPath, daemonStopped = testutils.RunDaemon(ctx, t, daemonPath, testutils.WithCacheDB(tc.cacheDB))
+				socketPath, daemonStopped = testutils.RunDaemon(ctx, t, daemonPath, testutils.WithPreviousDBState(tc.cacheDB))
 				t.Cleanup(func() {
 					cancel()
 					<-daemonStopped

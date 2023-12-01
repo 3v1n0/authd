@@ -9,7 +9,10 @@ on:
 
 env:
   apt_deps: >-
-    libpam0g-dev ffmpeg
+    libpam0g-dev
+
+  test_apt_deps: >-
+    ffmpeg
   # In Rust the grpc stubs are generated at build time
   # so we always need to install the protobuf compilers
   # when building the NSS crate.
@@ -75,7 +78,7 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt update
 
           # The integration tests build the NSS crate, so we need the cargo build dependencies in order to run them.
-          sudo DEBIAN_FRONTEND=noninteractive apt install -y ${{ env.apt_deps }} ${{ env.protobuf_compilers}}
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y ${{ env.apt_deps }} ${{ env.protobuf_compilers}} ${{ env.test_apt_deps }}
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -85,6 +88,7 @@ jobs:
           set -eu
           go install github.com/charmbracelet/vhs@latest
 
+          # VHS requires ttyd >= 1.7.2 to work properly.
           wget https://github.com/tsl0922/ttyd/releases/download/1.7.4/ttyd.x86_64
           chmod +x ttyd.x86_64
           sudo mv ttyd.x86_64 /usr/bin/ttyd

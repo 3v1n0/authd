@@ -1,5 +1,5 @@
-Output max_attempts.txt
-Output max_attempts.gif # If we don't specify a .gif output, it will create a default out.gif file.
+Output qr_code.txt
+Output qr_code.gif # If we don't specify a .gif output, it will create a default out.gif file.
 
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
@@ -20,7 +20,7 @@ Show
 Hide
 Escape
 Backspace
-Type "user-integration-max-attempts"
+Type "user-integration-qr-code"
 Sleep 100ms
 Show
 
@@ -35,33 +35,27 @@ Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
+Escape
+Sleep 100ms
+Show
+
+Hide
+Type "6"
+Sleep 100ms
+Show
+
+Hide
+Tab
+Sleep 100ms
+Show
+
+Hide
 Enter
 Sleep 100ms
 Show
 
 Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
-Show
-
-Hide
-Type "wrongpass"
-Enter
-Sleep 100ms
+Sleep 3s
 Show
 
 Sleep 100ms

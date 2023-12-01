@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
-	"math/rand"
 	"sort"
 	"strings"
 	"sync"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ubuntu/authd/internal/brokers/responses"
+	"github.com/ubuntu/authd/internal/log"
 	"golang.org/x/exp/slices"
 )
 
@@ -67,13 +67,6 @@ var (
 		"user-mfa":         {},
 		"user-needs-reset": {},
 		"user-can-reset":   {},
-
-		// Integration test users // These do not envolve any special treatment.
-		"user-max-attempts":     {},
-		"user-form-with-button": {},
-		"user-local":            {},
-		"user-remember-mode":    {},
-		"user-switch-mode":      {},
 	}
 )
 
@@ -116,6 +109,8 @@ func (b *Broker) NewSession(ctx context.Context, username, lang string) (session
 	case "user-mfa-with-reset":
 		info.neededAuthSteps = 3
 		info.pwdChange = canReset
+	case "user-unexistent":
+		return "", "", fmt.Errorf("user %q does not exist", username)
 	}
 
 	b.currentSessionsMu.Lock()
@@ -377,11 +372,10 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 		// start transaction with fideo device
 	case "qrcodewithtypo":
 		// generate the url and finish the prompt on the fly.
-		//nolint:gosec // this is some example code not shipped in production
-		i := rand.Intn(3)
-		contents := []string{"https://ubuntu.com", "https://ubuntu-fr.org", "https://canonical.com"}
-		uiLayoutInfo["content"] = contents[i]
+		uiLayoutInfo["content"] = "https://ubuntu.com"
 		uiLayoutInfo["label"] = uiLayoutInfo["label"] + "1337"
+
+		log.Infof(ctx, "####/nQR code with typo: %s/n####/n", uiLayoutInfo["content"])
 	}
 
 	// Store selected mode
@@ -547,7 +541,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 	}
 
-	if _, exists := exampleUsers[sessionInfo.username]; !exists {
+	if _, exists := exampleUsers[sessionInfo.username]; !exists && !strings.HasPrefix(sessionInfo.username, "user-integration") {
 		return responses.AuthDenied, `{"message": "user not found"}`, nil
 	}
 	return responses.AuthGranted, fmt.Sprintf(`{"userinfo": %s}`, userInfoFromName(sessionInfo.username)), nil
