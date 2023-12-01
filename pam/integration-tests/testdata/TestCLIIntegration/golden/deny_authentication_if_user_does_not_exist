@@ -1,49 +1,5 @@
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Username: user-local
-
-
-
-
-
-
-
-
-
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
 
 
 
@@ -68,17 +24,8 @@ Username: user-local
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user-unexistent
 
 
 
@@ -103,7 +50,7 @@ Username: user-local
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
@@ -128,21 +75,12 @@ Username: user-local
 
 
 
-
-
-
-
-
-
-Auth return: 25
-Acct mgmt return: 25
->
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
-> 1. local
-  2. ExampleBroker
+  1. local
+> 2. ExampleBroker
 
 
 
@@ -160,6 +98,15 @@ Acct mgmt return: 25
 
 
 
+Auth return: System error: can't select broker: rpc error: code = Unknown desc = can't start auth
+entication transaction: user "user-unexistent" does not exist
+Acct mgmt return: The return value should be ignored by PAM dispatch
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+  Select your provider
+
+  1. local
+> 2. ExampleBroker
 
 
 
@@ -169,7 +116,15 @@ Acct mgmt return: 25
 
 
 
-Auth return: 25
-Acct mgmt return: 25
->
+
+
+
+
+
+
+
+
+Auth return: System error: can't select broker: rpc error: code = Unknown desc = can't start auth
+entication transaction: user "user-unexistent" does not exist
+Acct mgmt return: The return value should be ignored by PAM dispatch
 ────────────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,56 @@
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user-integration-remember-mode
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
@@ -23,91 +75,12 @@
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Username: user-remember-mode
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your authentication method
 
 > 1. Password authentication
-  2. Send URL to user-remember-mode@gmail.com
+  2. Send URL to user-integration-remember-mode@gmail.com
   3. Use your fido device foo
   4. Use your phone +33…
   5. Use your phone +1…
@@ -128,17 +101,8 @@ Username: user-remember-mode
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 >
 
@@ -163,22 +127,13 @@ Enter your one time credential
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
 
 
@@ -198,33 +153,15 @@ Acct mgmt return: 25
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
+Auth return: <nil>
+Acct mgmt return: <nil>
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
 
 
 
@@ -243,23 +180,14 @@ Acct mgmt return: 25
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
-> ./pam_authd socket=/tmp/authd.sock
-Username: user-remember-mode
-
-
-
-
-
-
-
-
-
+Auth return: <nil>
+Acct mgmt return: <nil>
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user-integration-remember-mode
 
 
 
@@ -278,48 +206,13 @@ Username: user-remember-mode
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Enter your one time credential
-> temporary pass0
-
-Auth return: 0
-Acct mgmt return: 25
-> ./pam_authd socket=/tmp/authd.sock
+Auth return: <nil>
+Acct mgmt return: <nil>
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 >
 
@@ -338,28 +231,19 @@ Enter your one time credential
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
-> ./pam_authd socket=/tmp/authd.sock
+Auth return: <nil>
+Acct mgmt return: <nil>
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
 
 
@@ -373,38 +257,20 @@ Acct mgmt return: 25
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
-> ./pam_authd socket=/tmp/authd.sock
+Auth return: <nil>
+Acct mgmt return: <nil>
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Enter your one time credential
 > temporary pass0
 
-Auth return: 0
-Acct mgmt return: 25
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
-
-
-
-
-
-
-
-
-
 
 
 

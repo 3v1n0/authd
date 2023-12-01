@@ -1,4 +1,56 @@
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user-integration-sigint
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
@@ -23,87 +75,8 @@
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Username: user1
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
 
@@ -128,20 +101,11 @@ Gimme your password
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth return: 0
-Acct mgmt return: 25
+Auth return: Critical error - immediate abort: cancel requested
+Acct mgmt return: The return value should be ignored by PAM dispatch
 >
 
 
@@ -163,30 +127,12 @@ Acct mgmt return: 25
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth return: 0
-Acct mgmt return: 25
+Auth return: Critical error - immediate abort: cancel requested
+Acct mgmt return: The return value should be ignored by PAM dispatch
 >
-
-
-
-
-
-
-
-
-
 
 
 

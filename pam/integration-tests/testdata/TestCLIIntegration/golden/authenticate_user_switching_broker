@@ -1,4 +1,56 @@
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user-integration-switch-broker
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
@@ -23,87 +75,8 @@
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Username: user-can-reset
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
 
@@ -128,35 +101,17 @@ Gimme your password
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Enter your new password (3 days until mandatory)
->
->
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+  Select your authentication method
 
-  [ Skip ]
-
-
-
-
-
-
-
-
-
-
-
-
-
+> 1. Password authentication
+  2. Send URL to user-integration-switch-broker@gmail.com
+  3. Use your fido device foo
+  4. Use your phone +33…
+  5. Use your phone +1…
+  6. Use a QR code
+  7. Authentication code
 
 
 
@@ -173,20 +128,11 @@ Enter your new password (3 days until mandatory)
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Enter your new password (3 days until mandatory)
->
->
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+  Select your provider
 
-  [ Skip ]
-
-
-
-
-
-
-
-
+  1. local
+> 2. ExampleBroker
 
 
 
@@ -208,73 +154,55 @@ Enter your new password (3 days until mandatory)
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Enter your new password (3 days until mandatory)
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+  Select your provider
+
+> 1. local
+  2. ExampleBroker
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Auth return: The return value should be ignored by PAM dispatch:
+Acct mgmt return: The return value should be ignored by PAM dispatch
 >
->
-
-Auth return: 0
-Acct mgmt return: 25
->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Enter your new password (3 days until mandatory)
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+  Select your provider
+
+> 1. local
+  2. ExampleBroker
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Auth return: The return value should be ignored by PAM dispatch:
+Acct mgmt return: The return value should be ignored by PAM dispatch
 >
->
-
-Auth return: 0
-Acct mgmt return: 25
->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────

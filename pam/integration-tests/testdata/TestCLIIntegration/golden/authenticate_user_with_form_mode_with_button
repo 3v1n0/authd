@@ -1,4 +1,56 @@
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user-integration-form-w-button
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
@@ -23,87 +75,8 @@
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Username: user-max-attempts
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
 
@@ -128,35 +101,17 @@ Gimme your password
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Gimme your password
->
-invalid password, should be goodpass
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+  Select your authentication method
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+> 1. Password authentication
+  2. Send URL to user-integration-form-w-button@gmail.com
+  3. Use your fido device foo
+  4. Use your phone +33…
+  5. Use your phone +1…
+  6. Use a QR code
+  7. Authentication code
 
 
 
@@ -173,20 +128,11 @@ invalid password, should be goodpass
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Gimme your password
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
 >
-invalid password, should be goodpass
 
-
-
-
-
-
-
-
-
-
+  [ Resend sms ]
 
 
 
@@ -208,20 +154,11 @@ invalid password, should be goodpass
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Gimme your password
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
 >
-invalid password, should be goodpass
 
-
-
-
-
-
-
-
-
-
+  [ Resend sms ]
 
 
 
@@ -243,20 +180,11 @@ invalid password, should be goodpass
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Gimme your password
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
 >
-invalid password, should be goodpass
 
-
-
-
-
-
-
-
-
-
+  [ Resend sms ]
 
 
 
@@ -278,22 +206,13 @@ invalid password, should be goodpass
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Gimme your password
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
+> temporary pass00
+
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
-Error: authentication: invalid password, should be goodpass
-Auth return: 7
-Acct mgmt return: 25
->
-
-
-
-
-
-
-
-
-
 
 
 
@@ -313,22 +232,13 @@ Acct mgmt return: 25
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Gimme your password
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Enter your one time credential
+> temporary pass00
+
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
-Error: authentication: invalid password, should be goodpass
-Auth return: 7
-Acct mgmt return: 25
->
-
-
-
-
-
-
-
-
-
 
 
 

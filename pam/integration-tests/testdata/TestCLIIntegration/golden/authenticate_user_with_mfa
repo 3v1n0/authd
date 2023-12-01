@@ -1,14 +1,5 @@
-> ./pam_authd socket=/tmp/authd.sock
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-
-
-
-
-
-
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Username: user name
 
 
 
@@ -33,7 +24,7 @@
 
 
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Username: user-mfa
 
 
@@ -58,17 +49,8 @@ Username: user-mfa
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your provider
 
 > 1. local
@@ -93,17 +75,8 @@ Username: user-mfa
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
 
@@ -128,17 +101,8 @@ Gimme your password
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your authentication method
 
 > 1. Password authentication
@@ -163,17 +127,8 @@ Gimme your password
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 >
 
@@ -198,17 +153,8 @@ Gimme your password
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Plug your fido device and press with your thumb
 
 
@@ -233,17 +179,8 @@ Plug your fido device and press with your thumb
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your authentication method
 
 > 1. Use your fido device foo
@@ -268,17 +205,8 @@ Plug your fido device and press with your thumb
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Plug your fido device and press with your thumb
 
 
@@ -303,17 +231,8 @@ Plug your fido device and press with your thumb
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Unlock your phone +33… or accept request on web interface:
 
 
@@ -338,17 +257,8 @@ Unlock your phone +33… or accept request on web interface:
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
   Select your authentication method
 
 > 1. Use your phone +33…
@@ -373,17 +283,8 @@ Unlock your phone +33… or accept request on web interface:
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
 Unlock your phone +33… or accept request on web interface:
 
 
@@ -408,19 +309,10 @@ Unlock your phone +33… or accept request on web interface:
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Auth return: 0
-Acct mgmt return: 25
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
 
 
@@ -443,29 +335,11 @@ Acct mgmt return: 25
 
 
 
-
-
-
-
-
-
-
-
-
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd socket=/tmp/authd.sock
-Auth return: 0
-Acct mgmt return: 25
+> ./pam_authd socket=/tmp/pam-cli-tests.sock
+Auth return: <nil>
+Acct mgmt return: <nil>
 >
-
-
-
-
-
-
-
-
-
 
 
 
