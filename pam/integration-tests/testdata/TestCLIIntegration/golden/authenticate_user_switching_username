@@ -32,7 +32,7 @@ Username: user name
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Username: user1
+Username: -integration-switch-name
 
 
 
@@ -98,7 +98,7 @@ Username: user1
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Username: user-integration-switch-name
+Username: -integration-switch-nam-integration-name-switched
 
 
 
@@ -198,8 +198,8 @@ Gimme your password
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth return: <nil>
-Acct mgmt return: <nil>
+Auth return: Authentication failure: user not found
+Acct mgmt return: The return value should be ignored by PAM dispatch
 >
 
 
@@ -231,8 +231,8 @@ Acct mgmt return: <nil>
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth return: <nil>
-Acct mgmt return: <nil>
+Auth return: Authentication failure: user not found
+Acct mgmt return: The return value should be ignored by PAM dispatch
 >
 
 

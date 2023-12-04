@@ -22,7 +22,7 @@ Show
 Hide
 Escape
 Backspace
-Type "user1"
+Type "-integration-switch-name"
 Sleep 100ms
 Show
 
@@ -34,7 +34,7 @@ Show
 Hide
 Escape
 Backspace
-Type "-integration-switch-name"
+Type "-integration-name-switched"
 Sleep 100ms
 Show
 
