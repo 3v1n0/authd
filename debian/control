@@ -29,4 +29,5 @@ Depends: ${shlibs:Depends},
 Description: ${source:Synopsis}
  ${source:Extended-Description}
  .
- This package contains the authentication daemon together with the PAM & NSS modules.
+ This package contains the authentication daemon together with the PAM & NSS
+ modules.
