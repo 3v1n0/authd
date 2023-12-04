@@ -82,29 +82,25 @@ paths:
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0600), "Setup: failed to create config file for tests")
 
 	// #nosec:G204 - we control the command arguments in tests
-	cmd := exec.Command(execPath, "-c", configPath)
+	cmd := exec.CommandContext(ctx, execPath, "-c", configPath)
 	cmd.Stderr = os.Stderr
 	cmd.Env = AppendCovEnv(os.Environ())
+
+	// This is the function that is called by CommandContext when the context is cancelled.
+	cmd.Cancel = func() error {
+		err := cmd.Process.Signal(os.Signal(syscall.SIGTERM))
+		return err
+	}
 
 	// Start the daemon
 	stopped = make(chan struct{})
 	go func() {
-		err := cmd.Run()
-		require.NoError(t, err, "Setup: error when running the daemon (%v): %s", err, cmd.Stdout)
-		close(stopped)
+		defer close(stopped)
+		require.ErrorIs(t, cmd.Run(), context.Canceled, "Setup: daemon stopped unexpectedly")
 	}()
 
 	// Give some time for the daemon to start.
 	time.Sleep(time.Second)
-
-	// Stops the daemon when the context is cancelled.
-	go func() {
-		<-ctx.Done()
-		// The daemon can trigger some background tasks so, in order to stop it gracefully, we need to send either
-		// SIGTERM or SIGINT to tell it that it's time to cleanup and stop.
-		require.NoError(t, cmd.Process.Signal(os.Signal(syscall.SIGTERM)), "Teardown: Failed to send signal to stop daemon")
-		<-stopped
-	}()
 
 	return opts.socketPath, stopped
 }
