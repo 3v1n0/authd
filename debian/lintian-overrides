@@ -1,4 +1,4 @@
-# The versioned library is the actual library itself, there is no link to it.
+# NSS libraries don't provide symlinks to the versioned library
 authd: lacks-versioned-link-to-shared-library
 
 # cargo build currently does not support changing the output name of libraries and the functionality

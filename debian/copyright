@@ -3,7 +3,7 @@ Upstream-Name: aad-auth
 Source: https://github.com/ubuntu/aad-auth
 
 Files: *
-Copyright: 2022 Canonical Ltd.
+Copyright: 2023 Canonical Ltd.
 License: LGPL-3
  This library is free software; you can redistribute it and/or
  modify it under the terms of the GNU Lesser General Public
