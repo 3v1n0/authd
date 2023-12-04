@@ -21,6 +21,15 @@ const (
 	ProtoVersion = uint32(1)
 )
 
+// Request is an interface implementing all the gdm requests.
+type Request = isRequestData_Data
+
+// Response is an interface implementing all the gdm responses.
+type Response = isResponseData_Data
+
+// Event is an interface implementing all the gdm events.
+type Event = isEventData_Data
+
 // NewDataFromJSON unmarshals data from json bytes.
 func NewDataFromJSON(bytes []byte) (*Data, error) {
 	var gdmData Data
