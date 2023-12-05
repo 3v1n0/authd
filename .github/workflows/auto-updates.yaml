@@ -48,7 +48,7 @@ jobs:
       # issues between actions/checkout and actions/runner, which seem to be triggered by multiple
       # causes (e.g. https://github.com/actions/runner-images/issues/6775, https://github.com/actions/checkout/issues/1048#issuecomment-1356485556).
       - name: work around permission issue with git vulnerability (we are local here). TO REMOVE
-        run: git config --global --add safe.directory /__w/authd/authd
+        run: git config --global --add safe.directory "$PWD"
       - name: Create Pull Request
         if: ${{ env.modified == 'true' }}
         uses: peter-evans/create-pull-request@v5
