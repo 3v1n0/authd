@@ -23,8 +23,7 @@ DH_CARGO_VENDORED_SOURCES := /usr/share/cargo/bin/dh-cargo-vendored-sources
 export CARGO_VENDOR_DIR = vendor_rust
 
 # Needed for Rust configure/build/test stages
-export DEB_HOST_GNU_TYPE
-export DEB_HOST_RUST_TYPE
+export DEB_HOST_GNU_TYPE DEB_HOST_RUST_TYPE
 export CARGO_HOME = $(CURDIR)/debian/cargo_home
 
 %:
@@ -80,4 +79,5 @@ override_dh_auto_install:
 	install -Dm644 pam/pam_authd.so debian/authd/usr/lib/$(DEB_TARGET_GNU_TYPE)/security/pam_authd.so
 
 	# Install NSS
-	install -Dm644 target/$(DEB_TARGET_RUST_TYPE)/release/libnss_authd.so debian/authd/usr/lib/$(DEB_TARGET_GNU_TYPE)/libnss_authd.so.2
+	# In Rust, HOST actually refers to the build target (see README.Debian in rustc)
+	install -Dm644 target/$(DEB_HOST_RUST_TYPE)/release/libnss_authd.so debian/authd/usr/lib/$(DEB_TARGET_GNU_TYPE)/libnss_authd.so.2
