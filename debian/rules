@@ -34,28 +34,13 @@ override_dh_auto_clean:
 	dh_auto_clean
 	dh_auto_clean --buildsystem=cargo
 
-	# Create the vendor directory when building the source package
+	# Vendor Go dependencies when building the source package
 	[ -d vendor/ ] || go mod vendor
 
-	# Some crates are shipped with .a files, which get removed by the helpers during the package build as a safety measure.
-	# This results in cargo failing to compile, since the files (which are listed in the checksums) are not there anymore.
-	# For those crates, we need to replace their checksum with a more general one that only lists the crate checksum, instead of each file.
-	if [ ! -d $(CARGO_VENDOR_DIR)/ ]; then \
-		CARGO_HOME=$(HOME)/.cargo $(CARGO) vendor $(CARGO_VENDOR_DIR); \
-		[ ! -e $(DH_CARGO_VENDORED_SOURCES) ] || $(DH_CARGO_VENDORED_SOURCES); \
-		\
-		[ -e /usr/bin/jq ] || (echo "jq is required to run this script. Try installing it with 'sudo apt install jq'" && exit 1); \
-		\
-		for dep in $$(ls vendor_rust -1); do \
-			checksum_file="vendor_rust/$${dep}/.cargo-checksum.json"; \
-			a_files=$$(cat $${checksum_file} | jq '.files | keys | map(select(.|test(".a$$")))'); \
-			if [ "$$a_files" = "[]" ]; then \
-				continue; \
-			fi; \
-			pkg_checksum=$$(cat "$${checksum_file}" | jq '.package'); \
-			echo "{\"files\": {}, \"package\": $${pkg_checksum}}" >"$${checksum_file}"; \
-		done; \
-	fi
+	# Vendor Rust dependencies when building the source package
+	[ -d vendor_rust/ ] || \
+		CARGO=$(CARGO) DH_CARGO_VENDORED_SOURCES=$(DH_CARGO_VENDORED_SOURCES) \
+		CARGO_VENDOR_DIR=$(CARGO_VENDOR_DIR) debian/vendor-rust.sh
 
 override_dh_auto_configure:
 	dh_auto_configure
@@ -72,7 +57,7 @@ override_dh_auto_build:
 	# Build the NSS library
 	$(CARGO) build --release
 
-	# Build the CLI
+	# Build the daemon
 	DH_GOLANG_BUILDPKG=github.com/ubuntu/authd/cmd/authd dh_auto_build
 
 override_dh_auto_test:
@@ -88,11 +73,11 @@ override_dh_auto_install:
 	mv debian/authd/usr/bin/ debian/authd/usr/sbin
 
 	# Install PAM module configuration
-	install -Dm644 pam/go-loader/libpam-authd.pam-auth-update debian/authd/usr/share/pam-configs/authd
+	install -Dm644 debian/pam-configs/authd debian/authd/usr/share/pam-configs/authd
 
 	# Install PAM
-	install -Dm644 pam/go-loader/pam_go_loader.so debian/authd/usr/lib/$(DEB_HOST_GNU_TYPE)/security/pam_go_loader.so
-	install -Dm644 pam/pam_authd.so debian/authd/usr/lib/$(DEB_HOST_GNU_TYPE)/security/pam_authd.so
+	install -Dm644 pam/go-loader/pam_go_loader.so debian/authd/usr/lib/$(DEB_TARGET_GNU_TYPE)/security/pam_go_loader.so
+	install -Dm644 pam/pam_authd.so debian/authd/usr/lib/$(DEB_TARGET_GNU_TYPE)/security/pam_authd.so
 
 	# Install NSS
-	install -Dm644 target/$(DEB_HOST_RUST_TYPE)/release/libnss_authd.so debian/authd/usr/lib/$(DEB_HOST_GNU_TYPE)/libnss_authd.so.2
+	install -Dm644 target/$(DEB_TARGET_RUST_TYPE)/release/libnss_authd.so debian/authd/usr/lib/$(DEB_TARGET_GNU_TYPE)/libnss_authd.so.2
