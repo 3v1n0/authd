@@ -1,0 +1,14 @@
+Package: authd
+Version: 0.1
+Architecture: amd64
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+Installed-Size: 2
+Section: admin
+Priority: optional
+Homepage: https://github.com/ubuntu/authd
+Description: Authentication daemon for external Broker
+ Authd enables system authentication through external brokers.
+ .
+ This package contains the authentication daemon together with the PAM & NSS
+ modules.
+Foo: bar
