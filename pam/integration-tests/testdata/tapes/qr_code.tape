@@ -53,11 +53,11 @@ Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 1s
 Show
 
 Hide
-Sleep 3s
+Sleep 5s
 Show
 
 Sleep 100ms

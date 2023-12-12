@@ -62,11 +62,12 @@ type Broker struct {
 
 var (
 	exampleUsers = map[string]struct{}{
-		"user1":            {},
-		"user2":            {},
-		"user-mfa":         {},
-		"user-needs-reset": {},
-		"user-can-reset":   {},
+		"user1":             {},
+		"user2":             {},
+		"user-mfa":          {},
+		"user-needs-reset":  {},
+		"user-can-reset":    {},
+		"user-local-groups": {},
 	}
 )
 
@@ -661,21 +662,43 @@ func (b *Broker) updateSession(sessionID string, info sessionInfo) error {
 
 // userInfoFromName transform a given name to the strinfigy userinfo string.
 func userInfoFromName(name string) string {
-	user := struct {
+	type groupJSONInfo struct {
 		Name string
-	}{Name: name}
+		UGID string
+	}
 
+	user := struct {
+		Name   string
+		UUID   string
+		Home   string
+		Shell  string
+		Groups []groupJSONInfo
+		Gecos  string
+	}{
+		Name:   name,
+		UUID:   "uuid-" + name,
+		Home:   "/home/" + name,
+		Shell:  "/usr/bin/bash",
+		Groups: []groupJSONInfo{{Name: "group-" + name, UGID: "ugid-" + name}},
+		Gecos:  "gecos for " + name,
+	}
+
+	if name == "user-local-groups" {
+		user.Groups = append(user.Groups, groupJSONInfo{Name: "localgroup", UGID: ""})
+	}
+
+	// only used for tests, we can ignore the template execution error as the returned data will be failing.
 	var buf bytes.Buffer
-
-	// only used for the example, we can ignore the template execution error as the returned data will be failing.
 	_ = template.Must(template.New("").Parse(`{
 		"name": "{{.Name}}",
-		"uuid": "uuid-{{.Name}}",
-		"gecos": "gecos for {{.Name}}",
-		"dir": "/home/{{.Name}}",
-		"shell": "/usr/bin/bash",
-		"avatar": "avatar for {{.Name}}",
-		"groups": [ {"name": "group-{{.Name}}", "ugid": "group-{{.Name}}"}, {"name": "sudo"} ]
+		"uuid": "{{.UUID}}",
+		"gecos": "{{.Gecos}}",
+		"dir": "{{.Home}}",
+		"shell": "{{.Shell}}",
+		"groups": [ {{range $index, $g := .Groups}}
+			{{- if $index}}, {{end -}}
+			{"name": "{{.Name}}", "ugid": "{{.UGID}}"}
+		{{- end}} ]
 	}`)).Execute(&buf, user)
 
 	return buf.String()

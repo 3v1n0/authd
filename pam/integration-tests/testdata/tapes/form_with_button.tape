@@ -59,7 +59,7 @@ Show
 Hide
 Type "temporary pass00"
 Enter
-Sleep 100ms
+Sleep 2s
 Show
 
 Sleep 100ms

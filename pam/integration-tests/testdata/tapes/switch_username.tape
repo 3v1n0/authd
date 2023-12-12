@@ -22,7 +22,7 @@ Show
 Hide
 Escape
 Backspace
-Type "-integration-switch-name"
+Type "user-integration-switch-username"
 Sleep 100ms
 Show
 
@@ -33,8 +33,8 @@ Show
 
 Hide
 Escape
-Backspace
-Type "-integration-name-switched"
+Backspace 15
+Type "username-switched"
 Sleep 100ms
 Show
 
@@ -51,7 +51,7 @@ Show
 Hide
 Type "goodpass"
 Enter
-Sleep 100ms
+Sleep 2s
 Show
 
 Sleep 100ms

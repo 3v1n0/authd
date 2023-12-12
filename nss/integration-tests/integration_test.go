@@ -124,7 +124,7 @@ func TestMain(m *testing.M) {
 	testutils.InstallUpdateFlag()
 	flag.Parse()
 
-	execPath, cleanup, err := testutils.BuildDaemon(false)
+	execPath, cleanup, err := testutils.BuildDaemon()
 	if err != nil {
 		log.Printf("Setup: failed to build daemon: %v", err)
 		os.Exit(1)

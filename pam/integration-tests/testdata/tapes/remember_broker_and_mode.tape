@@ -46,7 +46,7 @@ Show
 Hide
 Type "temporary pass0"
 Enter
-Sleep 100ms
+Sleep 2s
 Show
 
 Hide
@@ -70,7 +70,7 @@ Show
 Hide
 Type "temporary pass0"
 Enter
-Sleep 100ms
+Sleep 2s
 Show
 
 Sleep 100ms

@@ -17,6 +17,7 @@ type daemonOptions struct {
 	cachePath  string
 	existentDB string
 	socketPath string
+	env        []string
 }
 
 // DaemonOption represents an optional function that can be used to override some of the daemon default values.
@@ -40,6 +41,13 @@ func WithPreviousDBState(db string) DaemonOption {
 func WithSocketPath(path string) DaemonOption {
 	return func(o *daemonOptions) {
 		o.socketPath = path
+	}
+}
+
+// WithEnvironment overrides the default environment of the daemon.
+func WithEnvironment(env ...string) DaemonOption {
+	return func(o *daemonOptions) {
+		o.env = env
 	}
 }
 
@@ -83,20 +91,21 @@ paths:
 
 	// #nosec:G204 - we control the command arguments in tests
 	cmd := exec.CommandContext(ctx, execPath, "-c", configPath)
-	cmd.Stderr = os.Stderr
-	cmd.Env = AppendCovEnv(os.Environ())
+	opts.env = append(opts.env, os.Environ()...)
+	cmd.Env = AppendCovEnv(opts.env)
 
 	// This is the function that is called by CommandContext when the context is cancelled.
 	cmd.Cancel = func() error {
-		err := cmd.Process.Signal(os.Signal(syscall.SIGTERM))
-		return err
+		return cmd.Process.Signal(os.Signal(syscall.SIGTERM))
 	}
 
 	// Start the daemon
 	stopped = make(chan struct{})
 	go func() {
 		defer close(stopped)
-		require.ErrorIs(t, cmd.Run(), context.Canceled, "Setup: daemon stopped unexpectedly")
+		out, err := cmd.CombinedOutput()
+		require.ErrorIs(t, err, context.Canceled, "Setup: daemon stopped unexpectedly: %s", out)
+		t.Logf("Daemon stopped (%v)\n ##### STDOUT #####\n %s \n ##### END #####", err, out)
 	}()
 
 	// Give some time for the daemon to start.
@@ -106,7 +115,7 @@ paths:
 }
 
 // BuildDaemon builds the daemon executable and returns the binary path.
-func BuildDaemon(withExampleBroker bool) (execPath string, cleanup func(), err error) {
+func BuildDaemon(extraArgs ...string) (execPath string, cleanup func(), err error) {
 	projectRoot := ProjectRoot()
 
 	tempDir, err := os.MkdirTemp("", "authd-tests-daemon")
@@ -122,9 +131,7 @@ func BuildDaemon(withExampleBroker bool) (execPath string, cleanup func(), err e
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
-	if withExampleBroker {
-		cmd.Args = append(cmd.Args, "-tags=withexamplebroker")
-	}
+	cmd.Args = append(cmd.Args, extraArgs...)
 	cmd.Args = append(cmd.Args, "-o", execPath, "./cmd/authd")
 
 	if out, err := cmd.CombinedOutput(); err != nil {

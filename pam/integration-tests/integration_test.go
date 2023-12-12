@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/internal/testutils"
+	usertests "github.com/ubuntu/authd/internal/users/tests"
 )
 
 var daemonPath string
@@ -20,8 +21,25 @@ var daemonPath string
 func TestCLIIntegration(t *testing.T) {
 	t.Parallel()
 
+	outDir := filepath.Dir(daemonPath)
+	gpasswdFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
+
+	testArgs := getMockArgs(t)
+	gpasswdArgs := []string{
+		"env",
+		"GO_WANT_HELPER_PROCESS=1",
+		fmt.Sprintf("GO_WANT_HELPER_PROCESS_DEST=%s", filepath.Join(outDir, "gpasswd.output")),
+		fmt.Sprintf("GO_WANT_HELPER_PROCESS_GROUPFILE=%s", gpasswdFile),
+	}
+	gpasswdArgs = append(gpasswdArgs, testArgs...)
+	gpasswdArgs = append(gpasswdArgs, "-test.run=TestMockgpasswd", "--")
+	addEnv := []string{
+		"TESTS_GPASSWD_ARGS=" + strings.Join(gpasswdArgs, "-sep-"),
+		"TESTS_GPASSWD_GRP_FILE_PATH=" + gpasswdFile,
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	_, stopped := testutils.RunDaemon(ctx, t, daemonPath, testutils.WithSocketPath("/tmp/pam-cli-tests.sock"))
+	_, stopped := testutils.RunDaemon(ctx, t, daemonPath, testutils.WithSocketPath("/tmp/pam-cli-tests.sock"), testutils.WithEnvironment(addEnv...))
 	t.Cleanup(func() {
 		cancel()
 		<-stopped
@@ -45,18 +63,20 @@ func TestCLIIntegration(t *testing.T) {
 		"Authenticate user switching auth mode":        {tape: "switch_auth_mode"},
 		"Authenticate user switching username":         {tape: "switch_username"},
 		"Authenticate user switching broker":           {tape: "switch_broker"},
-		"Remember last successful broker and mode":     {tape: "remember_broker_and_mode"},
-		"Exit authd if local broker is selected":       {tape: "local_broker"},
-		"Deny authentication if max attempts reached":  {tape: "max_attempts"},
-		"Deny authentication if user does not exist":   {tape: "unexistent_user"},
-		"Exit authd if user sigints":                   {tape: "sigint"},
+		"Authenticate user and add it to local group":  {tape: "local_group"},
+
+		"Remember last successful broker and mode": {tape: "remember_broker_and_mode"},
+
+		"Deny authentication if max attempts reached": {tape: "max_attempts"},
+		"Deny authentication if user does not exist":  {tape: "unexistent_user"},
+
+		"Exit authd if local broker is selected": {tape: "local_broker"},
+		"Exit authd if user sigints":             {tape: "sigint"},
 	}
 	for name, tc := range tests {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-
-			outDir := filepath.Dir(daemonPath)
 
 			// #nosec:G204 - we control the command arguments in tests
 			cmd := exec.Command("vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
@@ -81,6 +101,12 @@ func TestCLIIntegration(t *testing.T) {
 			}
 			want := testutils.LoadWithUpdateFromGolden(t, got)
 			require.Equal(t, want, got, "Output of tape %q does not match golden file", tc.tape)
+
+			if tc.tape == "local_group" {
+				got := usertests.IdemnpotentOutputFromGPasswd(t, filepath.Join(outDir, "gpasswd.output"))
+				want := testutils.LoadWithUpdateFromGolden(t, got, testutils.WithGoldenPath(testutils.GoldenPath(t)+".gpasswd_out"))
+				require.Equal(t, want, got, "UpdateLocalGroups should do the expected gpasswd operation, but did not")
+			}
 		})
 	}
 }
@@ -97,7 +123,11 @@ func buildPAM(execPath string) (cleanup func(), err error) {
 		return func() {}, fmt.Errorf("%v: %s", err, out)
 	}
 
-	return func() { _ = os.Remove("./pam_authd") }, nil
+	return func() { _ = os.Remove(filepath.Join(execPath, "pam_authd")) }, nil
+}
+
+func TestMockgpasswd(t *testing.T) {
+	usertests.Mockgpasswd(t)
 }
 
 // appendGoBinToPath returns the value of the GOPATH defined in go env appended to PATH.
@@ -112,11 +142,26 @@ func appendGoBinToPath(t *testing.T) string {
 	return fmt.Sprintf("PATH=%s:%s", strings.TrimSpace(string(out)+"/bin"), env)
 }
 
+func getMockArgs(t *testing.T) (args []string) {
+	t.Helper()
+
+	args = []string{
+		os.Args[0],
+	}
+	for _, arg := range os.Args[1:] {
+		if !strings.HasPrefix(arg, "-test.gocoverdir=") {
+			continue
+		}
+		args = append(args, arg)
+	}
+	return args
+}
+
 func TestMain(m *testing.M) {
 	testutils.InstallUpdateFlag()
 	flag.Parse()
 
-	execPath, daemonCleanup, err := testutils.BuildDaemon(true)
+	execPath, daemonCleanup, err := testutils.BuildDaemon("-tags=withexamplebroker,integrationtests")
 	if err != nil {
 		log.Printf("Setup: Failed to build authd daemon: %v", err)
 		os.Exit(1)

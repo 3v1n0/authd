@@ -1,5 +1,5 @@
-Output switch_auth_mode.txt
-Output switch_auth_mode.gif # If we don't specify a .gif output, it will create a default out.gif file.
+Output local_group.txt
+Output local_group.gif # If we don't specify a .gif output, it will create a default out.gif file.
 
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
@@ -22,7 +22,7 @@ Show
 Hide
 Escape
 Backspace
-Type "user-integration-switch-mode"
+Type "user-local-groups"
 Sleep 100ms
 Show
 
@@ -33,43 +33,13 @@ Show
 
 Hide
 Type "2"
-Sleep 100ms
-Show
-
-Hide
-Escape
-Sleep 100ms
-Show
-
-Hide
-Type "2"
-Sleep 100ms
-Show
-
-Hide
-Escape
-Sleep 100ms
-Show
-
-Hide
-Type "3"
-Sleep 100ms
-Show
-
-Hide
-Escape
-Sleep 100ms
-Show
-
-Hide
-Type "1"
 Sleep 100ms
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep 2s
+Sleep 3s
 Show
 
 Sleep 100ms
