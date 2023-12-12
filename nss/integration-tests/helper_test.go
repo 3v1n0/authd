@@ -53,7 +53,7 @@ func buildRustNSSLib(t *testing.T) {
 	target = filepath.Join(target, os.Getenv("DEB_HOST_RUST_TYPE"))
 
 	// Creates a symlink for the compiled library with the expected versioned name.
-	libPath = filepath.Join(target, "libnss_authd.so.2")
+	libPath = filepath.Join(target, "libnss_authd.so.0")
 	if err = os.Symlink(filepath.Join(target, "debug", "libnss_authd.so"), libPath); err != nil {
 		require.ErrorIs(t, err, os.ErrExist, "Setup: failed to create versioned link to the library")
 	}
