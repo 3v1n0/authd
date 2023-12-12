@@ -39,7 +39,7 @@ Show
 Hide
 Type "goodpass"
 Enter
-Sleep 3s
+Sleep 5s
 Show
 
 Sleep 100ms
