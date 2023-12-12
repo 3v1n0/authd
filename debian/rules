@@ -76,6 +76,8 @@ override_dh_auto_test:
 override_dh_auto_install:
 	dh_auto_install -- --no-source
 
+	find
+
 	# Install daemon in /sbin
 	mv debian/authd/usr/bin/ debian/authd/usr/sbin
 
