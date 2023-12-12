@@ -29,6 +29,14 @@ export CARGO_HOME = $(CURDIR)/debian/cargo_home
 # Needed by the pam module loader
 export AUTHD_PAM_MODULES_PATH = /usr/lib/$(DEB_TARGET_GNU_TYPE)/security
 
+AUTHD_PACKAGE := github.com/ubuntu/authd
+
+# Defines the targets to be built as part of dh_auto_build
+export DH_GOLANG_BUILDPKG := $(AUTHD_PACKAGE)/cmd/authd $(AUTHD_PACKAGE)/pam
+
+# Run go generate on the targets
+export DH_GOLANG_GO_GENERATE := 1
+
 %:
 	dh $@ --buildsystem=golang --with=golang,apport
 
@@ -53,14 +61,11 @@ override_dh_auto_configure:
 		$(CARGO) prepare-debian $(CARGO_VENDOR_DIR)
 
 override_dh_auto_build:
-	# Build PAM library & Go loader
-	go generate -x ./pam
-
 	# Build the NSS library
 	$(CARGO) build --release
 
-	# Build the daemon
-	DH_GOLANG_BUILDPKG=github.com/ubuntu/authd/cmd/authd dh_auto_build
+	# Build the daemon and libraries defined in $(DH_GOLANG_BUILDPKG)
+	dh_auto_build
 
 override_dh_auto_test:
 	# We need to specify these Rust related variables to the Go tests in order to build the NSS lib
