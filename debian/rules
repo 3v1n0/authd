@@ -62,7 +62,7 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	# Build the NSS library
-	$(CARGO) build --release
+	dh_auto_build --buildsystem=cargo
 
 	# Build the daemon and libraries defined in $(DH_GOLANG_BUILDPKG)
 	dh_auto_build
