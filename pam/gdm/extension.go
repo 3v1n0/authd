@@ -9,7 +9,6 @@ import "C"
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"unsafe"
@@ -34,15 +33,6 @@ var ErrProtoNotSupported = errors.New("protocol not supported")
 
 // ErrInvalidJSON is an error used when processed JSON is not valid.
 var ErrInvalidJSON = errors.New("invalid JSON")
-
-func validateJSON(jsonValue []byte) error {
-	// FIXME: Disable this check in GDM builds, this is only useful
-	// for testing as GDM does JSON sanity check by default.
-	if !json.Valid(jsonValue) {
-		return ErrInvalidJSON
-	}
-	return nil
-}
 
 // IsPamExtensionSupported returns if the provided extension is supported
 func IsPamExtensionSupported(extension string) bool {

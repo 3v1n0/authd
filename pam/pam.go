@@ -1,6 +1,6 @@
-//go:generate sh -c "[ -d ../vendor ] && echo Vendored dependencies detected, not re-generating pam_module.go || go run github.com/msteinert/pam/v2/cmd/pam-moduler -libname pam_authd.so -type pamModule -tags !pam_binary_cli"
+//go:generate sh -xc "[ -d ../vendor ] && echo Vendored dependencies detected, not re-generating pam_module.go || go run github.com/msteinert/pam/v2/cmd/pam-moduler -libname pam_authd.so -type pamModule -tags !pam_binary_cli,!generate $(sh -c '[ \"${DEB_HOST_GNU_TYPE:-unset}\" != unset ] && echo -build-tags release')"
 //go:generate go generate --skip="pam_module.go"
-//go:generate sh -c "cc -o go-loader/pam_go_loader.so go-loader/module.c -Wl,--as-needed -Wl,--allow-shlib-undefined -shared -fPIC -Wl,--unresolved-symbols=report-all -lpam && chmod 600 go-loader/pam_go_loader.so"
+//go:generate sh -xc "cc -o go-loader/pam_go_loader.so go-loader/module.c -Wl,--as-needed -Wl,--allow-shlib-undefined -shared -fPIC -Wl,--unresolved-symbols=report-all -lpam && chmod 600 go-loader/pam_go_loader.so"
 
 // Package main is the package for the PAM library.
 package main
