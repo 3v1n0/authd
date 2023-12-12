@@ -47,8 +47,7 @@ func NewDataFromJSON(bytes []byte) (*Data, error) {
 // FIXME: Do not do this when building the module in release mode, this is
 // just relevant for testing purposes.
 func (d *Data) checkMembers(acceptedMembers []string) error {
-	//nolint:govet
-	//We only redirect the value to figure out its type.
+	//nolint:govet //We only redirect the value to figure out its type.
 	val := reflect.ValueOf(*d)
 	typ := val.Type()
 	acceptedMembers = append(acceptedMembers, []string{

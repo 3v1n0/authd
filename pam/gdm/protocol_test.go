@@ -9,11 +9,12 @@ import (
 )
 
 func reformatJSON(t *testing.T, input []byte) []byte {
+	t.Helper()
+
 	// We can't safely compare for JSON values when generated via protobuf
 	// so we initially pass it to native implementation to make it rebuild
 	// the JSON data so that the output is more reliable.
 	// See: https://protobuf.dev/reference/go/faq/#unstable-json
-	t.Helper()
 	var js json.RawMessage
 	err := json.Unmarshal(input, &js)
 	require.NoError(t, err)
@@ -24,6 +25,7 @@ func reformatJSON(t *testing.T, input []byte) []byte {
 
 func reformatJSONIndented(t *testing.T, input []byte) []byte {
 	t.Helper()
+
 	var indented bytes.Buffer
 	err := json.Indent(&indented, input, "", "  ")
 	require.NoError(t, err)
@@ -44,6 +46,7 @@ func requireEqualData(t *testing.T, want *Data, actual *Data) {
 
 func TestGdmStructsMarshal(t *testing.T) {
 	t.Parallel()
+
 	tests := map[string]struct {
 		gdmData *Data
 
@@ -55,13 +58,11 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"hello"}`,
 		},
-
 		"Hello packet with data": {
 			gdmData: &Data{Type: DataType_hello, Hello: &HelloData{Version: 55}},
 
 			wantJSON: `{"type":"hello","hello":{"version":55}}`,
 		},
-
 		"Event packet": {
 			gdmData: &Data{
 				Type: DataType_event,
@@ -73,13 +74,11 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"event","event":{"type":"brokerSelected","brokerSelected":{}}}`,
 		},
-
 		"Event ack packet": {
 			gdmData: &Data{Type: DataType_eventAck},
 
 			wantJSON: `{"type":"eventAck"}`,
 		},
-
 		"Request packet": {
 			gdmData: &Data{
 				Type: DataType_request,
@@ -91,7 +90,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"request","request":{"type":"uiLayoutCapabilities","uiLayoutCapabilities":{}}}`,
 		},
-
 		"Request packet with missing data": {
 			gdmData: &Data{
 				Type: DataType_request,
@@ -102,7 +100,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"request","request":{"type":"updateBrokersList"}}`,
 		},
-
 		"Response packet": {
 			gdmData: &Data{
 				Type: DataType_response,
@@ -114,7 +111,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"response","response":{"type":"uiLayoutCapabilities","uiLayoutCapabilities":{}}}`,
 		},
-
 		"Response packet with ack data": {
 			gdmData: &Data{
 				Type: DataType_response,
@@ -126,13 +122,11 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"response","response":{"type":"changeStage","ack":{}}}`,
 		},
-
 		"Poll packet": {
 			gdmData: &Data{Type: DataType_poll},
 
 			wantJSON: `{"type":"poll"}`,
 		},
-
 		"PollResponse packet": {
 			gdmData: &Data{
 				Type: DataType_pollResponse,
@@ -149,7 +143,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 			wantJSON: `{"type":"pollResponse","pollResponse":` +
 				`[{"type":"brokerSelected","brokerSelected":{"brokerId":"a broker"}}]}`,
 		},
-
 		"PollResponse packet with multiple results": {
 			gdmData: &Data{
 				Type: DataType_pollResponse,
@@ -173,7 +166,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 				`[{"type":"brokerSelected","brokerSelected":{"brokerId":"a broker"}},` +
 				`{"type":"authModeSelected","authModeSelected":{"authModeId":"auth mode"}}]}`,
 		},
-
 		"PollResponse packet with nil data": {
 			gdmData: &Data{
 				Type:         DataType_pollResponse,
@@ -182,7 +174,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantJSON: `{"type":"pollResponse"}`,
 		},
-
 		"PollResponse packet with empty data": {
 			gdmData: &Data{
 				Type:         DataType_pollResponse,
@@ -198,19 +189,16 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "unexpected type unknownType",
 		},
-
 		"Error if packet has invalid type": {
 			gdmData: &Data{Type: DataType(-1)},
 
 			wantErrMsg: "unhandled type -1",
 		},
-
 		"Error hello packet with unexpected data": {
 			gdmData: &Data{Type: DataType_hello, Request: &RequestData{}},
 
 			wantErrMsg: "field Request should not be defined",
 		},
-
 		"Error event packet with unknown type": {
 			gdmData: &Data{
 				Type:  DataType_event,
@@ -219,31 +207,26 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "missing event type",
 		},
-
 		"Error event packet with invalid type": {
 			gdmData: &Data{Type: DataType_event, Event: &EventData{Type: EventType(-1)}},
 
 			wantErrMsg: "unexpected event type",
 		},
-
 		"Error event packet with missing data": {
 			gdmData: &Data{Type: DataType_event, Event: nil},
 
 			wantErrMsg: "missing event data",
 		},
-
 		"Error event packet with empty data": {
 			gdmData: &Data{Type: DataType_event, Event: &EventData{}},
 
 			wantErrMsg: "missing event type",
 		},
-
 		"Error event packet with missing type": {
 			gdmData: &Data{Type: DataType_event, Event: &EventData{Data: &EventData_AuthModeSelected{}}},
 
 			wantErrMsg: "missing event type",
 		},
-
 		"Error event packet with unexpected data": {
 			gdmData: &Data{
 				Type:  DataType_event,
@@ -253,36 +236,30 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "field Hello should not be defined",
 		},
-
 		"Error event ack packet with unexpected data": {
 			gdmData: &Data{Type: DataType_eventAck, Event: &EventData{}},
 
 			wantErrMsg: "field Event should not be defined",
 		},
-
 		"Error request packet with unknown type": {
 			gdmData: &Data{Type: DataType_request, Request: &RequestData{Data: &RequestData_ChangeStage{}}},
 
 			wantErrMsg: "missing request type",
 		},
-
 		"Error request packet with invalid type": {
 			gdmData: &Data{Type: DataType_request, Request: &RequestData{Type: RequestType(-1)}},
 
 			wantErrMsg: "unexpected request type",
 		},
-
 		"Error request packet with missing data": {
 			gdmData: &Data{Type: DataType_request, Request: nil},
 
 			wantErrMsg: "missing request data",
 		},
-
 		"Error request packet with empty data": {
 			gdmData:    &Data{Type: DataType_request, Request: &RequestData{}},
 			wantErrMsg: "missing request type",
 		},
-
 		"Error request packet with unexpected data": {
 			gdmData: &Data{
 				Type: DataType_request,
@@ -295,13 +272,11 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "field Event should not be defined",
 		},
-
 		"Error response packet with missing data": {
 			gdmData: &Data{Type: DataType_response},
 
 			wantErrMsg: "missing response data",
 		},
-
 		"Error response packet with missing type": {
 			gdmData: &Data{
 				Type:     DataType_response,
@@ -310,7 +285,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "missing response type",
 		},
-
 		"Error response packet with invalid type": {
 			gdmData: &Data{
 				Type:     DataType_response,
@@ -319,7 +293,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "unexpected request type -1",
 		},
-
 		"Error response packet with unexpected data": {
 			gdmData: &Data{
 				Type:     DataType_response,
@@ -329,13 +302,11 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "field Event should not be defined",
 		},
-
 		"Error poll packet with unexpected data": {
 			gdmData: &Data{Type: DataType_poll, Request: &RequestData{}},
 
 			wantErrMsg: "field Request should not be defined",
 		},
-
 		"Error pollResponse packet with missing event type": {
 			gdmData: &Data{
 				Type: DataType_pollResponse,
@@ -356,7 +327,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "poll response data member 1 invalid: missing event type",
 		},
-
 		"Error pollResponse packet with event with missing type": {
 			gdmData: &Data{
 				Type: DataType_pollResponse,
@@ -373,7 +343,6 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 			wantErrMsg: "poll response data member 0 invalid: missing event type",
 		},
-
 		"Error pollResponse packet with unexpected data": {
 			gdmData: &Data{
 				Type:         DataType_pollResponse,
@@ -389,6 +358,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			bytes, err := tc.gdmData.JSON()
 			if tc.wantErrMsg != "" {
 				require.ErrorContains(t, err, tc.wantErrMsg)
@@ -409,6 +379,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 
 func TestGdmStructsUnMarshal(t *testing.T) {
 	t.Parallel()
+
 	tests := map[string]struct {
 		JSON string
 
@@ -420,13 +391,11 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 
 			wantData: &Data{Type: DataType_hello},
 		},
-
 		"Hello packet with data": {
 			JSON: `{"type":"hello","hello":{"version":55}}`,
 
 			wantData: &Data{Type: DataType_hello, Hello: &HelloData{Version: 55}},
 		},
-
 		"Event packet": {
 			JSON: `{"type":"event","event":{"type":"brokerSelected","brokerSelected":{}}}`,
 
@@ -438,13 +407,11 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				},
 			},
 		},
-
 		"Event ack packet": {
 			JSON: `{"type":"eventAck"}`,
 
 			wantData: &Data{Type: DataType_eventAck},
 		},
-
 		"Request packet": {
 			JSON: `{"type":"request","request":{"type":"uiLayoutCapabilities","uiLayoutCapabilities":{}}}`,
 
@@ -456,7 +423,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				},
 			},
 		},
-
 		"Request packet with missing data": {
 			JSON: `{"type":"request","request":{"type":"updateBrokersList"}}`,
 
@@ -467,7 +433,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				},
 			},
 		},
-
 		"Response packet": {
 			JSON: `{"type":"response","response":{"type":"uiLayoutCapabilities","uiLayoutCapabilities":{}}}`,
 
@@ -479,7 +444,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				},
 			},
 		},
-
 		"Response packet with ack data": {
 			JSON: `{"type":"response","response":{"type":"changeStage","ack":{}}}`,
 
@@ -491,13 +455,11 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				},
 			},
 		},
-
 		"Poll packet": {
 			JSON: `{"type":"poll"}`,
 
 			wantData: &Data{Type: DataType_poll},
 		},
-
 		"PollResponse packet": {
 			JSON: `{"type":"pollResponse","pollResponse":` +
 				`[{"type":"brokerSelected","brokerSelected":{"brokerId":"a broker"}}]}`,
@@ -514,7 +476,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 				},
 			},
 		},
-
 		"PollResponse packet with missing data": {
 			JSON: `{"type":"pollResponse"}`,
 
@@ -528,117 +489,98 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 		"Error empty packet ": {
 			wantErrMsg: "syntax error",
 		},
-
 		"Error empty packet object": {
 			JSON: `{}`,
 
 			wantErrMsg: "unexpected type unknownType",
 		},
-
 		"Error packet with invalid type": {
 			JSON: `{"type":"invalidType"}`,
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error packet with invalid value type": {
 			JSON: `{"type":[]}`,
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error hello packet with unexpected data": {
 			JSON: `{"type":"hello","request":{}}`,
 
 			wantErrMsg: "field Request should not be defined",
 		},
-
 		"Error event packet with invalid data": {
 			JSON: `{"type":"event","fooEvent":null}`,
 
 			wantErrMsg: `unknown field "fooEvent"`,
 		},
-
 		"Error event packet with missing type": {
 			JSON:       `{"type":"event","event":{}}`,
 			wantErrMsg: "missing event type",
 		},
-
 		"Error event packet with unknown type": {
 			JSON: `{"type":"event","event":{"type":"someType"}`,
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error event packet with invalid value type": {
 			JSON: `{"type":"event","event":{"brokerSelected":{},"type":{}}}`,
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error event packet with missing data": {
 			JSON: `{"type":"event","event":{"type":"brokerSelected"}}`,
 
 			wantErrMsg: "missing event data",
 		},
-
 		"Error event packet with unexpected data": {
 			JSON: `{"type":"event","event":{"type":"brokerSelected",` +
 				`"brokerSelected":{}},"request":{}}`,
 
 			wantErrMsg: "field Request should not be defined",
 		},
-
 		"Error event ack packet with unexpected member": {
 			JSON: `{"type":"eventAck","event":{}}`,
 
 			wantErrMsg: "field Event should not be defined",
 		},
-
 		"Error request packet with missing type": {
 			JSON: `{"type":"request","request":{"uiLayoutCapabilities":{}}}`,
 
 			wantErrMsg: "missing request type",
 		},
-
 		"Error request packet with unknown type": {
 			JSON: `{"type":"request","request":{"type":true,"uiLayoutCapabilities":{}}}`,
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error request packet with unknown value type": {
 			JSON: `{"type":"request","request":{"type":"someUnknownRequest",` +
 				`"uiLayoutCapabilities":{}}}`,
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error request packet with unexpected data": {
 			JSON: `{"type":"request","request":{"type": "uiLayoutCapabilities",` +
 				`"uiLayoutCapabilities":{}}, "event":{}}`,
 
 			wantErrMsg: "field Event should not be defined",
 		},
-
 		"Error response packet with missing data": {
 			JSON: `{"type":"response"}`,
 
 			wantErrMsg: "missing response data",
 		},
-
 		"Error response packet with unexpected data": {
 			JSON: `{"type":"response","response":{"type":"changeStage","ack":{}}, "event":{}}`,
 
 			wantErrMsg: "field Event should not be defined",
 		},
-
 		"Error poll packet with unexpected data": {
 			JSON: `{"type":"poll", "response": {}}`,
 
 			wantErrMsg: "field Response should not be defined",
 		},
-
 		"Error pollResponse packet with missing event type": {
 			JSON: `{"type":"pollResponse","pollResponse":` +
 				`[{"type":"brokerSelected","brokerSelected":{"brokerId":"a broker"}},` +
@@ -646,7 +588,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 
 			wantErrMsg: "poll response data member 1 invalid: missing event type",
 		},
-
 		"Error pollResponse packet with unsupported event type": {
 			JSON: `{"type":"pollResponse","pollResponse":` +
 				`[{"type":"brokerSelected","brokerSelected":{"brokerId":"a broker"}},` +
@@ -654,7 +595,6 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 
 			wantErrMsg: "invalid value for enum type",
 		},
-
 		"Error pollResponse packet with unexpected data": {
 			JSON: `{"type":"pollResponse","pollResponse":` +
 				`[{"type":"brokerSelected","brokerSelected":{"brokerId":"a broker"}},` +
@@ -669,6 +609,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			gdmData, err := NewDataFromJSON([]byte(tc.JSON))
 			if tc.wantErrMsg != "" {
 				require.ErrorContains(t, err, tc.wantErrMsg)
