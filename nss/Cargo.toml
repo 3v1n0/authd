@@ -28,8 +28,8 @@ log = "0.4.20"
 simple_logger = {version = "4.3.0", features = ["stderr"]}
 syslog = "6.1.0"
 ctor = "0.2.5"
+rustix = { features = ["use-libc"] }
 
 [build-dependencies]
 tonic-build = "0.10.2"
 cc = "1.0.84"
-rustix = { features = ["use-libc"] }
