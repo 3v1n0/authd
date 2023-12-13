@@ -54,7 +54,7 @@ func New(ctx context.Context, registerGRPCService GRPCServiceRegisterer, args ..
 
 	// Set default options.
 	opts := options{
-		socketPath: "",
+		socketPath: "/tmp/authd.sock",
 
 		systemdActivationListener: activation.Listeners,
 		systemdSdNotifier:         daemon.SdNotify,
