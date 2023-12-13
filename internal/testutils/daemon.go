@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -108,8 +107,11 @@ paths:
 		t.Logf("Daemon stopped (%v)\n ##### STDOUT #####\n %s \n ##### END #####", err, out)
 	}()
 
-	// Give some time for the daemon to start.
-	time.Sleep(time.Second)
+	// // Give some time for the daemon to start.
+	// time.Sleep(time.Second)
+	// _, err = grpc.Dial("unix://"+socketPath,
+	// 	grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// require.NoError(t, err)
 
 	return opts.socketPath, stopped
 }

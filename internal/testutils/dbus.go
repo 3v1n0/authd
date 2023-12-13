@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -56,17 +56,33 @@ func StartSystemBusMock() (func(), error) {
 
 	busCtx, busCancel := context.WithCancel(context.Background())
 	//#nosec:G204 // This is a test helper and we are in control of the arguments.
-	cmd := exec.CommandContext(busCtx, "dbus-daemon", "--config-file="+cfgPath)
+	cmd := exec.CommandContext(busCtx, "dbus-daemon", "--config-file="+cfgPath, "--print-address=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		busCancel()
+		return nil, errors.Join(err, os.RemoveAll(tmp))
+	}
 	if err := cmd.Start(); err != nil {
 		busCancel()
 		err = errors.Join(err, os.RemoveAll(tmp))
 		return nil, err
 	}
-	// Give some time for the daemon to start.
-	time.Sleep(500 * time.Millisecond)
 
+	buffer := make([]byte, 1024)
+	_, err = stdout.Read(buffer)
+	if err != nil {
+		busCancel()
+		return nil, errors.Join(err, os.RemoveAll(tmp))
+	}
+	serverPath := string(buffer)
+	if !strings.HasPrefix(serverPath, "unix:path=") {
+		busCancel()
+		err = fmt.Errorf("invalid bus path: %s", serverPath)
+		return nil, errors.Join(err, os.RemoveAll(tmp))
+	}
+	serverPath = strings.SplitN(serverPath, ",", 2)[0]
 	prev, set := os.LookupEnv("DBUS_SYSTEM_BUS_ADDRESS")
-	os.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "unix:path="+listenPath)
+	os.Setenv("DBUS_SYSTEM_BUS_ADDRESS", serverPath)
 
 	return func() {
 		busCancel()
