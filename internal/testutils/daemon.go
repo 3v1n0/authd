@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type daemonOptions struct {
@@ -108,8 +111,18 @@ paths:
 		t.Logf("Daemon stopped (%v)\n ##### STDOUT #####\n %s \n ##### END #####", err, out)
 	}()
 
-	// Give some time for the daemon to start.
-	time.Sleep(time.Second)
+	// Wait for the daemon to start.
+	conn, err := grpc.Dial("unix://"+opts.socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	waitCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+	for conn.GetState() != connectivity.Ready {
+		conn.WaitForStateChange(waitCtx, conn.GetState())
+		require.NoError(t, waitCtx.Err())
+	}
 
 	return opts.socketPath, stopped
 }
