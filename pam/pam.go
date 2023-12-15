@@ -9,15 +9,19 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/log"
+	"github.com/ubuntu/authd/pam/gdm"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -34,6 +38,7 @@ const (
 )
 
 func showPamMessage(mTx pam.ModuleTransaction, style pam.Style, msg string) error {
+	fmt.Println("Sending message", style, msg)
 	switch style {
 	case pam.TextInfo, pam.ErrorMsg:
 	default:
@@ -61,6 +66,43 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus pamReturnStatus
 	_ = showPamMessage(mTx, style, msg)
 }
 
+func ForwardAndLogError(mt pam.ModuleTransaction, format string, args ...interface{}) {
+	if _, err := mt.StartStringConvf(pam.ErrorMsg, format, args); err != nil {
+		log.Errorf(context.TODO(), "Failed reporting error to pam: %v", err)
+	}
+}
+
+func PromptForInt(pamMt pam.ModuleTransaction, title string, choices []string, prompt string) (
+	r int, err error) {
+	pamPrompt := title
+
+	for {
+		pamPrompt += fmt.Sprintln()
+		for i, msg := range choices {
+			pamPrompt += fmt.Sprintf("%d - %s\n", i+1, msg)
+		}
+
+		ret, err := pamMt.StartStringConv(pam.PromptEchoOn, pamPrompt[:len(pamPrompt)-1])
+		if err != nil {
+			return 0, fmt.Errorf("error while reading stdin: %v", err)
+		}
+		if ret.Response() == "r" {
+			return -1, nil
+		}
+		if ret.Response() == "" {
+			r = 1
+		}
+
+		choice, err := strconv.Atoi(ret.Response())
+		if err != nil || choice <= 0 || choice > len(choices) {
+			log.Errorf(context.TODO(), "Invalid entry. Try again or type 'r'.")
+			continue
+		}
+
+		return choice - 1, nil
+	}
+}
+
 // Authenticate is the method that is invoked during pam_authenticate request.
 func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
 	// Initialize localization
@@ -69,7 +111,38 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	// Attach logger and info handler.
 	// TODO
 
-	interactiveTerminal := term.IsTerminal(int(os.Stdin.Fd()))
+	// TODO: Get this value from argc or pam environment
+	log.SetLevel(log.DebugLevel)
+	fmt.Println("Authentication started!")
+
+	// TODO: Define user options, like disable interactive terminal always
+
+	// FIXME: Ignore root user
+
+	interactiveTerminal := false
+	isGdm := false
+
+	fmt.Println("GDM PROTOCOL SUPPORTED",
+		gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON))
+
+	if gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
+		isGdm = true
+
+		// reply, err := (&gdm.Data{Type: gdm.Hello}).SendParsed(mt)
+		// if err != nil {
+		// 	ForwardAndLogError(mt, "Gdm initialization failed: %v", err)
+		// 	return pam.AuthinfoUnavail
+		// }
+		// if reply.Type != gdm.Hello || reply.HelloData == nil ||
+		// 	reply.HelloData.Version != gdm.ProtoVersion {
+		// 	ForwardAndLogError(mt, "Gdm protocol initialization failed, type %s, data %d",
+		// 		reply.Type.String(), reply.HelloData)
+		// 	return pam.AuthinfoUnavail
+		// }
+		// log.Debugf(context.TODO(), "Gdm Reply is %v", reply)
+	} else {
+		interactiveTerminal = term.IsTerminal(int(os.Stdin.Fd()))
+	}
 
 	client, closeConn, err := newClient(args)
 	if err != nil {
@@ -79,10 +152,15 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	defer closeConn()
 
 	appState := model{
-		pamMTx:              mTx,
-		client:              client,
-		interactiveTerminal: interactiveTerminal,
+		Parameters: Parameters{
+			pamMTx:              mTx,
+			client:              client,
+			interactiveTerminal: interactiveTerminal,
+			gdm:                 isGdm,
+		},
 	}
+
+	fmt.Printf("%#v\n", appState.Parameters)
 
 	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {
 		return err
@@ -102,9 +180,14 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 
 	sendReturnMessageToPam(mTx, appState.exitStatus)
 
+	fmt.Printf("Module done, exit status is %#v\n", appState.exitStatus)
+
 	switch exitStatus := appState.exitStatus.(type) {
 	case pamSuccess:
 		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.brokerID); err != nil {
+			return err
+		}
+		if err := mTx.SetItem(pam.User, "marco"); err != nil {
 			return err
 		}
 		return nil
@@ -178,6 +261,14 @@ func newClient(args []string) (client authd.PAMClient, close func(), err error) 
 	conn, err := grpc.Dial("unix://"+getSocketPath(args), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not connect to authd: %v", err)
+	}
+	waitCtx, cancel := context.WithTimeout(context.TODO(), time.Second*5)
+	defer cancel()
+	for conn.GetState() != connectivity.Ready {
+		if !conn.WaitForStateChange(waitCtx, conn.GetState()) {
+			conn.Close()
+			return nil, func() {}, waitCtx.Err()
+		}
 	}
 	return authd.NewPAMClient(conn), func() { conn.Close() }, nil
 }

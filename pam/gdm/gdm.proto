@@ -38,6 +38,26 @@ message HelloData {
     uint32 version = 1;
 }
 
+// FIXME:
+// Add missing enums
+/*
+const AuthResult = Object.freeze({
+    Granted: 'granted',
+	Denied: 'denied',
+	Cancelled: 'cancelled',
+	Retry: 'retry',
+	Next: 'next',
+});
+
+const Stage = Object.freeze({
+    Undefined: 0,
+    UserSelection: 1,
+    BrokerSelection: 2,
+    AuthModeSelection: 3,
+    Challenge: 4,
+});
+*/
+
 enum RequestType {
     // RequestType_unknownRequest is an unknown request RequestType.
     unknownRequest = 0;

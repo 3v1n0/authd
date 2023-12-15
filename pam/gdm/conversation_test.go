@@ -1,11 +1,13 @@
 package gdm
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/msteinert/pam/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/pam/pam_test"
+	"github.com/ubuntu/authd/pam/utils"
 )
 
 func TestSendToGdm(t *testing.T) {
@@ -96,6 +98,110 @@ func TestSendToGdm(t *testing.T) {
 			}
 
 			require.Equal(t, tc.value, data)
+		})
+	}
+}
+
+func TestDataSend(t *testing.T) {
+	t.Parallel()
+	t.Cleanup(utils.MaybeDoLeakCheck)
+
+	testCases := map[string]struct {
+		value *Data
+
+		wantReturn []byte
+		wantError  error
+	}{
+		"empty data": {
+			value:      &Data{},
+			wantReturn: nil,
+			wantError:  errors.New("expected type unknownType"),
+		},
+
+		"nil return": {
+			value: &Data{
+				Type: DataType_event,
+				Event: &EventData{
+					Type: EventType_brokerSelected,
+					Data: &EventData_BrokerSelected{},
+				},
+			},
+
+			wantReturn: []byte("null"),
+		},
+
+		"version data": {
+			value: &Data{
+				Type:  DataType_hello,
+				Hello: &HelloData{Version: 12345},
+			},
+			wantReturn: []byte(`"hello gdm!"`),
+		},
+
+		"Error on missing data return": {
+			value: &Data{
+				Type: DataType_event,
+				Event: &EventData{
+					Type: EventType_brokerSelected,
+					Data: nil,
+				},
+			},
+
+			wantError: errors.New("missing event data"),
+		},
+
+		"Error on wrong data": {
+			value: &Data{
+				Type:    DataType_event,
+				Request: &RequestData{},
+			},
+			wantError: errors.New("missing event type"),
+		},
+	}
+
+	for name, tc := range testCases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			t.Cleanup(utils.MaybeDoLeakCheck)
+
+			convFuncCalled := true
+			mt := pam_test.NewModuleTransactionDummy(pam.BinaryPointerConversationFunc(
+				func(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
+					convFuncCalled = true
+					require.NotNil(t, ptr)
+					req, err := decodeJSONProtoMessage(ptr)
+					require.NoError(t, err)
+					valueJSON, err := tc.value.JSON()
+					require.NoError(t, err)
+					require.Equal(t, valueJSON, req)
+					if tc.wantReturn != nil {
+						msg, err := newJSONProtoMessage(tc.wantReturn)
+						require.NoError(t, err)
+						return pam.BinaryPointer(msg),
+							tc.wantError
+					}
+					msg, err := newJSONProtoMessage(req)
+					require.NoError(t, err)
+					return pam.BinaryPointer(msg), tc.wantError
+				}))
+
+			data, err := tc.value.Send(mt)
+			require.True(t, convFuncCalled)
+
+			if tc.wantError != nil {
+				require.Nil(t, data)
+				require.Error(t, tc.wantError, err)
+				return
+			}
+
+			require.NoError(t, err)
+
+			if tc.wantReturn != nil {
+				require.Equal(t, tc.wantReturn, data)
+			} else {
+				require.Equal(t, tc.value, data)
+			}
 		})
 	}
 }
