@@ -1,0 +1,18 @@
+syntax = "proto3";
+package pam;
+
+option go_package = "github.com/ubuntu/authd/pam/main";
+
+// state represents the stage object for the UI.
+enum Stage {
+    // Stage_undefined represents an undefined stage.
+    undefined = 0;
+    // Stage_userSelection is to select a user.
+    userSelection = 1;
+    // Stage_brokerSelection is to select a broker.
+    brokerSelection = 2;
+    // Stage_authModeSelection is to select an authentication mode.
+    authModeSelection = 3;
+    // Stage_challenge let's the user entering a challenge or waiting from authentication from the broker.
+    challenge = 4;
+}

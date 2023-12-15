@@ -6,6 +6,8 @@ PROJECT_ROOT=$PWD/..
 module_libname=pam_authd.so
 loader_libname=pam_go_loader.so
 
+../tools/generate-proto.sh pam.proto
+
 if [ -d "$PROJECT_ROOT"/vendor ]; then
     echo Vendored dependencies detected, not re-generating pam_module.go
 else
