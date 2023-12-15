@@ -13,20 +13,6 @@ import (
 
 var debug string
 
-// state represents the stage object.
-type stage int
-
-const (
-	// stageUserSelection is to select a user.
-	stageUserSelection stage = iota
-	// stageUserSelection is to select a broker.
-	stageBrokerSelection
-	// stageUserSelection is to select an authentication mode.
-	stageAuthModeSelection
-	// stageChallenge let's the user entering a challenge or waiting from authentication from the broker.
-	stageChallenge
-)
-
 // sessionInfo contains the global broker session information.
 type sessionInfo struct {
 	brokerID      string
@@ -105,7 +91,7 @@ func (m *UIModel) Init() tea.Cmd {
 	m.authenticationModel = newAuthenticationModel(m.Client)
 	cmds = append(cmds, m.authenticationModel.Init())
 
-	cmds = append(cmds, m.changeStage(stageUserSelection))
+	cmds = append(cmds, m.changeStage(Stage_userSelection))
 	return tea.Batch(cmds...)
 }
 
@@ -128,12 +114,12 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmd tea.Cmd
 			switch m.currentStage() {
-			case stageBrokerSelection:
-				cmd = m.changeStage(stageUserSelection)
-			case stageAuthModeSelection:
-				cmd = m.changeStage(stageBrokerSelection)
-			case stageChallenge:
-				cmd = m.changeStage(stageAuthModeSelection)
+			case Stage_brokerSelection:
+				cmd = m.changeStage(Stage_userSelection)
+			case Stage_authModeSelection:
+				cmd = m.changeStage(Stage_brokerSelection)
+			case Stage_challenge:
+				cmd = m.changeStage(Stage_authModeSelection)
 			}
 			return m, cmd
 		}
@@ -160,7 +146,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Got user and brokers? Time to auto or manually select.
 		return m, tea.Sequence(
-			m.changeStage(stageBrokerSelection),
+			m.changeStage(Stage_brokerSelection),
 			AutoSelectForUser(m.Client, m.username()))
 
 	case BrokerSelected:
@@ -181,7 +167,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Sequence(
 			getAuthenticationModes(m.Client, m.currentSession.sessionID, m.authModeSelectionModel.SupportedUILayouts()),
-			m.changeStage(stageAuthModeSelection),
+			m.changeStage(Stage_authModeSelection),
 		)
 
 	case AuthModeSelected:
@@ -202,7 +188,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Sequence(
 			m.authenticationModel.Compose(m.currentSession.brokerID, m.currentSession.sessionID, msg.layout),
-			m.changeStage(stageChallenge))
+			m.changeStage(Stage_challenge))
 
 	case SessionEnded:
 		m.currentSession = nil
@@ -229,13 +215,13 @@ func (m *UIModel) View() string {
 
 	log.Info(context.TODO(), m.currentStage())
 	switch m.currentStage() {
-	case stageUserSelection:
+	case Stage_userSelection:
 		view.WriteString(m.userSelectionModel.View())
-	case stageBrokerSelection:
+	case Stage_brokerSelection:
 		view.WriteString(m.brokerSelectionModel.View())
-	case stageAuthModeSelection:
+	case Stage_authModeSelection:
 		view.WriteString(m.authModeSelectionModel.View())
-	case stageChallenge:
+	case Stage_challenge:
 		view.WriteString(m.authenticationModel.View())
 	default:
 		view.WriteString("INVALID STAGE")
@@ -249,26 +235,26 @@ func (m *UIModel) View() string {
 }
 
 // currentStage returns our current stage step.
-func (m *UIModel) currentStage() stage {
+func (m *UIModel) currentStage() Stage {
 	if m.userSelectionModel.Focused() {
-		return stageUserSelection
+		return Stage_userSelection
 	}
 	if m.brokerSelectionModel.Focused() {
-		return stageBrokerSelection
+		return Stage_brokerSelection
 	}
 	if m.authModeSelectionModel.Focused() {
-		return stageAuthModeSelection
+		return Stage_authModeSelection
 	}
 	if m.authenticationModel.Focused() {
-		return stageChallenge
+		return Stage_challenge
 	}
-	return stageUserSelection
+	return Stage_userSelection
 }
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
-func (m *UIModel) changeStage(s stage) tea.Cmd {
+func (m *UIModel) changeStage(s Stage) tea.Cmd {
 	switch s {
-	case stageUserSelection:
+	case Stage_userSelection:
 		m.brokerSelectionModel.Blur()
 		m.authModeSelectionModel.Blur()
 		m.authenticationModel.Blur()
@@ -277,7 +263,7 @@ func (m *UIModel) changeStage(s stage) tea.Cmd {
 		// and so, we should always ensure we cancel previous session.
 		return tea.Sequence(endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
 
-	case stageBrokerSelection:
+	case Stage_brokerSelection:
 		m.userSelectionModel.Blur()
 		m.authModeSelectionModel.Blur()
 		m.authenticationModel.Blur()
@@ -286,7 +272,7 @@ func (m *UIModel) changeStage(s stage) tea.Cmd {
 
 		return tea.Sequence(endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
 
-	case stageAuthModeSelection:
+	case Stage_authModeSelection:
 		m.userSelectionModel.Blur()
 		m.brokerSelectionModel.Blur()
 		m.authenticationModel.Blur()
@@ -295,7 +281,7 @@ func (m *UIModel) changeStage(s stage) tea.Cmd {
 
 		return m.authModeSelectionModel.Focus()
 
-	case stageChallenge:
+	case Stage_challenge:
 		m.userSelectionModel.Blur()
 		m.brokerSelectionModel.Blur()
 		m.authModeSelectionModel.Blur()
