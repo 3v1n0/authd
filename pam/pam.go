@@ -157,7 +157,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	client, closeConn, err := newClient(args)
 	if err != nil {
 		log.Debugf(context.TODO(), "%s", err)
-		return pam.ErrIgnore
+		return pam.ErrAuthinfoUnavail
 	}
 	defer closeConn()
 
