@@ -13,17 +13,17 @@ import (
 var debug string
 
 // state represents the stage object.
-type stage int
+type stage = authd.Stage
 
 const (
 	// stageUserSelection is to select a user.
-	stageUserSelection stage = iota
+	stageUserSelection = authd.Stage_userSelection
 	// stageUserSelection is to select a broker.
-	stageBrokerSelection
+	stageBrokerSelection = authd.Stage_brokerSelection
 	// stageUserSelection is to select an authentication mode.
-	stageAuthModeSelection
+	stageAuthModeSelection = authd.Stage_authModeSelection
 	// stageChallenge let's the user entering a challenge or waiting from authentication from the broker.
-	stageChallenge
+	stageChallenge = authd.Stage_challenge
 )
 
 // sessionInfo contains the global broker session information.
