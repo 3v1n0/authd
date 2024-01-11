@@ -132,7 +132,7 @@ Gimme your password
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth success
+Auth user 'user1' success
 AcctMgmt success
 >
 
@@ -165,7 +165,7 @@ AcctMgmt success
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth success
+Auth user 'user1' success
 AcctMgmt success
 >
 

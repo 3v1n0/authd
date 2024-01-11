@@ -266,10 +266,10 @@ invalid password, should be goodpass
 Gimme your password
 >
 PAM ERROR: invalid password, should be goodpass
-Auth error (7): Authentication failure: invalid password, should be goodpass
+Auth user 'user-integration-max-attempts' error (7): Authentication failure: invalid password, s
+hould be goodpass
 AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
-
 
 
 
@@ -299,10 +299,10 @@ AcctMgmt error (25): The return value should be ignored by PAM dispatch
 Gimme your password
 >
 PAM ERROR: invalid password, should be goodpass
-Auth error (7): Authentication failure: invalid password, should be goodpass
+Auth user 'user-integration-max-attempts' error (7): Authentication failure: invalid password, s
+hould be goodpass
 AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
-
 
 
 
