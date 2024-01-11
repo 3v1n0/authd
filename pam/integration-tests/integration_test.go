@@ -172,6 +172,17 @@ func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 		return
 	}
 
+	// time.Sleep(time.Second * 3)
+
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, e := range entries {
+		t.Logf("Have artifact %v", e.Name())
+	}
+
 	// Copy the artifacts to the temporary directory.
 	for _, artifact := range artifacts {
 		content, err := os.ReadFile(artifact)
