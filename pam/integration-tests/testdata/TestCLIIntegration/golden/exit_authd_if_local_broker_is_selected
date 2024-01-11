@@ -126,7 +126,7 @@ Username: user-local-broker
 
 
 
-Auth error (25): The return value should be ignored by PAM dispatch:
+Auth user 'user-local-broker' error (25): The return value should be ignored by PAM dispatch:
 AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
 ────────────────────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ AcctMgmt error (25): The return value should be ignored by PAM dispatch
 
 
 
-Auth error (25): The return value should be ignored by PAM dispatch:
+Auth user 'user-local-broker' error (25): The return value should be ignored by PAM dispatch:
 AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
 ────────────────────────────────────────────────────────────────────────────────
