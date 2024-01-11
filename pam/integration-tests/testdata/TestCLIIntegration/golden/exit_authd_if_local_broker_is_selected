@@ -126,8 +126,8 @@ Username: user-local-broker
 
 
 
-Auth return: The return value should be ignored by PAM dispatch:
-Acct mgmt return: The return value should be ignored by PAM dispatch
+Auth error (25): The return value should be ignored by PAM dispatch:
+AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
@@ -159,7 +159,7 @@ Acct mgmt return: The return value should be ignored by PAM dispatch
 
 
 
-Auth return: The return value should be ignored by PAM dispatch:
-Acct mgmt return: The return value should be ignored by PAM dispatch
+Auth error (25): The return value should be ignored by PAM dispatch:
+AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
 ────────────────────────────────────────────────────────────────────────────────

@@ -198,8 +198,8 @@ Gimme your password
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth return: <nil>
-Acct mgmt return: <nil>
+Auth success
+AcctMgmt success
 >
 
 
@@ -231,8 +231,8 @@ Acct mgmt return: <nil>
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
-Auth return: <nil>
-Acct mgmt return: <nil>
+Auth success
+AcctMgmt success
 >
 
 

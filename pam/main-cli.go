@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -36,10 +37,21 @@ func main() {
 			return "", nil
 		}))
 
-	authResult := module.Authenticate(mTx, pam.Flags(0), os.Args)
-	fmt.Println("Auth return:", authResult)
+	printResult("Auth", module.Authenticate(mTx, pam.Flags(0), os.Args))
 
 	// Simulate setting auth broker as default.
-	accMgmtResult := module.AcctMgmt(mTx, pam.Flags(0), os.Args)
-	fmt.Println("Acct mgmt return:", accMgmtResult)
+	printResult("AcctMgmt", module.AcctMgmt(mTx, pam.Flags(0), os.Args))
+}
+
+func printResult(action string, result error) {
+	var pamErr pam.Error
+	if errors.As(result, &pamErr) {
+		fmt.Printf("%s error (%d): %v\n", action, pamErr, result)
+		return
+	}
+	if result != nil {
+		fmt.Printf("%s error:\n", action, result)
+		return
+	}
+	fmt.Printf("%s success\n", action)
 }
