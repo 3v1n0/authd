@@ -133,10 +133,10 @@ Gimme your password
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 PAM ERROR: cancel requested
-Auth error (26): Critical error - immediate abort: cancel requested
+Auth user 'user-integration-sigint' error (26): Critical error - immediate abort: cancel request
+ed
 AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
-
 
 
 
@@ -166,10 +166,10 @@ AcctMgmt error (25): The return value should be ignored by PAM dispatch
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
 Gimme your password
 PAM ERROR: cancel requested
-Auth error (26): Critical error - immediate abort: cancel requested
+Auth user 'user-integration-sigint' error (26): Critical error - immediate abort: cancel request
+ed
 AcctMgmt error (25): The return value should be ignored by PAM dispatch
 >
-
 
 
 

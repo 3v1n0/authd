@@ -296,7 +296,7 @@ Unlock your phone +33… or accept request on web interface:
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Auth success
+Auth user 'user-mfa' success
 AcctMgmt success
 >
 
@@ -329,7 +329,7 @@ AcctMgmt success
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Auth success
+Auth user 'user-mfa' success
 AcctMgmt success
 >
 
@@ -362,7 +362,7 @@ AcctMgmt success
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Auth success
+Auth user 'user-mfa' success
 AcctMgmt success
 >
 
@@ -395,7 +395,7 @@ AcctMgmt success
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Auth success
+Auth user 'user-mfa' success
 AcctMgmt success
 >
 
@@ -428,7 +428,7 @@ AcctMgmt success
 
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd socket=/tmp/pam-cli-tests.sock
-Auth success
+Auth user 'user-mfa' success
 AcctMgmt success
 >
 

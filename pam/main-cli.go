@@ -37,7 +37,9 @@ func main() {
 			return "", nil
 		}))
 
-	printResult("Auth", module.Authenticate(mTx, pam.Flags(0), os.Args))
+	authResult := module.Authenticate(mTx, pam.Flags(0), os.Args)
+	user, _ := mTx.GetItem(pam.User)
+	printResult(fmt.Sprintf("Auth user '%s'", user), authResult)
 
 	// Simulate setting auth broker as default.
 	printResult("AcctMgmt", module.AcctMgmt(mTx, pam.Flags(0), os.Args))
