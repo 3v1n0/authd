@@ -66,7 +66,7 @@ func TestSendToGdm(t *testing.T) {
 			t.Cleanup(pam_test.MaybeDoLeakCheck)
 
 			convFuncCalled := false
-			mt := pam_test.NewModuleTransactionDummy(pam.BinaryPointerConversationFunc(
+			mtx := pam_test.NewModuleTransactionDummy(pam.BinaryPointerConversationFunc(
 				func(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
 					convFuncCalled = true
 					require.NotNil(t, ptr)
@@ -81,7 +81,7 @@ func TestSendToGdm(t *testing.T) {
 					return pam.BinaryPointer(msg), err
 				}))
 
-			data, err := sendToGdm(mt, tc.value)
+			data, err := sendToGdm(mtx, tc.value)
 			require.Equal(t, convFuncCalled, !tc.wantConvHandlerNotToBeCalled)
 
 			if tc.wantError != nil {
