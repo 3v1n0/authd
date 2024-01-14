@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -65,7 +63,7 @@ func (m formModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.wait {
 			return m, nil
 		}
-		return m, sendEvent(isAuthenticatedRequested{`{"wait": "true"}`})
+		return m, sendEvent(isAuthenticatedRequested{wait: &m.wait})
 	}
 
 	switch msg := msg.(type) {
@@ -79,7 +77,9 @@ func (m formModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			entry := m.focusableModels[m.focusIndex]
 			switch entry := entry.(type) {
 			case *textinputModel:
-				return m, sendEvent(isAuthenticatedRequested{content: fmt.Sprintf(`{"challenge": "%s"}`, entry.Value())})
+				challenge := entry.Value()
+				return m, sendEvent(isAuthenticatedRequested{
+					challenge: &challenge})
 			case *buttonModel:
 				return m, sendEvent(reselectAuthMode{})
 			}
