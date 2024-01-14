@@ -15,7 +15,9 @@ func sendToGdm(pamMTx pam.ModuleTransaction, data []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer binReq.Release()
+	// fmt.Println("Sending to GDM\n", hex.Dump(data))
 	res, err := pamMTx.StartConv(binReq)
+	// fmt.Println("Sending ptr", binReq.Pointer())
 	if err != nil {
 		return nil, err
 	}
@@ -25,6 +27,12 @@ func sendToGdm(pamMTx pam.ModuleTransaction, data []byte) ([]byte, error) {
 		return nil, errors.New("returned value is not in binary form")
 	}
 	defer binRes.Release()
+	// if _, ok := res.(*pam.BinaryConvResponse); ok {
+	// 	return binRes.Decode(func(ptr pam.BinaryPointer) ([]byte, error) {
+	// 		msg := (*jsonProtoMessage)(unsafe.Pointer(*(**[]byte)(ptr)))
+	// 		return decodeJsonProtoMessage(pam.BinaryPointer(msg))
+	// 	})
+	// }
 	return binRes.Decode(decodeJSONProtoMessage)
 }
 
@@ -72,6 +80,20 @@ func SendPoll(pamMTx pam.ModuleTransaction) ([]*EventData, error) {
 	}
 	return gdmData.GetPollResponse(), nil
 }
+
+// type RawResponse RawObject
+
+// func (r *RawResponse) GetItem(item string) (*Object, error) {
+// 	rawItem, ok := (*r)[item]
+// 	if !ok {
+// 		return nil, fmt.Errorf("item '%s' not found in response", item)
+// 	}
+// 	var object *Object
+// 	if err := json.Unmarshal(rawItem, object); err != nil {
+// 		return nil, err
+// 	}
+// 	return object, nil
+// }
 
 // SendRequest sends a Request to Gdm.
 func SendRequest(pamMTx pam.ModuleTransaction, req Request) (Response, error) {
