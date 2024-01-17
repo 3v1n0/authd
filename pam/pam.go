@@ -74,8 +74,12 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	// Attach logger and info handler.
 	// TODO
 
-	interactiveTerminal := term.IsTerminal(int(os.Stdin.Fd()))
+	var pamClientType adapter.PamClientType
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return fmt.Errorf("pam used through an unsupported client: %w", pam.ErrSystem)
+	}
 
+	pamClientType = adapter.InteractiveTerminal
 	client, closeConn, err := newClient(args)
 	if err != nil {
 		log.Debug(context.TODO(), err)
@@ -87,22 +91,16 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	defer closeConn()
 
 	appState := adapter.UIModel{
-		PamMTx:              mTx,
-		Client:              client,
-		InteractiveTerminal: interactiveTerminal,
+		PamMTx:     mTx,
+		Client:     client,
+		ClientType: pamClientType,
 	}
 
 	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {
 		return err
 	}
 
-	//tea.WithInput(nil)
-	//tea.WithoutRenderer()
-	var opts []tea.ProgramOption
-	if !interactiveTerminal {
-		opts = append(opts, tea.WithInput(nil), tea.WithoutRenderer())
-	}
-	p := tea.NewProgram(&appState, opts...)
+	p := tea.NewProgram(&appState)
 	if _, err := p.Run(); err != nil {
 		log.Errorf(context.TODO(), "Cancelled authentication: %v", err)
 		return pam.ErrAbort
