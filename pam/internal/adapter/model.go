@@ -9,6 +9,7 @@ import (
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/log"
+	pam_proto "github.com/ubuntu/authd/pam/internal/proto"
 )
 
 // PamClientType indicates the type of the PAM client we're handling.
@@ -101,7 +102,7 @@ func (m *UIModel) Init() tea.Cmd {
 	m.authenticationModel = newAuthenticationModel(m.Client)
 	cmds = append(cmds, m.authenticationModel.Init())
 
-	cmds = append(cmds, m.changeStage(Stage_userSelection))
+	cmds = append(cmds, m.changeStage(pam_proto.Stage_userSelection))
 	return tea.Batch(cmds...)
 }
 
@@ -124,12 +125,12 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var cmd tea.Cmd
 			switch m.currentStage() {
-			case Stage_brokerSelection:
-				cmd = m.changeStage(Stage_userSelection)
-			case Stage_authModeSelection:
-				cmd = m.changeStage(Stage_brokerSelection)
-			case Stage_challenge:
-				cmd = m.changeStage(Stage_authModeSelection)
+			case pam_proto.Stage_brokerSelection:
+				cmd = m.changeStage(pam_proto.Stage_userSelection)
+			case pam_proto.Stage_authModeSelection:
+				cmd = m.changeStage(pam_proto.Stage_brokerSelection)
+			case pam_proto.Stage_challenge:
+				cmd = m.changeStage(pam_proto.Stage_authModeSelection)
 			}
 			return m, cmd
 		}
@@ -156,7 +157,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Got user and brokers? Time to auto or manually select.
 		return m, tea.Sequence(
-			m.changeStage(Stage_brokerSelection),
+			m.changeStage(pam_proto.Stage_brokerSelection),
 			AutoSelectForUser(m.Client, m.username()))
 
 	case BrokerSelected:
@@ -177,7 +178,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Sequence(
 			getAuthenticationModes(m.Client, m.currentSession.sessionID, m.authModeSelectionModel.SupportedUILayouts()),
-			m.changeStage(Stage_authModeSelection),
+			m.changeStage(pam_proto.Stage_authModeSelection),
 		)
 
 	case AuthModeSelected:
@@ -198,7 +199,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, tea.Sequence(
 			m.authenticationModel.Compose(m.currentSession.brokerID, m.currentSession.sessionID, msg.layout),
-			m.changeStage(Stage_challenge))
+			m.changeStage(pam_proto.Stage_challenge))
 
 	case SessionEnded:
 		m.currentSession = nil
@@ -225,13 +226,13 @@ func (m *UIModel) View() string {
 
 	log.Info(context.TODO(), m.currentStage())
 	switch m.currentStage() {
-	case Stage_userSelection:
+	case pam_proto.Stage_userSelection:
 		view.WriteString(m.userSelectionModel.View())
-	case Stage_brokerSelection:
+	case pam_proto.Stage_brokerSelection:
 		view.WriteString(m.brokerSelectionModel.View())
-	case Stage_authModeSelection:
+	case pam_proto.Stage_authModeSelection:
 		view.WriteString(m.authModeSelectionModel.View())
-	case Stage_challenge:
+	case pam_proto.Stage_challenge:
 		view.WriteString(m.authenticationModel.View())
 	default:
 		view.WriteString("INVALID STAGE")
@@ -245,53 +246,53 @@ func (m *UIModel) View() string {
 }
 
 // currentStage returns our current stage step.
-func (m *UIModel) currentStage() Stage {
+func (m *UIModel) currentStage() pam_proto.Stage {
 	if m.userSelectionModel.Focused() {
-		return Stage_userSelection
+		return pam_proto.Stage_userSelection
 	}
 	if m.brokerSelectionModel.Focused() {
-		return Stage_brokerSelection
+		return pam_proto.Stage_brokerSelection
 	}
 	if m.authModeSelectionModel.Focused() {
-		return Stage_authModeSelection
+		return pam_proto.Stage_authModeSelection
 	}
 	if m.authenticationModel.Focused() {
-		return Stage_challenge
+		return pam_proto.Stage_challenge
 	}
-	return Stage_userSelection
+	return pam_proto.Stage_userSelection
 }
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
-func (m *UIModel) changeStage(s Stage) tea.Cmd {
+func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 	if m.currentStage() != s {
 		switch m.currentStage() {
-		case Stage_userSelection:
+		case pam_proto.Stage_userSelection:
 			m.userSelectionModel.Blur()
-		case Stage_brokerSelection:
+		case pam_proto.Stage_brokerSelection:
 			m.brokerSelectionModel.Blur()
-		case Stage_authModeSelection:
+		case pam_proto.Stage_authModeSelection:
 			m.authModeSelectionModel.Blur()
-		case Stage_challenge:
+		case pam_proto.Stage_challenge:
 			m.authenticationModel.Blur()
 		}
 	}
 
 	switch s {
-	case Stage_userSelection:
+	case pam_proto.Stage_userSelection:
 		// The session should be ended when going back to previous state, but we don’t quit the stage immediately
 		// and so, we should always ensure we cancel previous session.
 		return tea.Sequence(endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
 
-	case Stage_brokerSelection:
+	case pam_proto.Stage_brokerSelection:
 		m.authModeSelectionModel.Reset()
 		return tea.Sequence(endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
 
-	case Stage_authModeSelection:
+	case pam_proto.Stage_authModeSelection:
 		m.authenticationModel.Reset()
 
 		return m.authModeSelectionModel.Focus()
 
-	case Stage_challenge:
+	case pam_proto.Stage_challenge:
 		return m.authenticationModel.Focus()
 	}
 

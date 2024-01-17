@@ -8,7 +8,7 @@ package gdm
 
 import (
 	authd "github.com/ubuntu/authd"
-	adapter "github.com/ubuntu/authd/pam/internal/adapter"
+	proto "github.com/ubuntu/authd/pam/internal/proto"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -926,7 +926,7 @@ type Requests_ChangeStage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Stage adapter.Stage `protobuf:"varint,1,opt,name=stage,proto3,enum=pam.Stage" json:"stage,omitempty"`
+	Stage proto.Stage `protobuf:"varint,1,opt,name=stage,proto3,enum=pam.Stage" json:"stage,omitempty"`
 }
 
 func (x *Requests_ChangeStage) Reset() {
@@ -961,11 +961,11 @@ func (*Requests_ChangeStage) Descriptor() ([]byte, []int) {
 	return file_gdm_proto_rawDescGZIP(), []int{2, 1}
 }
 
-func (x *Requests_ChangeStage) GetStage() adapter.Stage {
+func (x *Requests_ChangeStage) GetStage() proto.Stage {
 	if x != nil {
 		return x.Stage
 	}
-	return adapter.Stage(0)
+	return proto.Stage(0)
 }
 
 type Responses_Ack struct {
@@ -1471,7 +1471,7 @@ type Events_StageChanged struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Stage adapter.Stage `protobuf:"varint,1,opt,name=stage,proto3,enum=pam.Stage" json:"stage,omitempty"`
+	Stage proto.Stage `protobuf:"varint,1,opt,name=stage,proto3,enum=pam.Stage" json:"stage,omitempty"`
 }
 
 func (x *Events_StageChanged) Reset() {
@@ -1506,11 +1506,11 @@ func (*Events_StageChanged) Descriptor() ([]byte, []int) {
 	return file_gdm_proto_rawDescGZIP(), []int{6, 9}
 }
 
-func (x *Events_StageChanged) GetStage() adapter.Stage {
+func (x *Events_StageChanged) GetStage() proto.Stage {
 	if x != nil {
 		return x.Stage
 	}
-	return adapter.Stage(0)
+	return proto.Stage(0)
 }
 
 type Events_UiLayoutReceived struct {
@@ -1800,7 +1800,7 @@ var file_gdm_proto_goTypes = []interface{}{
 	(*Events_IsAuthenticatedRequested)(nil),      // 23: gdm.Events.IsAuthenticatedRequested
 	(*Events_StageChanged)(nil),                  // 24: gdm.Events.StageChanged
 	(*Events_UiLayoutReceived)(nil),              // 25: gdm.Events.UiLayoutReceived
-	(adapter.Stage)(0),                           // 26: pam.Stage
+	(proto.Stage)(0),                             // 26: pam.Stage
 	(*authd.UILayout)(nil),                       // 27: authd.UILayout
 	(*authd.ABResponse_BrokerInfo)(nil),          // 28: authd.ABResponse.BrokerInfo
 	(*authd.GAMResponse_AuthenticationMode)(nil), // 29: authd.GAMResponse.AuthenticationMode
