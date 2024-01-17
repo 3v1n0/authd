@@ -61,8 +61,9 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 		style = pam.TextInfo
 	}
 
-	err := showPamMessage(mTx, style, msg)
-	log.Warningf(context.TODO(), "Impossible to send PAM message: %v", err)
+	if err := showPamMessage(mTx, style, msg); err != nil {
+		log.Warningf(context.TODO(), "Impossible to send PAM message: %v", err)
+	}
 }
 
 // Authenticate is the method that is invoked during pam_authenticate request.
