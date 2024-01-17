@@ -39,13 +39,13 @@ func main() {
 
 	authResult := module.Authenticate(mTx, pam.Flags(0), os.Args)
 	user, _ := mTx.GetItem(pam.User)
-	printResult(fmt.Sprintf("Auth user '%s'", user), authResult)
+	printPamResult(fmt.Sprintf("Auth user '%s'", user), authResult)
 
 	// Simulate setting auth broker as default.
-	printResult("AcctMgmt", module.AcctMgmt(mTx, pam.Flags(0), os.Args))
+	printPamResult("AcctMgmt", module.AcctMgmt(mTx, pam.Flags(0), os.Args))
 }
 
-func printResult(action string, result error) {
+func printPamResult(action string, result error) {
 	var pamErr pam.Error
 	if errors.As(result, &pamErr) {
 		fmt.Printf("%s error (%d): %v\n", action, pamErr, result)
