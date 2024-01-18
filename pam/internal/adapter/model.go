@@ -259,7 +259,7 @@ func (m *UIModel) currentStage() pam_proto.Stage {
 	if m.authenticationModel.Focused() {
 		return pam_proto.Stage_challenge
 	}
-	return pam_proto.Stage_userSelection
+	return pam_proto.Stage(-1)
 }
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
