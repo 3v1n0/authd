@@ -11,11 +11,13 @@ import (
 	"sync"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers/responses"
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/internal/users"
 	"github.com/ubuntu/decorate"
 	"golang.org/x/exp/slices"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -130,13 +132,20 @@ func (b Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authent
 }
 
 // IsAuthenticated calls the broker corresponding method, stripping broker ID prefix from sessionID.
-func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access string, data string, err error) {
+func (b Broker) IsAuthenticated(ctx context.Context, sessionID string,
+	authenticationData *authd.IARequest_AuthenticationData) (access string, data string, err error) {
 	sessionID = b.parseSessionID(sessionID)
 
 	// monitor ctx in goroutine to call cancel
 	done := make(chan struct{})
 	go func() {
-		access, data, err = b.brokerer.IsAuthenticated(ctx, sessionID, authenticationData)
+		authenticationDataJSON, marshalErr := protojson.Marshal(authenticationData)
+		if marshalErr != nil {
+			err = marshalErr
+			close(done)
+			return
+		}
+		access, data, err = b.brokerer.IsAuthenticated(ctx, sessionID, string(authenticationDataJSON))
 		close(done)
 	}()
 

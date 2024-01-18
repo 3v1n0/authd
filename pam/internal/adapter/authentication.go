@@ -25,11 +25,12 @@ var (
 
 // sendIsAuthenticated sends the authentication challenges or wait request to the brokers.
 // The event will contain the returned value from the broker.
-func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID, content string) tea.Cmd {
+func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
+	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
-			AuthenticationData: content,
+			AuthenticationData: authData,
 		})
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
@@ -53,7 +54,9 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID,
 // isAuthenticatedRequested is the internal events signalling that authentication
 // with the given challenge or wait has been requested.
 type isAuthenticatedRequested struct {
-	content string
+	challenge *string
+	wait      *bool
+	skip      *bool
 }
 
 // isAuthenticatedResultReceived is the internal event with the authentication access result
@@ -125,13 +128,14 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		m.cancelIsAuthenticated()
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
-
-		content, err := encryptChallengeIfPresent(m.encryptionKey, msg.content)
-		if err != nil {
+		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
 		}
-
-		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, content)
+		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{
+			Challenge: msg.challenge,
+			Wait:      msg.wait,
+			Skip:      msg.skip,
+		})
 
 	case isAuthenticatedResultReceived:
 		log.Infof(context.TODO(), "isAuthenticatedResultReceived: %v", msg.access)
@@ -292,37 +296,19 @@ func dataToMsg(data string) (string, error) {
 	return r, nil
 }
 
-func encryptChallengeIfPresent(publicKey *rsa.PublicKey, msg string) (string, error) {
-	content := make(map[string]interface{})
-
-	// not a json, let the rest of the stack validating it
-	if err := json.Unmarshal([]byte(msg), &content); err != nil {
-		return msg, nil
-	}
-
-	cleartext, ok := content["challenge"]
+func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
 	// no challenge key, pass it as is
-	if !ok {
-		return msg, nil
+	if authData.challenge == nil || *authData.challenge == "" {
+		return nil
 	}
 
-	data, ok := cleartext.(string)
-	// not a valid content, pass it as is
-	if !ok {
-		return msg, nil
-	}
-
-	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(data), nil)
+	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(*authData.challenge), nil)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	// encrypt it to base64 and replace the challenge with it
-	content["challenge"] = base64.StdEncoding.EncodeToString(ciphertext)
-	out, err := json.Marshal(content)
-	if err != nil {
-		return "", err
-	}
-
-	return string(out), nil
+	base64Encoded := base64.StdEncoding.EncodeToString(ciphertext)
+	authData.challenge = &base64Encoded
+	return nil
 }

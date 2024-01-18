@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"sort"
@@ -414,10 +413,10 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 	}
 
 	//authenticationData = decryptAES([]byte(brokerEncryptionKey), authenticationData)
-	var authData map[string]string
+	var authData map[string]any
 	if authenticationData != "" {
 		if err := json.Unmarshal([]byte(authenticationData), &authData); err != nil {
-			return "", "", errors.New("authentication data is not a valid json value")
+			return "", "", fmt.Errorf("authentication data is not a valid json value: %w", err)
 		}
 	}
 
@@ -465,7 +464,7 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 }
 
 //nolint:unparam // This is an static example implementation, so we don't return an error other than nil.
-func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionInfo, authData map[string]string) (access, data string, err error) {
+func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionInfo, authData map[string]any) (access, data string, err error) {
 	// Decrypt challenge if present.
 	challenge, err := decodeRawChallenge(b.privateKey, authData["challenge"])
 	if err != nil {
@@ -493,7 +492,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 	case "phoneack1":
 		// TODO: should this be an error rather (not expected data from the PAM module?
-		if authData["wait"] != "true" {
+		if authData["wait"] != true {
 			return responses.AuthDenied, `{"message": "phoneack1 should have wait set to true"}`, nil
 		}
 		// Send notification to phone1 and wait on server signal to return if OK or not
@@ -504,7 +503,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 
 	case "phoneack2":
-		if authData["wait"] != "true" {
+		if authData["wait"] != true {
 			return responses.AuthDenied, `{"message": "phoneack2 should have wait set to true"}`, nil
 		}
 
@@ -517,7 +516,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 
 	case "fidodevice1":
-		if authData["wait"] != "true" {
+		if authData["wait"] != true {
 			return responses.AuthDenied, `{"message": "fidodevice1 should have wait set to true"}`, nil
 		}
 
@@ -529,7 +528,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 
 	case "qrcodewithtypo":
-		if authData["wait"] != "true" {
+		if authData["wait"] != true {
 			return responses.AuthDenied, `{"message": "qrcodewithtypo should have wait set to true"}`, nil
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
@@ -548,7 +547,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 			if challenge != "aaaaa" {
 				return responses.AuthDenied, `{"message": "invalid challenge, should be aaaaa"}`, nil
 			}
-		} else if authData["wait"] == "true" {
+		} else if authData["wait"] == true {
 			// we are simulating clicking on the url signal received by the broker
 			// this can be cancelled to resend a challenge
 			select {
@@ -568,8 +567,9 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 }
 
 // decodeRawChallenge extract the base64 challenge and try to decrypt it with the private key.
-func decodeRawChallenge(priv *rsa.PrivateKey, rawChallenge string) (string, error) {
-	if rawChallenge == "" {
+func decodeRawChallenge(priv *rsa.PrivateKey, challenge any) (string, error) {
+	rawChallenge, ok := challenge.(string)
+	if !ok || rawChallenge == "" {
 		return "", nil
 	}
 

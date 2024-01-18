@@ -52,7 +52,7 @@ func (m qrcodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.wait {
 			return m, nil
 		}
-		return m, sendEvent(isAuthenticatedRequested{`{"wait": "true"}`})
+		return m, sendEvent(isAuthenticatedRequested{wait: &m.wait})
 	}
 
 	switch msg := msg.(type) {

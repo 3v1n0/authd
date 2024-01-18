@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers"
 	"github.com/ubuntu/authd/internal/brokers/responses"
 	"github.com/ubuntu/authd/internal/testutils"
@@ -254,7 +255,8 @@ func TestIsAuthenticated(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				access, gotData, err := b.IsAuthenticated(ctx, prefixID(t, tc.sessionID), "password")
+				access, gotData, err := b.IsAuthenticated(ctx, prefixID(t, tc.sessionID),
+					&authd.IARequest_AuthenticationData{})
 				firstCallReturn = fmt.Sprintf("FIRST CALL:\n\taccess: %s\n\tdata: %s\n\terr: %v\n", access, gotData, err)
 			}()
 
@@ -266,7 +268,8 @@ func TestIsAuthenticated(t *testing.T) {
 					cancel()
 					<-done
 				}
-				access, gotData, err := b.IsAuthenticated(context.Background(), prefixID(t, tc.sessionID), "password")
+				access, gotData, err := b.IsAuthenticated(context.Background(), prefixID(t, tc.sessionID),
+					&authd.IARequest_AuthenticationData{})
 				secondCallReturn = fmt.Sprintf("SECOND CALL:\n\taccess: %s\n\tdata: %s\n\terr: %v\n", access, gotData, err)
 			}
 
@@ -300,7 +303,8 @@ func TestCancelIsAuthenticated(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() {
-				access, _, _ = b.IsAuthenticated(ctx, prefixID(t, tc.sessionID), "password")
+				access, _, _ = b.IsAuthenticated(ctx, prefixID(t, tc.sessionID),
+					&authd.IARequest_AuthenticationData{})
 				close(done)
 			}()
 			defer cancel()

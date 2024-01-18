@@ -1,8 +1,6 @@
 package adapter
 
 import (
-	"fmt"
-
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -75,10 +73,12 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				m.errorMsg = ""
-				return m, sendEvent(isAuthenticatedRequested{content: fmt.Sprintf(`{"challenge": "%s"}`, entry.Value())})
+				challenge := entry.Value()
+				return m, sendEvent(isAuthenticatedRequested{challenge: &challenge})
 
 			case *buttonModel:
-				return m, sendEvent(isAuthenticatedRequested{`{"skip": "true"}`})
+				skip := true
+				return m, sendEvent(isAuthenticatedRequested{skip: &skip})
 			}
 
 			return m, nil
