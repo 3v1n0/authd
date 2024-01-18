@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +17,31 @@ import (
 )
 
 var daemonPath string
+
+func copy(src, dst string) (int64, error) {
+	sourceFileStat, err := os.Stat(src)
+	if err != nil {
+		return 0, err
+	}
+
+	if !sourceFileStat.Mode().IsRegular() {
+		return 0, fmt.Errorf("%s is not a regular file", src)
+	}
+
+	source, err := os.Open(src)
+	if err != nil {
+		return 0, err
+	}
+	defer source.Close()
+
+	destination, err := os.Create(dst)
+	if err != nil {
+		return 0, err
+	}
+	defer destination.Close()
+	nBytes, err := io.Copy(destination, source)
+	return nBytes, err
+}
 
 func TestCLIIntegration(t *testing.T) {
 	t.Parallel()
@@ -77,6 +102,8 @@ func TestCLIIntegration(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+			_, _ = copy("/tmp/pam-cli", outDir+"/pam_authd")
+			require.NoError(t, os.Chmod(outDir+"/pam_authd", 0700))
 			defer saveArtifactsForDebug(t, []string{filepath.Join(outDir, tc.tape+".gif"), filepath.Join(outDir, tc.tape+".txt")})
 
 			// #nosec:G204 - we control the command arguments in tests
@@ -123,6 +150,8 @@ func buildPAM(execPath string) (cleanup func(), err error) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return func() {}, fmt.Errorf("%v: %s", err, out)
 	}
+
+	fmt.Println("Compiling PAM as", cmd.Args)
 
 	return func() { _ = os.Remove(filepath.Join(execPath, "pam_authd")) }, nil
 }
@@ -201,21 +230,21 @@ func TestMain(m *testing.M) {
 	testutils.InstallUpdateFlag()
 	flag.Parse()
 
-	execPath, daemonCleanup, err := testutils.BuildDaemon("-tags=withexamplebroker,integrationtests")
-	if err != nil {
-		log.Printf("Setup: Failed to build authd daemon: %v", err)
-		os.Exit(1)
-	}
-	defer daemonCleanup()
-	daemonPath = execPath
+	// execPath, daemonCleanup, err := testutils.BuildDaemon("-tags=withexamplebroker,integrationtests")
+	// if err != nil {
+	// 	log.Printf("Setup: Failed to build authd daemon: %v", err)
+	// 	os.Exit(1)
+	// }
+	// defer daemonCleanup()
+	daemonPath = "/home/marco/Dev/authd/cmd/authd/authd"
 
-	pamCleanup, err := buildPAM(filepath.Dir(execPath))
-	if err != nil {
-		log.Printf("Setup: Failed to build PAM executable: %v", err)
-		daemonCleanup()
-		os.Exit(1)
-	}
-	defer pamCleanup()
+	// pamCleanup, err := buildPAM(filepath.Dir(execPath))
+	// if err != nil {
+	// 	log.Printf("Setup: Failed to build PAM executable: %v", err)
+	// 	daemonCleanup()
+	// 	os.Exit(1)
+	// }
+	// defer pamCleanup()
 
 	m.Run()
 }
