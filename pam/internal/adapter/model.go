@@ -99,7 +99,6 @@ type SessionEnded struct{}
 // Init initializes the main model orchestrator.
 func (m *UIModel) Init() tea.Cmd {
 	m.exitStatus = pamError{status: pam.ErrSystem, msg: "model did not return anything"}
-	m.userSelectionModel = newUserSelectionModel(m.ClientType, m.PamMTx)
 	var cmds []tea.Cmd
 
 	if m.ClientType == Gdm {
@@ -291,7 +290,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders a text view of the whole UI.
 func (m *UIModel) View() string {
-	if m.ClientType == InteractiveTerminal {
+	if m.ClientType != InteractiveTerminal {
 		return ""
 	}
 	var view strings.Builder
