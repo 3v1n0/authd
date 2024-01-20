@@ -74,7 +74,7 @@ func TestSendToGdm(t *testing.T) {
 				func(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
 					convFuncCalled = true
 					require.NotNil(t, ptr)
-					req, err := decodeJSONProtoMessage(ptr)
+					req, err := DecodeJSONProtoMessage(ptr)
 					require.NoError(t, err)
 					require.Equal(t, tc.value, req)
 					if tc.wantReturn != nil {
@@ -172,7 +172,7 @@ func TestSendData(t *testing.T) {
 				func(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
 					convFuncCalled = true
 					require.NotNil(t, ptr)
-					req, err := decodeJSONProtoMessage(ptr)
+					req, err := DecodeJSONProtoMessage(ptr)
 					require.NoError(t, err)
 					valueJSON, err := tc.value.JSON()
 					require.NoError(t, err)
@@ -274,7 +274,7 @@ func TestDataSendChecked(t *testing.T) {
 				func(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
 					convFuncCalled = true
 					require.NotNil(t, ptr)
-					req, err := decodeJSONProtoMessage(ptr)
+					req, err := DecodeJSONProtoMessage(ptr)
 					require.NoError(t, err)
 					valueJSON, err := tc.value.JSON()
 					require.NoError(t, err)
@@ -764,7 +764,7 @@ func TestDataEmitEvent(t *testing.T) {
 						return pam.BinaryPointer(msg), nil
 					}
 
-					jsonReq, err := decodeJSONProtoMessage(ptr)
+					jsonReq, err := DecodeJSONProtoMessage(ptr)
 					require.NoError(t, err)
 					data, err := NewDataFromJSON(jsonReq)
 					require.NoError(t, err)
