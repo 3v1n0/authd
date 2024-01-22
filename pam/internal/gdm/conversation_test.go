@@ -1,8 +1,6 @@
 package gdm
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -286,7 +284,7 @@ func TestDataConversationFunc(t *testing.T) {
 				defer tc.inBinReq.Release()
 				outPtr, err := DataConversationFunc(func(d *Data) (*Data, error) {
 					convFuncCalled = true
-					requireEqualData(t, tc.inData, d)
+					RequireEqualData(t, tc.inData, d)
 					if tc.outData != nil {
 						return tc.outData, nil
 					}
@@ -307,7 +305,7 @@ func TestDataConversationFunc(t *testing.T) {
 				mtx := pam_test.NewModuleTransactionDummy(DataConversationFunc(
 					func(data *Data) (*Data, error) {
 						convFuncCalled = true
-						requireEqualData(t, data, tc.inData)
+						RequireEqualData(t, data, tc.inData)
 						if tc.outData != nil {
 							return tc.outData, nil
 						}
@@ -322,7 +320,7 @@ func TestDataConversationFunc(t *testing.T) {
 				return
 			}
 			require.NoError(t, outErr)
-			requireEqualData(t, outData, tc.wantReturn)
+			RequireEqualData(t, outData, tc.wantReturn)
 		})
 	}
 }
@@ -394,7 +392,7 @@ func TestDataSendChecked(t *testing.T) {
 			mtx := pam_test.NewModuleTransactionDummy(DataConversationFunc(
 				func(req *Data) (*Data, error) {
 					convFuncCalled = true
-					requireEqualData(t, tc.value, req)
+					RequireEqualData(t, tc.value, req)
 
 					if tc.wantReturn != nil {
 						return tc.wantReturn, nil
@@ -494,35 +492,10 @@ func TestDataSendPoll(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			requireEqualData(t, tc.wantReturn,
+			RequireEqualData(t, tc.wantReturn,
 				&Data{Type: DataType_pollResponse, PollResponse: eventData})
 		})
 	}
-}
-
-func reformatJSONIndented(t *testing.T, input []byte) []byte {
-	t.Helper()
-
-	var indented bytes.Buffer
-	err := json.Indent(&indented, input, "", "  ")
-	require.NoError(t, err)
-	return indented.Bytes()
-}
-
-func requireEqualData(t *testing.T, want *Data, actual *Data) {
-	t.Helper()
-
-	// We can't compare data values as their content may contain elements
-	// that may vary that are needed by protobuf implementation.
-	// So let's compare the data JSON representation instead since that's what
-	// we care about anyways.
-	wantJSON, err := want.JSON()
-	require.NoError(t, err)
-	actualJSON, err := actual.JSON()
-	require.NoError(t, err)
-
-	require.Equal(t, string(reformatJSONIndented(t, wantJSON)),
-		string(reformatJSONIndented(t, actualJSON)))
 }
 
 type invalidRequest struct {
@@ -775,7 +748,7 @@ func TestDataSendRequestTyped(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			requireEqualData(t, tc.wantData, &Data{
+			RequireEqualData(t, tc.wantData, &Data{
 				Type:     DataType_response,
 				Response: &ResponseData{Type: tc.wantData.Response.Type, Data: response},
 			})

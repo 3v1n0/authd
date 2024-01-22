@@ -1,7 +1,6 @@
 package gdm_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"testing"
 
@@ -22,27 +21,6 @@ func reformatJSON(t *testing.T, input []byte) []byte {
 	out, err := json.Marshal(js)
 	require.NoError(t, err)
 	return out
-}
-
-func reformatJSONIndented(t *testing.T, input []byte) []byte {
-	t.Helper()
-
-	var indented bytes.Buffer
-	err := json.Indent(&indented, input, "", "  ")
-	require.NoError(t, err)
-	return indented.Bytes()
-}
-
-func requireEqualData(t *testing.T, want *gdm.Data, actual *gdm.Data) {
-	t.Helper()
-
-	wantJSON, err := want.JSON()
-	require.NoError(t, err)
-	actualJSON, err := actual.JSON()
-	require.NoError(t, err)
-
-	require.Equal(t, string(reformatJSONIndented(t, wantJSON)),
-		string(reformatJSONIndented(t, actualJSON)))
 }
 
 func TestGdmStructsMarshal(t *testing.T) {
@@ -373,7 +351,7 @@ func TestGdmStructsMarshal(t *testing.T) {
 			// Now try to reconvert things back again
 			gdmData, err := gdm.NewDataFromJSON(bytes)
 			require.NoError(t, err)
-			requireEqualData(t, tc.gdmData, gdmData)
+			gdm.RequireEqualData(t, tc.gdmData, gdmData)
 		})
 	}
 }
@@ -618,7 +596,7 @@ func TestGdmStructsUnMarshal(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			requireEqualData(t, tc.wantData, gdmData)
+			gdm.RequireEqualData(t, tc.wantData, gdmData)
 
 			// Convert back the data to JSON and check it's still matching.
 			json, err := gdmData.JSON()
