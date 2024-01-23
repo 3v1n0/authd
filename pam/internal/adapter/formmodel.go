@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -24,10 +25,12 @@ func newFormModel(label, entryType, buttonLabel string, wait bool) formModel {
 	switch entryType {
 	case "chars":
 		entry := &textinputModel{Model: textinput.New()}
+		entry.Cursor.SetMode(cursor.CursorHide)
 		focusableModels = append(focusableModels, entry)
 	case "chars_password":
 		entry := &textinputModel{Model: textinput.New()}
 		entry.EchoMode = textinput.EchoNone
+		entry.Cursor.SetMode(cursor.CursorHide)
 		focusableModels = append(focusableModels, entry)
 	}
 	if buttonLabel != "" {

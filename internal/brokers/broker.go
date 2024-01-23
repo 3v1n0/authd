@@ -140,6 +140,7 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID string,
 	done := make(chan struct{})
 	go func() {
 		authenticationDataJSON, marshalErr := protojson.Marshal(authenticationData)
+		fmt.Println("Got auth data", string(authenticationDataJSON))
 		if marshalErr != nil {
 			err = marshalErr
 			close(done)

@@ -142,11 +142,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		m.cancelIsAuthenticated()
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
-		fmt.Println("sendIsAuthenticated: %#v", msg)
+		fmt.Printf("sendIsAuthenticated: %#v\n", msg)
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
 		}
-		fmt.Println("sendIsAuthenticated, encrypted: %#v", msg)
+		fmt.Printf("sendIsAuthenticated, encrypted: %#v\n", msg)
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{
 			Challenge: msg.challenge,
 			Wait:      msg.wait,

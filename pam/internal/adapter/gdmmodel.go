@@ -41,7 +41,7 @@ func newGdmModel(mTx pam.ModuleTransaction) gdmModel {
 // Init initializes the main model orchestrator.
 func (m *gdmModel) Init() tea.Cmd {
 	return tea.Sequence(m.protoHello(),
-		m.requestUICapabilities(),
+		requestUICapabilities(m.pamMTx),
 		m.pollGdm())
 }
 
@@ -65,11 +65,11 @@ func (m *gdmModel) protoHello() tea.Cmd {
 	return nil
 }
 
-func (m *gdmModel) requestUICapabilities() tea.Cmd {
+func requestUICapabilities(mTx pam.ModuleTransaction) tea.Cmd {
 	return func() tea.Msg {
 		// res, err := gdm.SendRequest(m.pamMt, &gdm.RequestData_UiLayoutCapabilities{})
 		// fixme conversion
-		res, err := gdm.SendRequestTyped[*gdm.ResponseData_UiLayoutCapabilities](m.pamMTx,
+		res, err := gdm.SendRequestTyped[*gdm.ResponseData_UiLayoutCapabilities](mTx,
 			&gdm.RequestData_UiLayoutCapabilities{})
 		if err != nil {
 			return pamError{
@@ -119,6 +119,11 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 
 	for _, result := range gdmPollResults {
 		switch res := result.Data.(type) {
+		case *gdm.EventData_UserSelected:
+			commands = append(commands, sendEvent(userSelected{
+				username: res.UserSelected.UserId,
+			}))
+
 		case *gdm.EventData_BrokerSelected:
 			if res.BrokerSelected == nil {
 				return sendEvent(pamError{status: pam.ErrSystem,
@@ -146,7 +151,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 					status: pam.ErrSystem, msg: "missing auth requested",
 				})
 			}
-			if res.IsAuthenticatedRequested.Challenge != nil {
+			if challenge := res.IsAuthenticatedRequested.GetChallenge(); challenge != "" {
 				commands = append(commands, sendEvent(isAuthenticatedRequested{
 					challenge: res.IsAuthenticatedRequested.Challenge,
 				}))
@@ -173,6 +178,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 				// Maybe this can be sent only if we ever hit the challenge phase.
 				commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
 			}
+			commands = append(commands, m.changeStage(res.StageChanged.Stage))
 		}
 	}
 	return tea.Batch(commands...)
@@ -195,15 +201,20 @@ func (m *gdmModel) emitEvent(event gdm.Event) tea.Cmd {
 }
 
 func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
-	log.Debugf(context.TODO(), "GDM, parsing %#v", msg)
+	// log.Infof(context.TODO(), "GDM, parsing %#v", msg)
 	switch msg := msg.(type) {
 	case gdmPollDone:
 		return m, tea.Sequence(
 			tea.Tick(time.Millisecond*16, func(time.Time) tea.Msg { return nil }),
 			m.pollGdm())
 
-	case gdmUICapabilitiesReceived:
-		return m, sendEvent(supportedUILayoutsReceived{msg.uiLayouts})
+	// case gdmUICapabilitiesReceived:
+	// 	return m, sendEvent(supportedUILayoutsReceived{msg.uiLayouts})
+
+	case userSelected:
+		return m, m.emitEvent(&gdm.EventData_UserSelected{
+			UserSelected: &gdm.Events_UserSelected{UserId: msg.username},
+		})
 
 	case brokersListReceived:
 		return m, m.emitEvent(&gdm.EventData_BrokersReceived{
@@ -211,6 +222,7 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		})
 
 	case brokerSelected:
+		fmt.Println("GDM - broker selected: ", msg.brokerID)
 		return m, m.emitEvent(&gdm.EventData_BrokerSelected{
 			BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: msg.brokerID},
 		})
@@ -232,6 +244,7 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 
 	case isAuthenticatedResultReceived:
 		if msg.access == responses.AuthCancelled {
+			// sendEvent(isAuthenticatedCancelled{}) FIXME:???
 			return m, nil
 		}
 		if msg.res == nil {
@@ -246,7 +259,7 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m *gdmModel) changeStage(s pam_proto.Stage) tea.Cmd {
+func (m gdmModel) changeStage(s pam_proto.Stage) tea.Cmd {
 	return func() tea.Msg {
 		_, err := gdm.SendRequest(m.pamMTx, &gdm.RequestData_ChangeStage{
 			ChangeStage: &gdm.Requests_ChangeStage{Stage: s},

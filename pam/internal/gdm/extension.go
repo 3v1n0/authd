@@ -91,6 +91,10 @@ func newJSONProtoMessage(jsonValue []byte) (*jsonProtoMessage, error) {
 	return msg, nil
 }
 
+// func NewJSONProtoMessage(jsonValue []byte) (*jsonProtoMessage, error) {
+// 	return newJSONProtoMessage(jsonValue)
+// }
+
 func (msg *jsonProtoMessage) init(protoName string, protoVersion uint, jsonValue []byte) {
 	cProto := C.CString(protoName)
 	defer C.free(unsafe.Pointer(cProto))
@@ -181,8 +185,8 @@ func NewBinaryJSONProtoRequest(data []byte) (*pam.BinaryConvRequest, error) {
 		func(ptr pam.BinaryPointer) { (*jsonProtoMessage)(ptr).release() }), nil
 }
 
-// DecodeJSONProtoMessage decodes a binary pointer into its JSON representation.
-func DecodeJSONProtoMessage(response pam.BinaryPointer) ([]byte, error) {
+// decodeJSONProtoMessage decodes a binary pointer into its JSON representation.
+func decodeJSONProtoMessage(response pam.BinaryPointer) ([]byte, error) {
 	reply := (*jsonProtoMessage)(response)
 
 	if reply.protoName() != JSONProtoName ||
@@ -194,9 +198,6 @@ func DecodeJSONProtoMessage(response pam.BinaryPointer) ([]byte, error) {
 	return reply.JSON()
 }
 
-// NewBinaryJSONProtoResponse returns a new pam.BinaryPointer from the
-// provided JSON data.
-func NewBinaryJSONProtoResponse(json []byte) (pam.BinaryPointer, error) {
-	msg, err := newJSONProtoMessage(json)
-	return pam.BinaryPointer(msg), err
-}
+// func DecodeJSONProtoMessage(response pam.BinaryPointer) ([]byte, error) {
+// 	return decodeJSONProtoMessage(response)
+// }

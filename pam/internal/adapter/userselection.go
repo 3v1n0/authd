@@ -1,6 +1,9 @@
 package adapter
 
 import (
+	"fmt"
+
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
@@ -21,14 +24,16 @@ type userSelected struct {
 
 // sendUserSelected sends the event to select a new username.
 func sendUserSelected(username string) tea.Cmd {
-	return func() tea.Msg {
-		return userSelected{username}
-	}
+	fmt.Println("SEND USER SELECTED", username)
+	return sendEvent(userSelected{username})
 }
 
 // newUserSelectionModel returns an initialized userSelectionModel.
 func newUserSelectionModel(clientType PamClientType, mTx pam.ModuleTransaction) userSelectionModel {
 	u := textinput.New()
+	if clientType != InteractiveTerminal {
+		u.Cursor.SetMode(cursor.CursorHide)
+	}
 	u.Prompt = "Username: " // TODO: i18n
 	// i18n should be done against user LANG (if set), not current LANG
 	u.Placeholder = "user name"
@@ -62,7 +67,7 @@ func (m *userSelectionModel) Init() tea.Cmd {
 	// 		}
 	// 		return userSelected{username}
 	// 	}
-	return sendUserSelected(pamUser)
+	// return sendUserSelected(pamUser)
 }
 
 // Update handles events and actions.

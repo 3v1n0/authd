@@ -77,6 +77,12 @@ func (m brokerSelectionModel) Init() tea.Cmd {
 func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case brokersListReceived:
+		if msg.brokers == nil {
+			return m, sendEvent(pamError{
+				status: pam.ErrAuthinfoUnavail,
+				msg:    "No brokers available",
+			})
+		}
 		m.availableBrokers = msg.brokers
 
 		var allBrokers []list.Item
@@ -107,6 +113,9 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 			m.Select(i)
 		}
 
+		fmt.Println("Sending", BrokerSelected{
+			BrokerID: broker.Id,
+		})
 		return m, sendEvent(BrokerSelected{
 			BrokerID: broker.Id,
 		})
@@ -143,7 +152,7 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 		return m, nil
 	}
 	switch msg := msg.(type) {
-	// Key pressesu
+	// Key presses
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":
@@ -196,6 +205,7 @@ func AutoSelectForUser(client authd.PAMClient, username string) tea.Cmd {
 			&authd.GPBRequest{
 				Username: username,
 			})
+		fmt.Println("Previous broker for user", username, "err", err)
 		// We keep a chance to manually select the broker, not a blocker issue.
 		if err != nil {
 			log.Infof(context.TODO(), "can't get previous broker for %q", username)

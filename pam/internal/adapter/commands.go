@@ -44,9 +44,11 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 		}
 
 		sbResp, err := client.SelectBroker(context.TODO(), sbReq)
+		fmt.Println("Selection broker...")
 		if err != nil {
 			return pamError{status: pam.ErrSystem, msg: fmt.Sprintf("can't select broker: %v", err)}
 		}
+		fmt.Printf("Got response %#v\n", sbResp)
 
 		sessionID := sbResp.GetSessionId()
 		if sessionID == "" {
@@ -56,6 +58,8 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 		if encryptionKey == "" {
 			return pamError{status: pam.ErrSystem, msg: "no encryption key returned by broker"}
 		}
+
+		fmt.Printf("Emitting Session started for %s\n", sessionID)
 
 		return SessionStarted{
 			brokerID:      brokerID,
