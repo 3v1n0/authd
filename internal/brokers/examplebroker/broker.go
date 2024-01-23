@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"sort"
@@ -417,7 +416,7 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 	var authData map[string]string
 	if authenticationData != "" {
 		if err := json.Unmarshal([]byte(authenticationData), &authData); err != nil {
-			return "", "", errors.New("authentication data is not a valid json value")
+			return "", "", fmt.Errorf("authentication data is not a valid json value: %w", err)
 		}
 	}
 
