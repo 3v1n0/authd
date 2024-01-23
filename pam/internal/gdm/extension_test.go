@@ -106,7 +106,7 @@ func TestGdmJSONProto(t *testing.T) {
 			require.NotNil(t, req.Pointer())
 			require.Equal(t, pam.BinaryPrompt, req.Style())
 
-			decoded, err := DecodeJSONProtoMessage(req.Pointer())
+			decoded, err := decodeJSONProtoMessage(req.Pointer())
 			require.NoError(t, err)
 			require.Equalf(t, tc.value, decoded, "JSON mismatch '%s' vs '%s'",
 				string(tc.value), string(decoded))
@@ -218,7 +218,7 @@ func TestGdmJSONProtoResponseErrors(t *testing.T) {
 			require.NotNil(t, binReq.Pointer())
 			require.Equal(t, pam.BinaryPrompt, binReq.Style())
 
-			decoded, err := DecodeJSONProtoMessage(binReq.Pointer())
+			decoded, err := decodeJSONProtoMessage(binReq.Pointer())
 			require.Nil(t, decoded)
 			require.ErrorIs(t, err, tc.wantError)
 		})
