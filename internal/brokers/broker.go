@@ -136,6 +136,7 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 	// monitor ctx in goroutine to call cancel
 	done := make(chan struct{})
 	go func() {
+		fmt.Println("Got auth data", authenticationData)
 		access, data, err = b.brokerer.IsAuthenticated(ctx, sessionID, authenticationData)
 		close(done)
 	}()

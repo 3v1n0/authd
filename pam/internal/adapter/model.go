@@ -28,6 +28,18 @@ const (
 	Gdm
 )
 
+func (c PamClientType) String() string {
+	switch c {
+	case Native:
+		return "Native"
+	case Gdm:
+		return "Gdm"
+	case InteractiveTerminal:
+		return "InteractiveTerminal"
+	}
+	return "faileeeeeeeeeed"
+}
+
 var debug string
 
 // sessionInfo contains the global broker session information.
@@ -129,17 +141,17 @@ func (m *UIModel) Init() tea.Cmd {
 
 // Update handles events and actions to be done from the main model orchestrator.
 func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	log.Debugf(context.TODO(), "%+v", msg)
+	// log.Infof(context.TODO(), "%d %#v", m.ClientType, msg)
 
-	if m.ClientType == Gdm {
-		// if ret, ok := msg.(pamReturnStatus); ok {
-		// 	m.exitStatus = ret
-		// 	return m, m.quit()
-		// }
-		// var cmd tea.Cmd
-		// m.gdmModel, cmd = m.gdmModel.Update(msg)
-		// return m, cmd
-	}
+	// if m.ClientType == Gdm {
+	// 	// if ret, ok := msg.(pamReturnStatus); ok {
+	// 	// 	m.exitStatus = ret
+	// 	// 	return m, m.quit()
+	// 	// }
+	// 	var cmd tea.Cmd
+	// 	m.gdmModel, cmd = m.gdmModel.Update(msg)
+	// 	return m, cmd
+	// }
 
 	switch msg := msg.(type) {
 	// Key presses
@@ -183,7 +195,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Events
 	case UsernameOrBrokerListReceived:
-		fmt.Println("Username or broker got", m.username(), m.availableBrokers())
+		fmt.Println(m.ClientType, "Username or broker got", m.username(), m.availableBrokers())
 		if m.username() == "" {
 			return m, nil
 		}
@@ -201,11 +213,18 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// sendEvent(UsernameAndBrokerListReceived{}))
 
 	case BrokerSelected:
+		// if m.currentSession != nil && m.currentSession.brokerID == msg.BrokerID {
+		// 	return m, nil
+		// }
+		// if m.exitStatus != nil {
+		// 	return m, nil
+		// }
 		if m.sessionStartingForBroker == "" {
 			m.sessionStartingForBroker = msg.BrokerID
 			return m, startBrokerSession(m.Client, msg.BrokerID, m.username())
 		}
 		if m.sessionStartingForBroker != msg.BrokerID {
+			// FIXME: add m.endSession to evaluate it at call time...
 			return m, tea.Sequence(endSession(m.Client, m.currentSession), sendEvent(msg))
 		}
 		// var cmd tea.Cmd
@@ -274,10 +293,10 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, getLayout(m.Client, m.currentSession.sessionID, msg.ID)
 
 	case UILayoutReceived:
-		log.Info(context.TODO(), "UILayoutReceived")
 		if m.currentSession == nil {
 			return m, nil
 		}
+		// log.Infof(context.TODO(), "%d UILayoutReceived", m.ClientType)
 
 		var gdmCmd tea.Cmd
 		if m.ClientType == Gdm {
@@ -362,7 +381,10 @@ func (m *UIModel) currentStage() pam_proto.Stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
+	fmt.Println(m.ClientType, "currentStage is", m.currentStage(), "Changing stage to", s)
 	var commands []tea.Cmd
+	// err := errors.WithStack(fmt.Errorf("Switching to stage %s", s))
+	// fmt.Printf("%+v\n", err)
 	if m.currentStage() != s {
 		switch m.currentStage() {
 		case pam_proto.Stage_userSelection:

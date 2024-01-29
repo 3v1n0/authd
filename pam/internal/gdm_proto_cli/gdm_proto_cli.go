@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,6 +31,34 @@ type gdmClient struct {
 	currentBrokerID string
 	currentAuthMode string
 	privateKey      *rsa.PrivateKey
+
+	// brokerID      string
+
+	gotClientSupportedLayouts chan struct{}
+	clientSupportedLayouts    []*authd.UILayout
+
+	gotAuthModes chan []*authd.GAMResponse_AuthenticationMode
+	// authModes    []*authd.GAMResponse_AuthenticationMode
+
+	gotBrokersInfos chan struct{}
+	brokersInfos    []*authd.ABResponse_BrokerInfo
+
+	previousBrokerID  *string
+	gotPreviousBroker chan struct{}
+
+	// FIXME: Reset chan on broker or mode change...
+	// uiLayout    *authd.UILayout
+	// gotUILayout chan struct{}
+
+	uiLayoutChan chan *authd.UILayout
+
+	pendingEvents []*gdm.EventData
+
+	sessionID         string
+	encryptionKey     string
+	gotSessionStarted chan struct{}
+
+	authEvent chan *authd.IAResponse
 }
 
 var _ authd.PAMClient = &gdmClient{}
@@ -41,21 +70,25 @@ func ptrValue[T any](value T) *T {
 // AvailableBrokers simulates AvailableBrokers through gdm protocol.
 func (gc *gdmClient) AvailableBrokers(ctx context.Context, in *authd.Empty, opts ...grpc.CallOption) (
 	*authd.ABResponse, error) {
-	return &authd.ABResponse{
-		BrokersInfos: []*authd.ABResponse_BrokerInfo{
-			{
-				Id:        "testBroker",
-				Name:      "The best broker!",
-				BrandIcon: nil,
-			},
-		},
-	}, nil
+	fmt.Println("We're at AvailableBrokers")
+	if gc.brokersInfos == nil {
+		<-gc.gotBrokersInfos
+	}
+	return &authd.ABResponse{BrokersInfos: gc.brokersInfos}, nil
 }
 
 // GetPreviousBroker simulates GetPreviousBroker through gdm protocol.
 func (gc *gdmClient) GetPreviousBroker(ctx context.Context, in *authd.GPBRequest, opts ...grpc.CallOption) (
 	*authd.GPBResponse, error) {
-	return &authd.GPBResponse{PreviousBroker: ptrValue("testBroker")}, nil
+	fmt.Println("We're at GetPreviousBroker")
+	select {
+	case <-time.After(200 * time.Millisecond):
+	case <-gc.gotPreviousBroker:
+	}
+	// if gc.previousBrokerID == nil {
+	// 	<-gc.gotPreviousBroker
+	// }
+	return &authd.GPBResponse{PreviousBroker: gc.previousBrokerID}, nil
 	// FIXME: If this happens, or is empty... No broker selection will start!
 	// return &authd.GPBResponse{}, nil
 	// return nil, errors.New("not implemented")
@@ -64,31 +97,58 @@ func (gc *gdmClient) GetPreviousBroker(ctx context.Context, in *authd.GPBRequest
 // SelectBroker simulates SelectBroker through gdm protocol.
 func (gc *gdmClient) SelectBroker(ctx context.Context, in *authd.SBRequest, opts ...grpc.CallOption) (
 	*authd.SBResponse, error) {
-	fmt.Println("Session requested!")
+	fmt.Println("We're at SelectBroker")
 	gc.username = in.Username
 	gc.currentBrokerID = in.BrokerId
 	gc.lang = in.Lang
+
+	gc.pendingEvents = append(gc.pendingEvents,
+		&gdm.EventData{
+			Type: gdm.EventType_brokerSelected,
+			Data: &gdm.EventData_BrokerSelected{
+				BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: in.BrokerId},
+			},
+		})
+
+	// We use our encryption key here, so that we can decrypt the challenge value we
+	// received and leave the final encryption to the gdm model.
 	pubASN1, err := x509.MarshalPKIXPublicKey(&gc.privateKey.PublicKey)
 	if err != nil {
 		return nil, err
 	}
+
+	<-gc.gotSessionStarted
 	return &authd.SBResponse{
-		SessionId:     "session-id-" + gc.currentBrokerID,
+		SessionId:     gc.sessionID,
 		EncryptionKey: base64.StdEncoding.EncodeToString(pubASN1),
 	}, nil
+	// pubASN1, err := x509.MarshalPKIXPublicKey(&gc.privateKey.PublicKey)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return &authd.SBResponse{
+	// 	SessionId:     "session-id-" + gc.currentBrokerID,
+	// 	EncryptionKey: base64.StdEncoding.EncodeToString(pubASN1),
+	// }, nil
 }
 
 // GetAuthenticationModes simulates GetAuthenticationModes through gdm protocol.
 func (gc *gdmClient) GetAuthenticationModes(ctx context.Context, in *authd.GAMRequest, opts ...grpc.CallOption) (
 	*authd.GAMResponse, error) {
 	fmt.Println("We're at GetAuthenticationModes")
+	// return &authd.GAMResponse{
+	// 	AuthenticationModes: []*authd.GAMResponse_AuthenticationMode{
+	// 		{
+	// 			Id:    "password",
+	// 			Label: "Password authentication",
+	// 		},
+	// 	},
+	// }, nil
+	gc.clientSupportedLayouts = in.SupportedUiLayouts
+	gc.gotAuthModes = make(chan []*authd.GAMResponse_AuthenticationMode)
+	defer close(gc.gotAuthModes)
 	return &authd.GAMResponse{
-		AuthenticationModes: []*authd.GAMResponse_AuthenticationMode{
-			{
-				Id:    "password",
-				Label: "Password authentication",
-			},
-		},
+		AuthenticationModes: <-gc.gotAuthModes,
 	}, nil
 	// return nil, errors.New("not implemented")
 }
@@ -97,42 +157,111 @@ func (gc *gdmClient) GetAuthenticationModes(ctx context.Context, in *authd.GAMRe
 func (gc *gdmClient) SelectAuthenticationMode(ctx context.Context, in *authd.SAMRequest, opts ...grpc.CallOption) (
 	*authd.SAMResponse, error) {
 	fmt.Println("We're at SelectAuthenticationMode")
+	// fmt.Println("before wait waited, ui layout is", gc.uiLayout)
+	// // uiLayout := <-gc.uiLayoutChan
+	// <-gc.gotUILayout
+	// // gc.mu.Lock()
+	// // defer gc.mu.Unlock()
+	// // time.Sleep(200 * time.Millisecond)
+
+	gc.uiLayoutChan = make(chan *authd.UILayout)
+	// defer close(gc.uiLayoutChan)
+	gc.pendingEvents = append(gc.pendingEvents,
+		&gdm.EventData{
+			Type: gdm.EventType_authModeSelected,
+			Data: &gdm.EventData_AuthModeSelected{
+				AuthModeSelected: &gdm.Events_AuthModeSelected{AuthModeId: in.AuthenticationModeId},
+			},
+		})
+
+	// gc.uiLayoutCond.L.Lock()
+	// gc.uiLayoutCond.Wait()
+	// gc.uiLayoutCond.L.Unlock()
+	// fmt.Println("waited, ui layout is", gc.uiLayout)
+	// fmt.Println("Returning", gc.uiLayout)
+	// fmt.Println("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n")
+	defer fmt.Println("Waited for ui layout completed...")
 	gc.currentAuthMode = in.AuthenticationModeId
 	return &authd.SAMResponse{
-		UiLayoutInfo: &authd.UILayout{
-			Type:  "form",
-			Label: ptrValue("Gimme your password"),
-			Entry: ptrValue("chars_password"),
-		},
+		UiLayoutInfo: <-gc.uiLayoutChan,
 	}, nil
+	// return &authd.SAMResponse{
+	// 	UiLayoutInfo: &authd.UILayout{
+	// 		Type:  "form",
+	// 		Label: ptrValue("Gimme your passworddddddddddd"),
+	// 		Entry: ptrValue("chars_password"),
+	// 	},
+	// }, nil
 }
 
 // IsAuthenticated simulates IsAuthenticated through gdm protocol.
 func (gc *gdmClient) IsAuthenticated(ctx context.Context, in *authd.IARequest, opts ...grpc.CallOption) (
 	*authd.IAResponse, error) {
-	challenge := in.AuthenticationData.GetChallenge()
-	if challenge == "" {
-		return nil, errors.New("not implemented")
-	}
-	ciphertext, err := base64.StdEncoding.DecodeString(challenge)
-	if err != nil {
-		return nil, err
+	fmt.Println("We're at IsAuthenticated")
+
+	var authData authd.IARequestAuthenticationDataItem
+	if challenge := in.AuthenticationData.GetChallenge(); challenge != "" {
+		ciphertext, err := base64.StdEncoding.DecodeString(challenge)
+		if err != nil {
+			return nil, err
+		}
+
+		plainText, err := rsa.DecryptOAEP(sha512.New(), nil, gc.privateKey, ciphertext, nil)
+		if err != nil {
+			return nil, err
+		}
+		authData = &authd.IARequest_AuthenticationData_Challenge{
+			Challenge: string(plainText),
+		}
+	} else if wait := in.AuthenticationData.GetWait(); wait != "" {
+		authData = &authd.IARequest_AuthenticationData_Wait{
+			Wait: wait,
+		}
+	} else if skip := in.AuthenticationData.GetSkip(); skip != "" {
+		authData = &authd.IARequest_AuthenticationData_Skip{
+			Skip: skip,
+		}
 	}
 
-	plaintext, err := rsa.DecryptOAEP(sha512.New(), nil, gc.privateKey, ciphertext, nil)
-	if err != nil {
-		return nil, err
-	}
+	gc.authEvent = make(chan *authd.IAResponse)
+	defer close(gc.authEvent)
+	gc.pendingEvents = append(gc.pendingEvents,
+		&gdm.EventData{
+			Type: gdm.EventType_isAuthenticatedRequested,
+			Data: &gdm.EventData_IsAuthenticatedRequested{
+				IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
+					AuthenticationData: &authd.IARequest_AuthenticationData{
+						Item: authData,
+					},
+				},
+			},
+		})
 
-	if string(plaintext) != "foobar" {
-		return &authd.IAResponse{
-			Access: "retry",
-		}, nil
-	}
+	return <-gc.authEvent, nil
+	// return nil, errors.New("not implemented")
 
-	return &authd.IAResponse{
-		Access: "granted",
-	}, nil
+	// if challenge == "" {
+	// 	return nil, errors.New("not implemented")
+	// }
+	// ciphertext, err := base64.StdEncoding.DecodeString(challenge)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// plaintext, err := rsa.DecryptOAEP(sha512.New(), nil, gc.privateKey, ciphertext, nil)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// if string(plaintext) != "foobar" {
+	// 	return &authd.IAResponse{
+	// 		Access: "retry",
+	// 	}, nil
+	// }
+
+	// return &authd.IAResponse{
+	// 	Access: "granted",
+	// }, nil
 }
 
 // EndSession simulates EndSession through gdm protocol.
@@ -166,7 +295,10 @@ func newClient(socket string) (client authd.PAMClient, close func(), err error) 
 	return authd.NewPAMClient(conn), func() { conn.Close() }, nil
 }
 
-type gdmConvHandler struct{}
+type gdmConvHandler struct {
+	gc *gdmClient
+	mu sync.Mutex
+}
 
 func (c *gdmConvHandler) RespondPAM(style pam.Style, prompt string) (string, error) {
 	switch style {
@@ -181,28 +313,54 @@ func (c *gdmConvHandler) RespondPAM(style pam.Style, prompt string) (string, err
 }
 
 func (c *gdmConvHandler) RespondPAMBinary(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
-	json, err := gdm.DecodeJSONProtoMessage(ptr)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("->", string(json))
-	gdmData, err := gdm.NewDataFromJSON(json)
-	if err != nil {
-		return nil, err
-	}
-	gdmData, err = handleGdmData(gdmData)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("<-", string(json))
-	json, err = gdmData.JSON()
-	if err != nil {
-		return nil, err
-	}
-	return gdm.NewBinaryJSONProtoResponse(json)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return gdm.DataConversationFunc(func(inData *gdm.Data) (*gdm.Data, error) {
+		outData, err := c.handleGdmData(inData)
+		if err != nil {
+			return nil, err
+		}
+		if inData.Type == gdm.DataType_poll && outData.PollResponse == nil {
+			return outData, err
+		}
+		json, err := inData.JSON()
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("->", string(json))
+		json, err = outData.JSON()
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("<-", string(json))
+		return outData, nil
+	}).RespondPAMBinary(ptr)
+	// json, err := gdm.DecodeJSONProtoMessage(ptr)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if string(json) != `{"type":"poll"}` {
+	// 	fmt.Println("->", string(json))
+	// }
+	// gdmData, err := gdm.NewDataFromJSON(json)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// gdmData, err = c.handleGdmData(gdmData)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// json, err = gdmData.JSON()
+	// if string(json) != `{"type":"pollResponse"}` {
+	// 	fmt.Println("->", string(json))
+	// }
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return gdm.NewBinaryJSONProtoResponse(json)
 }
 
-func handleGdmData(gdmData *gdm.Data) (*gdm.Data, error) {
+func (c *gdmConvHandler) handleGdmData(gdmData *gdm.Data) (*gdm.Data, error) {
 	log.Debugf(context.TODO(), "Handling authd protocol: %#v", gdmData)
 
 	switch gdmData.Type {
@@ -213,15 +371,19 @@ func handleGdmData(gdmData *gdm.Data) (*gdm.Data, error) {
 		}, nil
 
 	case gdm.DataType_request:
-		return exampleHandleAuthDRequest(gdmData)
+		return c.handleAuthDRequest(gdmData)
 
 	case gdm.DataType_poll:
+		events := c.gc.pendingEvents
+		// fmt.Println("Polling back", events)
+		c.gc.pendingEvents = nil
 		return &gdm.Data{
 			Type:         gdm.DataType_pollResponse,
-			PollResponse: []*gdm.EventData{},
+			PollResponse: events,
 		}, nil
 
 	case gdm.DataType_event:
+		c.handleEvent(gdmData.Event)
 		return &gdm.Data{
 			Type: gdm.DataType_eventAck,
 		}, nil
@@ -231,46 +393,24 @@ func handleGdmData(gdmData *gdm.Data) (*gdm.Data, error) {
 		gdmData.Type.String())
 }
 
-func exampleHandleAuthDRequest(gdmData *gdm.Data) (*gdm.Data, error) {
-	switch gdmData.Request.Type {
-	case gdm.RequestType_uiLayoutCapabilities:
-		required, _ := "required", "optional"
-		supportedEntries := "optional:chars,chars_password"
-		// requiredWithBooleans := "required:true,false"
-		optionalWithBooleans := "optional:true,false"
-
+func (c *gdmConvHandler) handleAuthDRequest(gdmData *gdm.Data) (*gdm.Data, error) {
+	switch req := gdmData.Request.Data.(type) {
+	case *gdm.RequestData_UiLayoutCapabilities:
+		<-c.gc.gotClientSupportedLayouts
 		return &gdm.Data{
 			Type: gdm.DataType_response,
 			Response: &gdm.ResponseData{
 				Type: gdmData.Request.Type,
 				Data: &gdm.ResponseData_UiLayoutCapabilities{
 					UiLayoutCapabilities: &gdm.Responses_UiLayoutCapabilities{
-						SupportedUiLayouts: []*authd.UILayout{
-							{
-								Type:  "form",
-								Label: &required,
-								Entry: &supportedEntries,
-								Wait:  &optionalWithBooleans,
-								// Button: &optional,
-							},
-							// {
-							// 	Type:  "newpassword",
-							// 	Label: &required,
-							// 	Entry: &supportedEntries,
-							// 	// Button: &optional,
-							// },
-						},
+						SupportedUiLayouts: c.gc.clientSupportedLayouts,
 					},
 				},
 			},
 		}, nil
 
-	case gdm.RequestType_changeStage:
-		if gdmData.Request.Data == nil {
-			return nil, fmt.Errorf("missing stage data")
-		}
-		s := gdmData.Request.Data.(*gdm.RequestData_ChangeStage).ChangeStage.Stage
-		log.Debugf(context.TODO(), "Switching to stage %d", s)
+	case *gdm.RequestData_ChangeStage:
+		log.Debugf(context.TODO(), "Switching to stage %d", req.ChangeStage.Stage)
 
 		return &gdm.Data{
 			Type: gdm.DataType_response,
@@ -285,9 +425,73 @@ func exampleHandleAuthDRequest(gdmData *gdm.Data) (*gdm.Data, error) {
 	}
 }
 
-func startGdmModel() error {
-	convHandler := gdmConvHandler{}
+func (c *gdmConvHandler) handleEvent(event *gdm.EventData) {
+	// c.gc.mu.Lock()
+	// defer c.gc.mu.Unlock()
+
+	switch ev := event.Data.(type) {
+	case *gdm.EventData_BrokersReceived:
+		c.gc.brokersInfos = ev.BrokersReceived.BrokersInfos
+		go func() {
+			c.gc.gotBrokersInfos <- struct{}{}
+		}()
+
+	case *gdm.EventData_BrokerSelected:
+		c.gc.previousBrokerID = &ev.BrokerSelected.BrokerId
+		go func() {
+			c.gc.gotPreviousBroker <- struct{}{}
+		}()
+
+	case *gdm.EventData_AuthModesReceived:
+		go func() {
+			c.gc.gotAuthModes <- ev.AuthModesReceived.AuthModes
+		}()
+
+	case *gdm.EventData_UiLayoutReceived:
+		// c.gc.uiLayout = ev.UiLayoutReceived.UiLayout
+		fmt.Println("UI LAYOUT RECEIVED!\n\n", ev.UiLayoutReceived.UiLayout)
+		// c.gc.uiLayoutCond.Broadcast()
+		// c.gc.gotUILayout <- struct{}{}
+		go func() {
+			c.gc.uiLayoutChan <- ev.UiLayoutReceived.UiLayout
+		}()
+		// close(c.gc.gotUILayout)
+		// c.gc.gotUILayout = make(chan struct{})
+
+	case *gdm.EventData_AuthEvent:
+		go func() {
+			c.gc.authEvent <- ev.AuthEvent.Response
+		}()
+	}
+}
+
+type gdmUIModel struct {
+	adapter.UIModel
+	gc *gdmClient
+}
+
+func (m *gdmUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.UIModel.Update(msg)
+	// log.Infof(context.TODO(), "GDM: %#v", msg)
+
+	switch msg := msg.(type) {
+	case adapter.TestSessionStarted:
+		m.gc.encryptionKey = msg.EncryptionKey()
+		m.gc.sessionID = msg.SessionID()
+		m.gc.gotSessionStarted <- struct{}{}
+	}
+
+	return m, cmd
+}
+
+func startGdmModel(gc *gdmClient) error {
+	convHandler := gdmConvHandler{gc, sync.Mutex{}}
 	mTx := pam_test.NewModuleTransactionDummy(&convHandler)
+
+	// if err := mTx.SetItem(pam.User, "user1"); err != nil {
+	// 	log.Errorf(context.TODO(), "Cancelled authentication: %v", err)
+	// 	return err
+	// }
 
 	client, closeConn, err := newClient("/tmp/authd.sock")
 	if err != nil {
@@ -295,10 +499,13 @@ func startGdmModel() error {
 	}
 	defer closeConn()
 
-	appState := adapter.UIModel{
-		PamMTx:     mTx,
-		Client:     client,
-		ClientType: adapter.Gdm,
+	appState := gdmUIModel{
+		UIModel: adapter.UIModel{
+			PamMTx:     mTx,
+			Client:     client,
+			ClientType: adapter.Gdm,
+		},
+		gc: gc,
 	}
 
 	// fmt.Printf("%#v\n", appState)
@@ -320,6 +527,75 @@ func startGdmModel() error {
 	return nil
 }
 
+func runGdmClient(gc *gdmClient) chan error {
+	c := make(chan error)
+	go func() {
+		err := startGdmModel(gc)
+		if err != nil {
+			log.Error(context.TODO(), err)
+		}
+		c <- err
+	}()
+	return c
+}
+
+type cliUIModel struct {
+	adapter.UIModel
+	gc *gdmClient
+}
+
+func (m *cliUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.UIModel.Update(msg)
+	// log.Infof(context.TODO(), "UPDATE: %#v", msg)
+
+	// tp := reflect.TypeOf(msg)
+	// fmt.Println(tp)
+	switch msg := msg.(type) {
+	case adapter.TestUserSelected:
+		m.gc.pendingEvents = append(m.gc.pendingEvents,
+			&gdm.EventData{
+				Type: gdm.EventType_userSelected,
+				Data: &gdm.EventData_UserSelected{
+					UserSelected: &gdm.Events_UserSelected{UserId: msg.UserName()},
+				},
+			})
+
+	case adapter.TestSupportedUILayoutsReceived:
+		if m.gc.clientSupportedLayouts != nil {
+			return m, cmd
+		}
+		m.gc.clientSupportedLayouts = msg.Layouts()
+		close(m.gc.gotClientSupportedLayouts)
+
+		// case adapter.TestAuthModeSelected:
+		// 	m.gc.pendingEvents = append(m.gc.pendingEvents,
+		// 		&gdm.EventData{
+		// 			Type: gdm.EventType_authModeSelected,
+		// 			Data: &gdm.EventData_AuthModeSelected{
+		// 				AuthModeSelected: &gdm.Events_AuthModeSelected{AuthModeId: msg.AuthModeID()},
+		// 			},
+		// 		})
+		// m.gc.currentAuthMode =
+
+		// case adapter.TestBrokerSelected:
+		// 	m.gc.pendingEvents = append(m.gc.pendingEvents,
+		// 		&gdm.EventData{
+		// 			Type: gdm.EventType_brokerSelected,
+		// 			Data: &gdm.EventData_BrokerSelected{
+		// 				BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: msg.BrokerID()},
+		// 			},
+		// 		})
+	}
+
+	return m, cmd
+}
+
+// func (m *cliUIModel) changeStage(s proto.Stage) tea.Cmd {
+// 	cmd := m.UIModel.changeStage(s)
+// 	fmt.Println("Mock changeSage override", s)
+// 	return cmd
+// }
+
 func main() {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -327,7 +603,12 @@ func main() {
 	}
 
 	client := &gdmClient{
-		privateKey: privateKey,
+		privateKey:                privateKey,
+		gotClientSupportedLayouts: make(chan struct{}),
+		gotBrokersInfos:           make(chan struct{}),
+		gotPreviousBroker:         make(chan struct{}),
+		// gotUILayout:               make(chan struct{}),
+		gotSessionStarted: make(chan struct{}),
 	}
 	mTx := pam_test.NewModuleTransactionDummy(pam.ConversationFunc(
 		func(style pam.Style, msg string) (string, error) {
@@ -342,11 +623,13 @@ func main() {
 			return "", nil
 		}))
 
-	appState := adapter.UIModel{
+	appState := cliUIModel{adapter.UIModel{
 		PamMTx:     mTx,
 		Client:     client,
 		ClientType: adapter.InteractiveTerminal,
-	}
+	}, client}
+
+	gdmErrChan := runGdmClient(client)
 
 	// if err := mTx.SetItem(pam.User, "user1"); err != nil {
 	// 	log.Errorf(context.TODO(), "Cancelled authentication: %v", err)
@@ -355,7 +638,8 @@ func main() {
 
 	// fmt.Printf("%#v\n", appState)
 
-	var teaOpts []tea.ProgramOption
+	teaOpts := []tea.ProgramOption{ /* tea.WithoutRenderer() */ }
+	// teaOpts = []tea.ProgramOption{tea.WithoutRenderer()}
 	p := tea.NewProgram(&appState, teaOpts...)
 	if _, err := p.Run(); err != nil {
 		log.Errorf(context.TODO(), "Cancelled authentication: %v", err)
@@ -369,6 +653,12 @@ func main() {
 
 	case adapter.PamReturnError:
 		log.Errorf(context.TODO(), "%v: %s", exitStatus.Status(), exitStatus.Message())
+		os.Exit(1)
+	}
+
+	if err := <-gdmErrChan; err != nil {
+		log.Errorf(context.TODO(), "%v", err)
+		os.Exit(1)
 	}
 
 	// if err := startGdmModel(); err != nil {
