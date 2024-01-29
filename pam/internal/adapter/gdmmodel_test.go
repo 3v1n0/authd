@@ -694,6 +694,7 @@ func TestGdmModel(t *testing.T) {
 			wantStage:      pam_proto.Stage_challenge,
 			wantExitStatus: PamSuccess{BrokerID: firstBrokerInfo.Id},
 		},
+		//nolint:dupl // This is not a duplicate test
 		"Authenticated with message after server-side user, broker and authMode selection": {
 			clientOptions: append(slices.Clone(multiBrokerClientOptions),
 				pam_test.WithGetPreviousBrokerReturn(&firstBrokerInfo.Id, nil),
@@ -741,8 +742,7 @@ func TestGdmModel(t *testing.T) {
 			wantStage: pam_proto.Stage_challenge,
 			wantExitStatus: PamSuccess{
 				BrokerID: firstBrokerInfo.Id,
-				// FIXME: Message is not sent in success case but it probably should!
-				// msg: "Hi GDM, it's a pleasure to get you in!",
+				msg:      "Hi GDM, it's a pleasure to get you in!",
 			},
 		},
 		"Cancelled after server-side user, broker and authMode selection": {
@@ -1753,6 +1753,7 @@ func TestGdmModel(t *testing.T) {
 				msg:    "authentication status failure: some authentication error",
 			},
 		},
+		//nolint:dupl // This is not a duplicate test
 		"Error on authentication client invalid message": {
 			clientOptions: append(slices.Clone(singleBrokerClientOptions),
 				pam_test.WithGetPreviousBrokerReturn(&firstBrokerInfo.Id, nil),
