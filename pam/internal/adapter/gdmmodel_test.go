@@ -113,7 +113,7 @@ func (h *gdmConvHandler) RespondPAMBinary(ptr pam.BinaryPointer) (pam.BinaryPoin
 		if err != nil {
 			return nil, err
 		}
-		if inData.Type == gdm.DataType_poll && outData.PollResponse == nil {
+		if inData.Type == gdm.DataType_poll && len(outData.PollResponse) == 0 {
 			return outData, err
 		}
 		json, err := inData.JSON()
