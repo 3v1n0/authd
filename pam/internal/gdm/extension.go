@@ -91,6 +91,10 @@ func newJSONProtoMessage(jsonValue []byte) (*jsonProtoMessage, error) {
 	return msg, nil
 }
 
+// func NewJSONProtoMessage(jsonValue []byte) (*jsonProtoMessage, error) {
+// 	return newJSONProtoMessage(jsonValue)
+// }
+
 func (msg *jsonProtoMessage) init(protoName string, protoVersion uint, jsonValue []byte) {
 	cProto := C.CString(protoName)
 	defer C.free(unsafe.Pointer(cProto))

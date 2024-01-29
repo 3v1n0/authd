@@ -44,9 +44,11 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 		}
 
 		sbResp, err := client.SelectBroker(context.TODO(), sbReq)
+		log.Debug(context.TODO(), "Selection broker...", sbReq, "err", sbResp)
 		if err != nil {
 			return pamError{status: pam.ErrSystem, msg: fmt.Sprintf("can't select broker: %v", err)}
 		}
+		log.Debugf(context.TODO(), "Got response %#v", sbResp)
 
 		sessionID := sbResp.GetSessionId()
 		if sessionID == "" {
@@ -56,6 +58,8 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 		if encryptionKey == "" {
 			return pamError{status: pam.ErrSystem, msg: "no encryption key returned by broker"}
 		}
+
+		log.Debugf(context.TODO(), "Emitting Session started for %s", sessionID)
 
 		return SessionStarted{
 			brokerID:      brokerID,
@@ -97,7 +101,7 @@ func getLayout(client authd.PAMClient, sessionID, authModeID string) tea.Cmd {
 
 // quit tears down any active session and quit the main loop.
 func (m *UIModel) quit() tea.Cmd {
-	fmt.Println("Quitting...", m.currentSession)
+	log.Debug(context.TODO(), "Quitting...", m.currentSession)
 	if m.currentSession == nil {
 		return tea.Quit
 	}

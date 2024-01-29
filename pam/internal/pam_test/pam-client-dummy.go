@@ -217,7 +217,7 @@ func NewDummyClient(privateKey *rsa.PrivateKey, args ...DummyClientOptions) *Dum
 // AvailableBrokers simulates AvailableBrokers using the provided parameters.
 func (dc *DummyClient) AvailableBrokers(ctx context.Context, in *authd.Empty, opts ...grpc.CallOption) (
 	*authd.ABResponse, error) {
-	log.Debugf(ctx, "AvailableBrokers Called: %#v", in)
+	log.Infof(ctx, "AvailableBrokers Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	return dc.availableBrokers()
@@ -234,7 +234,7 @@ func (dc *DummyClient) availableBrokers() (
 // GetPreviousBroker simulates GetPreviousBroker using the provided parameters.
 func (dc *DummyClient) GetPreviousBroker(ctx context.Context, in *authd.GPBRequest, opts ...grpc.CallOption) (
 	*authd.GPBResponse, error) {
-	log.Debugf(ctx, "GetPreviousBroker Called: %#v", in)
+	log.Infof(ctx, "GetPreviousBroker Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.getPreviousBrokerErr != nil {
@@ -256,7 +256,7 @@ func (dc *DummyClient) GetPreviousBroker(ctx context.Context, in *authd.GPBReque
 // SelectBroker simulates SelectBroker using the provided parameters.
 func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, opts ...grpc.CallOption) (
 	*authd.SBResponse, error) {
-	log.Debugf(ctx, "SelectBroker Called: %#v", in)
+	log.Infof(ctx, "SelectBroker Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.selectBrokerErr != nil {
@@ -278,6 +278,9 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 		return nil, errors.New("no broker ID provided")
 	}
 	if dc.selectBrokerRet != nil {
+		// if dc.selectBrokerRet.SessionId == "" {
+		// 	dc.selectBrokerRet.SessionId = sessionID
+		// }
 		dc.currentSessionID = dc.selectBrokerRet.SessionId
 		dc.selectedBrokerID = in.BrokerId
 		return dc.selectBrokerRet, nil
@@ -305,7 +308,7 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 // GetAuthenticationModes simulates GetAuthenticationModes using the provided parameters.
 func (dc *DummyClient) GetAuthenticationModes(ctx context.Context, in *authd.GAMRequest, opts ...grpc.CallOption) (
 	*authd.GAMResponse, error) {
-	log.Debugf(ctx, "GetAuthenticationModes Called: %#v", in)
+	log.Infof(ctx, "GetAuthenticationModes Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.getAuthenticationModesErr != nil {
@@ -338,7 +341,7 @@ func (dc *DummyClient) GetAuthenticationModes(ctx context.Context, in *authd.GAM
 // SelectAuthenticationMode simulates SelectAuthenticationMode using the provided parameters.
 func (dc *DummyClient) SelectAuthenticationMode(ctx context.Context, in *authd.SAMRequest, opts ...grpc.CallOption) (
 	*authd.SAMResponse, error) {
-	log.Debugf(ctx, "SelectAuthenticationMode Called: %#v", in)
+	log.Infof(ctx, "SelectAuthenticationMode Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.selectAuthenticationModeErr != nil {
@@ -373,7 +376,7 @@ func (dc *DummyClient) IsAuthenticated(ctx context.Context, in *authd.IARequest,
 	*authd.IAResponse, error) {
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
-	log.Debugf(ctx, "IsAuthenticated Called: %#v", in)
+	log.Infof(ctx, "IsAuthenticated Called: %#v", in)
 	if dc.isAuthenticatedErr != nil {
 		return nil, dc.isAuthenticatedErr
 	}
@@ -463,7 +466,7 @@ func (dc *DummyClient) handleChallenge(challenge string, msg string) (*authd.IAR
 // EndSession simulates EndSession using the provided parameters.
 func (dc *DummyClient) EndSession(ctx context.Context, in *authd.ESRequest, opts ...grpc.CallOption) (
 	*authd.Empty, error) {
-	log.Debugf(ctx, "EndSession Called: %#v", in)
+	log.Infof(ctx, "EndSession Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.endSessionErr != nil {
@@ -486,7 +489,7 @@ func (dc *DummyClient) EndSession(ctx context.Context, in *authd.ESRequest, opts
 // SetDefaultBrokerForUser simulates SetDefaultBrokerForUser using the provided parameters.
 func (dc *DummyClient) SetDefaultBrokerForUser(ctx context.Context, in *authd.SDBFURequest, opts ...grpc.CallOption) (
 	*authd.Empty, error) {
-	log.Debugf(ctx, "SetDefaultBrokerForUser Called: %#v", in)
+	log.Infof(ctx, "SetDefaultBrokerForUser Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
 	if dc.setDefaultBrokerForUserErr != nil {
