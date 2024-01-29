@@ -97,7 +97,6 @@ type ChangeStage struct {
 
 // Init initializes the main model orchestrator.
 func (m *UIModel) Init() tea.Cmd {
-	m.exitStatus = pamError{status: pam.ErrSystem, msg: "model did not return anything"}
 	m.userSelectionModel = newUserSelectionModel(m.PamMTx, m.ClientType)
 	var cmds []tea.Cmd
 	cmds = append(cmds, m.userSelectionModel.Init())
@@ -150,6 +149,10 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Exit cases
 	case PamReturnStatus:
+		if m.exitStatus != nil {
+			// Nothing to do, we're already exiting...
+			return m, nil
+		}
 		m.exitStatus = msg
 		return m, m.quit()
 
@@ -340,6 +343,9 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 
 // ExitStatus exposes the [PamReturnStatus] externally.
 func (m *UIModel) ExitStatus() PamReturnStatus {
+	if m.exitStatus == nil {
+		return pamError{status: pam.ErrSystem, msg: "model did not return anything"}
+	}
 	return m.exitStatus
 }
 
