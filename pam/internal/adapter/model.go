@@ -49,7 +49,8 @@ type UIModel struct {
 	height int
 	width  int
 
-	currentSession *sessionInfo
+	sessionStartingForBroker string
+	currentSession           *sessionInfo
 
 	userSelectionModel     userSelectionModel
 	brokerSelectionModel   brokerSelectionModel
@@ -180,9 +181,15 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			AutoSelectForUser(m.Client, m.username()))
 
 	case BrokerSelected:
-		return m, startBrokerSession(m.Client, msg.BrokerID, m.username())
-
+		if m.sessionStartingForBroker == "" {
+			m.sessionStartingForBroker = msg.BrokerID
+			return m, startBrokerSession(m.Client, msg.BrokerID, m.username())
+		}
+		if m.sessionStartingForBroker != msg.BrokerID {
+			return m, tea.Sequence(endSession(m.Client, m.currentSession), sendEvent(msg))
+		}
 	case SessionStarted:
+		m.sessionStartingForBroker = ""
 		pubASN1, err := base64.StdEncoding.DecodeString(msg.encryptionKey)
 		if err != nil {
 			return m, sendEvent(pamError{
@@ -259,6 +266,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.changeStage(pam_proto.Stage_challenge))
 
 	case SessionEnded:
+		m.sessionStartingForBroker = ""
 		m.currentSession = nil
 		return m, nil
 	}
