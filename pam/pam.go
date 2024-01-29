@@ -116,9 +116,6 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		pamClientType = adapter.InteractiveTerminal
-	}
 
 	// TODO: Get this value from argc or pam environment
 	log.SetLevel(log.DebugLevel)
@@ -188,9 +185,9 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.BrokerID); err != nil {
 			return err
 		}
-		if err := mTx.SetItem(pam.User, "marco"); err != nil {
-			return err
-		}
+		// if err := mTx.SetItem(pam.User, "marco"); err != nil {
+		// 	return err
+		// }
 		return nil
 
 	case adapter.PamIgnore:

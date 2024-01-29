@@ -284,9 +284,10 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.gdmModel, gdmCmd = m.gdmModel.Update(msg)
 		}
 
-		return m, tea.Batch(gdmCmd, tea.Sequence(
+		return m, tea.Sequence(
 			m.authenticationModel.Compose(m.currentSession.brokerID, m.currentSession.sessionID, m.currentSession.encryptionKey, msg.layout),
-			m.changeStage(pam_proto.Stage_challenge)))
+			gdmCmd,
+			m.changeStage(pam_proto.Stage_challenge))
 
 	case SessionEnded:
 		m.sessionStartingForBroker = ""
@@ -374,7 +375,7 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 		}
 
 		if m.ClientType == Gdm {
-			return m.gdmModel.changeStage(s)
+			commands = append(commands, m.gdmModel.changeStage(s))
 		}
 	}
 
@@ -382,23 +383,22 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 	case pam_proto.Stage_userSelection:
 		// The session should be ended when going back to previous state, but we don’t quit the stage immediately
 		// and so, we should always ensure we cancel previous session.
-		return tea.Sequence(endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
+		commands = append(commands, endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
 
 	case pam_proto.Stage_brokerSelection:
 		m.authModeSelectionModel.Reset()
-		return tea.Sequence(endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
+		commands = append(commands, endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
 
 	case pam_proto.Stage_authModeSelection:
 		m.authenticationModel.Reset()
-
-		return m.authModeSelectionModel.Focus()
+		commands = append(commands, m.authModeSelectionModel.Focus())
 
 	case pam_proto.Stage_challenge:
-		return m.authenticationModel.Focus()
+		commands = append(commands, m.authenticationModel.Focus())
 	}
 
 	// TODO: error
-	return nil
+	return tea.Sequence(commands...)
 }
 
 // ExitStatus exposes the [PamReturnStatus] externally.
