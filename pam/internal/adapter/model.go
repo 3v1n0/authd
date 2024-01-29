@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
@@ -32,6 +33,7 @@ var debug string
 
 // sessionInfo contains the global broker session information.
 type sessionInfo struct {
+	mu            sync.Mutex
 	brokerID      string
 	sessionID     string
 	encryptionKey *rsa.PublicKey
@@ -126,6 +128,11 @@ func (m *UIModel) Init() tea.Cmd {
 
 // Update handles events and actions to be done from the main model orchestrator.
 func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.currentSession != nil {
+		m.currentSession.mu.Lock()
+		defer m.currentSession.mu.Unlock()
+	}
+
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
@@ -185,9 +192,9 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessionStartingForBroker = msg.BrokerID
 			return m, startBrokerSession(m.Client, msg.BrokerID, m.username())
 		}
-		if m.sessionStartingForBroker != msg.BrokerID {
-			return m, tea.Sequence(endSession(m.Client, m.currentSession), sendEvent(msg))
-		}
+		// if m.sessionStartingForBroker != msg.BrokerID {
+		// 	return m, tea.Sequence(endSession(m.Client, m.currentSession), sendEvent(msg))
+		// }
 	case SessionStarted:
 		m.sessionStartingForBroker = ""
 		pubASN1, err := base64.StdEncoding.DecodeString(msg.encryptionKey)
@@ -229,7 +236,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, tea.Sequence(
-			getAuthenticationModes(m.Client, m.currentSession.sessionID, m.authModeSelectionModel.SupportedUILayouts()),
+			getAuthenticationModes(m.Client, m.currentSession, m.authModeSelectionModel.SupportedUILayouts()),
 			m.changeStage(pam_proto.Stage_authModeSelection),
 		)
 
@@ -247,7 +254,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg:    "reselection of current auth mode without current ID",
 			})
 		}
-		return m, getLayout(m.Client, m.currentSession.sessionID, msg.ID)
+		return m, getLayout(m.Client, m.currentSession, msg.ID)
 
 	case UILayoutReceived:
 		log.Info(context.TODO(), "UILayoutReceived")
@@ -267,6 +274,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SessionEnded:
 		m.sessionStartingForBroker = ""
+		m.currentSession.sessionID = ""
 		m.currentSession = nil
 		return m, nil
 	}

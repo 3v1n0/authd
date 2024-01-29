@@ -1983,8 +1983,8 @@ func TestGdmModel(t *testing.T) {
 				tc.client = pam_test.NewDummyClient(gdmTestPrivateKey, tc.clientOptions...)
 			}
 
-			messagesToSend := tc.messages
-			messagesToWait := append(tc.messages, tc.wantMessages...)
+			messagesToSend := slices.Clone(tc.messages)
+			messagesToWait := append(slices.Clone(tc.messages), tc.wantMessages...)
 
 			if tc.wantExitStatus != earlyStopExitStatus {
 				messagesToWait = append(messagesToWait, tc.wantExitStatus)
@@ -2170,9 +2170,6 @@ func TestGdmModel(t *testing.T) {
 				require.NotContains(t, gdmHandler.handledRequests, req)
 			}
 
-			require.Equal(t, tc.wantStage, gdmHandler.currentStage,
-				"GDM Stage does not match with expected one")
-
 			for _, req := range tc.wantGdmRequests {
 				// We don't do full equal check since we only care about having received
 				// the ones explicitly listed.
@@ -2194,6 +2191,9 @@ func TestGdmModel(t *testing.T) {
 				// is matching what we expect.
 				return
 			}
+
+			require.Equal(t, tc.wantStage, gdmHandler.currentStage,
+				"GDM Stage does not match with expected one")
 
 			if tc.wantBrokers == nil {
 				availableBrokers, err := appState.Client.AvailableBrokers(context.TODO(), nil)

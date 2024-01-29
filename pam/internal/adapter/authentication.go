@@ -129,6 +129,9 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedRequested:
 		m.cancelIsAuthenticated()
+		if m.currentSessionID == "" {
+			return *m, nil
+		}
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
@@ -138,6 +141,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedCancelled:
 		m.cancelIsAuthenticated()
+		return *m, nil
+
+	case SessionEnded:
+		m.currentSessionID = ""
 		return *m, nil
 
 	case isAuthenticatedResultReceived:

@@ -66,10 +66,15 @@ func startBrokerSession(client authd.PAMClient, brokerID, username string) tea.C
 }
 
 // getLayout fetches the layout for a given authModeID.
-func getLayout(client authd.PAMClient, sessionID, authModeID string) tea.Cmd {
+func getLayout(client authd.PAMClient, session *sessionInfo, authModeID string) tea.Cmd {
 	return func() tea.Msg {
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		if session.sessionID == "" {
+			return nil
+		}
 		samReq := &authd.SAMRequest{
-			SessionId:            sessionID,
+			SessionId:            session.sessionID,
 			AuthenticationModeId: authModeID,
 		}
 		uiInfo, err := client.SelectAuthenticationMode(context.TODO(), samReq)
@@ -109,6 +114,11 @@ func endSession(client authd.PAMClient, currentSession *sessionInfo) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
+		currentSession.mu.Lock()
+		defer currentSession.mu.Unlock()
+		if currentSession.sessionID == "" {
+			return nil
+		}
 		_, err := client.EndSession(context.Background(), &authd.ESRequest{
 			SessionId: currentSession.sessionID,
 		})

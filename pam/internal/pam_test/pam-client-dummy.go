@@ -262,6 +262,10 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 	if dc.selectBrokerErr != nil {
 		return nil, dc.selectBrokerErr
 	}
+	if in != nil {
+		fmt.Println("SelectBroker", in.BrokerId, "user", in.Username, "session set to",
+			dc.currentSessionID)
+	}
 	if dc.currentSessionID != "" {
 		if in != nil && dc.selectedUsername != in.Username {
 			return nil, fmt.Errorf("session '%s' is still active", dc.currentSessionID)
@@ -298,6 +302,8 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 	dc.selectedLang = in.Lang
 	dc.selectedUsername = in.Username
 	dc.currentSessionID = sessionID
+	fmt.Println("SelectBroker", in.BrokerId, "user", in.Username, "session set to",
+		dc.currentSessionID)
 	return &authd.SBResponse{
 		SessionId:     dc.currentSessionID,
 		EncryptionKey: dc.encryptionKey,
@@ -477,6 +483,7 @@ func (dc *DummyClient) EndSession(ctx context.Context, in *authd.ESRequest, opts
 	if in.SessionId == "" {
 		return nil, errors.New("no session ID provided")
 	}
+	fmt.Println("EndSession", in.SessionId, "session id id is", dc.currentSessionID)
 	if dc.currentSessionID != in.SessionId {
 		return nil, fmt.Errorf("impossible to end session '%s', not found", in.SessionId)
 	}

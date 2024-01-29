@@ -258,10 +258,15 @@ func validAuthModeID(id string, authModes []*authd.GAMResponse_AuthenticationMod
 }
 
 // getAuthenticationModes returns available authentication mode for this broker from authd.
-func getAuthenticationModes(client authd.PAMClient, sessionID string, uiLayouts []*authd.UILayout) tea.Cmd {
+func getAuthenticationModes(client authd.PAMClient, session *sessionInfo, uiLayouts []*authd.UILayout) tea.Cmd {
 	return func() tea.Msg {
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		if session.sessionID == "" {
+			return nil
+		}
 		gamReq := &authd.GAMRequest{
-			SessionId:          sessionID,
+			SessionId:          session.sessionID,
 			SupportedUiLayouts: uiLayouts,
 		}
 
