@@ -753,8 +753,7 @@ func TestGdmModel(t *testing.T) {
 			wantStage: pam_proto.Stage_challenge,
 			wantExitStatus: PamSuccess{
 				BrokerID: firstBrokerInfo.Id,
-				// FIXME: Message is not sent in success case but it probably should!
-				// msg: "Hi GDM, it's a pleasure to get you in!",
+				msg:      "Hi GDM, it's a pleasure to get you in!",
 			},
 		},
 		"Cancelled after server-side user, broker and authMode selection": {
