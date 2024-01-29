@@ -362,6 +362,7 @@ func (m *UIModel) currentStage() pam_proto.Stage {
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
 func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
+	var commands []tea.Cmd
 	if m.currentStage() != s {
 		switch m.currentStage() {
 		case pam_proto.Stage_userSelection:
