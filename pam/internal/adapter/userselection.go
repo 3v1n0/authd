@@ -11,7 +11,8 @@ import (
 type userSelectionModel struct {
 	textinput.Model
 
-	pamMTx pam.ModuleTransaction
+	pamMTx     pam.ModuleTransaction
+	clientType PamClientType
 }
 
 // userSelected events to select a new username.
@@ -27,7 +28,7 @@ func sendUserSelected(username string) tea.Cmd {
 }
 
 // newUserSelectionModel returns an initialized userSelectionModel.
-func newUserSelectionModel(pamMTx pam.ModuleTransaction) userSelectionModel {
+func newUserSelectionModel(pamMTx pam.ModuleTransaction, clientType PamClientType) userSelectionModel {
 	u := textinput.New()
 	if clientType != InteractiveTerminal {
 		// Cursor events are racy: https://github.com/charmbracelet/bubbletea/issues/909.
@@ -41,7 +42,8 @@ func newUserSelectionModel(pamMTx pam.ModuleTransaction) userSelectionModel {
 	return userSelectionModel{
 		Model: u,
 
-		pamMTx: pamMTx,
+		pamMTx:     pamMTx,
+		clientType: clientType,
 	}
 }
 
@@ -69,6 +71,10 @@ func (m userSelectionModel) Update(msg tea.Msg) (userSelectionModel, tea.Cmd) {
 			}
 			return m, sendEvent(UsernameOrBrokerListReceived{})
 		}
+		return m, nil
+	}
+
+	if m.clientType != InteractiveTerminal {
 		return m, nil
 	}
 
