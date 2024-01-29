@@ -117,7 +117,7 @@ func (m *UIModel) Init() tea.Cmd {
 	m.authModeSelectionModel = newAuthModeSelectionModel(m.ClientType)
 	cmds = append(cmds, m.authModeSelectionModel.Init())
 
-	m.authenticationModel = newAuthenticationModel(m.Client)
+	m.authenticationModel = newAuthenticationModel(m.Client, m.ClientType)
 	cmds = append(cmds, m.authenticationModel.Init())
 
 	cmds = append(cmds, m.changeStage(pam_proto.Stage_userSelection))

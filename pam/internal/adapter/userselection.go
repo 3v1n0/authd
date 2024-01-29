@@ -85,6 +85,10 @@ func (m userSelectionModel) Update(msg tea.Msg) (userSelectionModel, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.clientType != InteractiveTerminal {
+		return m, nil
+	}
+
 	// interaction events
 	if !m.Focused() {
 		return m, nil
