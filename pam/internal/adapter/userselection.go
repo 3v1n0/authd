@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
@@ -29,6 +30,11 @@ func sendUserSelected(username string) tea.Cmd {
 // newUserSelectionModel returns an initialized userSelectionModel.
 func newUserSelectionModel(clientType PamClientType, mTx pam.ModuleTransaction) userSelectionModel {
 	u := textinput.New()
+	if clientType != InteractiveTerminal {
+		// Cursor events are racy: https://github.com/charmbracelet/bubbletea/issues/909.
+		// FIXME: Avoid initializing the text input Model at all.
+		u.Cursor.SetMode(cursor.CursorHide)
+	}
 	u.Prompt = "Username: " // TODO: i18n
 	// i18n should be done against user LANG (if set), not current LANG
 	u.Placeholder = "user name"
