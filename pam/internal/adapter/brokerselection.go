@@ -138,6 +138,10 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 		// 	})
 	}
 
+	if m.clientType != InteractiveTerminal {
+		return m, nil
+	}
+
 	// interaction events
 	if !m.focused {
 		return m, nil

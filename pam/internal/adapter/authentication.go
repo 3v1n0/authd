@@ -89,7 +89,8 @@ type authenticationComponent interface {
 type authenticationModel struct {
 	focused bool
 
-	client authd.PAMClient
+	client     authd.PAMClient
+	clientType PamClientType
 
 	currentModel          authenticationComponent
 	currentSessionID      string
@@ -111,9 +112,10 @@ type errMsgToDisplay struct {
 }
 
 // newAuthenticationModel initializes a authenticationModel which needs to be Compose then.
-func newAuthenticationModel(client authd.PAMClient) authenticationModel {
+func newAuthenticationModel(client authd.PAMClient, clientType PamClientType) authenticationModel {
 	return authenticationModel{
 		client:                client,
+		clientType:            clientType,
 		cancelIsAuthenticated: func() {},
 	}
 }
@@ -184,6 +186,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		return *m, nil
 	}
 
+	if m.clientType != InteractiveTerminal {
+		return *m, nil
+	}
+
 	// interaction events
 	if !m.Focused() {
 		return *m, nil
@@ -232,6 +238,10 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 	m.cancelIsAuthenticated = func() {}
 
 	m.errorMsg = ""
+
+	if m.clientType != InteractiveTerminal {
+		return sendEvent(startAuthentication{})
+	}
 
 	switch layout.Type {
 	case "form":
