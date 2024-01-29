@@ -214,6 +214,9 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case AuthModeSelected:
+		if m.currentSession == nil {
+			return m, nil
+		}
 		// Reselection/reset of current authentication mode requested (button clicked for instance)
 		if msg.ID == "" {
 			msg.ID = m.authModeSelectionModel.currentAuthModeSelectedID
@@ -228,6 +231,9 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case UILayoutReceived:
 		log.Info(context.TODO(), "UILayoutReceived")
+		if m.currentSession == nil {
+			return m, nil
+		}
 
 		return m, tea.Sequence(
 			m.authenticationModel.Compose(m.currentSession.brokerID, m.currentSession.sessionID, m.currentSession.encryptionKey, msg.layout),
