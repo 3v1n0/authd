@@ -69,7 +69,7 @@ func (h *gdmConvHandler) checkAllEventsHaveBeenEmitted() bool {
 	return isSupersetOf(receivedEventTypes, h.wantEvents)
 }
 
-func isSupersetOf[T constraints.Ordered](a []T, b []T) bool {
+func isSupersetOf[T constraints.Integer](a []T, b []T) bool {
 	tracker := make(map[T]int)
 	for _, v := range a {
 		tracker[v]++
