@@ -246,13 +246,16 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 			// sendEvent(isAuthenticatedCancelled{}) FIXME:???
 			return m, nil
 		}
-		if msg.res == nil {
+		if msg.access == "" {
 			return m, sendEvent(pamError{
 				status: pam.ErrSystem,
 				msg:    "No authentication result"})
 		}
 		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
-			AuthEvent: &gdm.Events_AuthEvent{Response: msg.res},
+			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
+				Access: msg.access,
+				Msg:    msg.msg,
+			}},
 		}))
 	}
 	return m, nil
