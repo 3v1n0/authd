@@ -263,13 +263,9 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 		return nil, dc.selectBrokerErr
 	}
 	if dc.currentSessionID != "" {
-		if dc.selectedUsername != in.Username {
+		if in != nil && dc.selectedUsername != in.Username {
 			return nil, fmt.Errorf("session '%s' is still active", dc.currentSessionID)
 		}
-	}
-	sessionID := dc.currentSessionID
-	if sessionID == "" {
-		sessionID = uuid.New().String()
 	}
 	if in == nil {
 		return nil, errors.New("no input values provided")
@@ -278,8 +274,10 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 		return nil, errors.New("no broker ID provided")
 	}
 	if dc.selectBrokerRet != nil {
-		dc.currentSessionID = dc.selectBrokerRet.SessionId
 		dc.selectedBrokerID = in.BrokerId
+		dc.selectedLang = in.Lang
+		dc.selectedUsername = in.Username
+		dc.currentSessionID = dc.selectBrokerRet.SessionId
 		return dc.selectBrokerRet, nil
 	}
 
@@ -291,6 +289,10 @@ func (dc *DummyClient) SelectBroker(ctx context.Context, in *authd.SBRequest, op
 		return b.Id == in.BrokerId
 	}) {
 		return nil, fmt.Errorf("broker '%s' not found", in.BrokerId)
+	}
+	sessionID := dc.currentSessionID
+	if sessionID == "" {
+		sessionID = uuid.New().String()
 	}
 	dc.selectedBrokerID = in.BrokerId
 	dc.selectedLang = in.Lang
