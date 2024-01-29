@@ -99,7 +99,6 @@ type SessionEnded struct{}
 
 // Init initializes the main model orchestrator.
 func (m *UIModel) Init() tea.Cmd {
-	m.exitStatus = pamError{status: pam.ErrSystem, msg: "model did not return anything"}
 	var cmds []tea.Cmd
 
 	if m.ClientType == Gdm {
@@ -171,6 +170,10 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Exit cases
 	case PamReturnStatus:
+		if m.exitStatus != nil {
+			// Nothing to do, we're already exiting...
+			return m, nil
+		}
 		m.exitStatus = msg
 		return m, m.quit()
 
@@ -387,6 +390,9 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 
 // ExitStatus exposes the [PamReturnStatus] externally.
 func (m *UIModel) ExitStatus() PamReturnStatus {
+	if m.exitStatus == nil {
+		return pamError{status: pam.ErrSystem, msg: "model did not return anything"}
+	}
 	return m.exitStatus
 }
 
