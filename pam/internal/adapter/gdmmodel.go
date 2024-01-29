@@ -18,6 +18,14 @@ const (
 	gdmPollFrequency time.Duration = time.Millisecond * 16
 )
 
+// FIXME, MFA:
+/*
+dic 02 02:26:55 ubuntu-vmware org.gnome.Shell.desktop[35592]: GDM: Got probelem
+on gdm-okta : authentication status failure: rpc error: code = Unknown desc = can't
+check authentication: IsAuthenticated already running for session
+"f35fe0d0-bd0c-4918-a96d-5c36271f81dd"
+*/
+
 type gdmModel struct {
 	pamMTx pam.ModuleTransaction
 }
@@ -59,6 +67,8 @@ func (m *gdmModel) protoHello() tea.Cmd {
 
 func requestUICapabilities(mTx pam.ModuleTransaction) tea.Cmd {
 	return func() tea.Msg {
+		// res, err := gdm.SendRequest(m.pamMt, &gdm.RequestData_UiLayoutCapabilities{})
+		// fixme conversion
 		res, err := gdm.SendRequestTyped[*gdm.ResponseData_UiLayoutCapabilities](mTx,
 			&gdm.RequestData_UiLayoutCapabilities{})
 		if err != nil {
@@ -67,14 +77,35 @@ func requestUICapabilities(mTx pam.ModuleTransaction) tea.Cmd {
 				msg:    fmt.Sprintf("sending GDM Request failed: %v", err),
 			}
 		}
+		// log.Debugf(context.TODO(), "Gdm Request response is %v", responseData)
 		if res == nil {
 			return supportedUILayoutsReceived{}
 		}
+		// res, ok := responseData.(*gdm.ResponseData_UiLayoutCapabilities)
+		// if !ok {
+		// 	log.Debugf(context.TODO(), "Gdm ui capabilities are %v", capabilities)
+		// }
+		// capabilities := res.UiLayoutCapabilities.SupportedUiLayouts
+		// log.Debugf(context.TODO(), "Gdm ui capabilities are %v", capabilities)
+		// if err != nil {
+		// 	return pamError{
+		// 		status: pam.ErrSystem,
+		// 		msg:    fmt.Sprintf("parsing GDM response failed: %v", err),
+		// 	}
+		// }
 		return supportedUILayoutsReceived{res.UiLayoutCapabilities.SupportedUiLayouts}
 	}
 }
 
+// var num = 0
+
 func (m *gdmModel) pollGdm() tea.Cmd {
+	// return func() tea.Msg {
+	// if num == 2 {
+	// 	return pamError{status: pam.ErrSystem,
+	// 		msg: fmt.Sprintf("Sending GDM poll STOP")}
+	// }
+	// num++
 	gdmPollResults, err := gdm.SendPoll(m.pamMTx)
 	if err != nil {
 		return sendEvent(pamError{
@@ -99,6 +130,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 					msg: "missing broker selected",
 				})
 			}
+			// Emit BrokerSelected instead?
 			commands = append(commands, sendEvent(brokerSelected{
 				brokerID: res.BrokerSelected.BrokerId,
 			}))
@@ -140,6 +172,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 		}
 	}
 	return tea.Batch(commands...)
+	// }
 }
 
 func (m *gdmModel) emitEvent(event gdm.Event) tea.Cmd {
@@ -161,11 +194,15 @@ func (m *gdmModel) emitEventSync(event gdm.Event) tea.Msg {
 }
 
 func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
+	// log.Infof(context.TODO(), "GDM, parsing %#v", msg)
 	switch msg := msg.(type) {
 	case gdmPollDone:
 		return m, tea.Sequence(
 			tea.Tick(gdmPollFrequency, func(time.Time) tea.Msg { return nil }),
 			m.pollGdm())
+
+	// case gdmUICapabilitiesReceived:
+	// 	return m, sendEvent(supportedUILayoutsReceived{msg.uiLayouts})
 
 	case userSelected:
 		return m, m.emitEvent(&gdm.EventData_UserSelected{
@@ -178,6 +215,7 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		})
 
 	case brokerSelected:
+		log.Debug(context.TODO(), "GDM - broker selected: ", msg.brokerID)
 		return m, m.emitEvent(&gdm.EventData_BrokerSelected{
 			BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: msg.brokerID},
 		})
@@ -196,6 +234,8 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		return m, sendEvent(m.emitEventSync(&gdm.EventData_UiLayoutReceived{
 			UiLayoutReceived: &gdm.Events_UiLayoutReceived{UiLayout: msg.layout},
 		}))
+
+	// case startAuthentication????
 
 	case isAuthenticatedResultReceived:
 		if msg.access == responses.AuthCancelled {
@@ -222,6 +262,7 @@ func (m gdmModel) changeStage(s proto.Stage) tea.Cmd {
 		_, err := gdm.SendRequest(m.pamMTx, &gdm.RequestData_ChangeStage{
 			ChangeStage: &gdm.Requests_ChangeStage{Stage: s},
 		})
+		/* FIXME: handle logical errors */
 		if err != nil {
 			return pamError{
 				status: pam.ErrSystem,

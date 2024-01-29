@@ -1,10 +1,13 @@
 package adapter
 
 import (
+	"context"
+
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
+	"github.com/ubuntu/authd/internal/log"
 )
 
 // userSelectionModel allows selecting from PAM or interactively an user.
@@ -22,9 +25,8 @@ type userSelected struct {
 
 // sendUserSelected sends the event to select a new username.
 func sendUserSelected(username string) tea.Cmd {
-	return func() tea.Msg {
-		return userSelected{username}
-	}
+	log.Debug(context.TODO(), "SEND USER SELECTED", username)
+	return sendEvent(userSelected{username})
 }
 
 // newUserSelectionModel returns an initialized userSelectionModel.
@@ -57,6 +59,17 @@ func (m *userSelectionModel) Init() tea.Cmd {
 		return sendUserSelected(pamUser)
 	}
 	return nil
+
+	// username := getPAMUser(m.pamh)
+	// if !m.gdm && !m.interactiveTerminal && username == "" {
+	// 	return func() tea.Msg {
+	// 		username, err := pamConv(m.pamh, m.Prompt, PamPromptEchoOn)
+	// 		if err != nil {
+	// 			return pamAbort{msg: "Username request failed"}
+	// 		}
+	// 		return userSelected{username}
+	// 	}
+	// return sendUserSelected(pamUser)
 }
 
 // Update handles events and actions.
