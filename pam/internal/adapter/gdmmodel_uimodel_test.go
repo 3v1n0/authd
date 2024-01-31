@@ -42,9 +42,9 @@ type gdmTestWaitForStage struct {
 	commands []tea.Cmd
 }
 
-type testGdmWaitForStageDone gdmTestWaitForStage
+type gdmTestWaitForStageDone gdmTestWaitForStage
 
-type testGdmWaitForStageCommandsDone struct {
+type gdmTestWaitForStageCommandsDone struct {
 	seq int64
 }
 
@@ -95,10 +95,10 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gdmHandler.appendPollResultEvents(msg.event)
 
 	case gdmTestWaitForStage:
-		doneMsg := (*testGdmWaitForStageDone)(&msg)
+		doneMsg := (*gdmTestWaitForStageDone)(&msg)
 		if len(doneMsg.commands) > 0 {
 			seq := gdmTestSequentialMessages.Add(1)
-			doneCommandsMsg := testGdmWaitForStageCommandsDone{seq: seq}
+			doneCommandsMsg := gdmTestWaitForStageCommandsDone{seq: seq}
 			doneMsg.commands = append(doneMsg.commands, sendEvent(doneCommandsMsg))
 			m.wantMessages = append(m.wantMessages, doneCommandsMsg)
 		}
@@ -119,7 +119,7 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.program.Send(doneMsg)
 		}()
 
-	case *testGdmWaitForStageDone:
+	case *gdmTestWaitForStageDone:
 		msgCommands := tea.Sequence(msg.commands...)
 		if len(msg.events) > 0 {
 			m.gdmHandler.appendPollResultEvents(msg.events...)
