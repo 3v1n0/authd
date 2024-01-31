@@ -1,0 +1,152 @@
+package adapter
+
+import (
+	"context"
+	"reflect"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ubuntu/authd/internal/log"
+	"github.com/ubuntu/authd/pam/internal/gdm"
+	"github.com/ubuntu/authd/pam/internal/proto"
+)
+
+// testGdmUIModel is an override of [UIModel] used for testing the module with gdm.
+type testGdmUIModel struct {
+	UIModel
+
+	mu sync.Mutex
+
+	gdmHandler *gdmConvHandler
+
+	wantMessages        []tea.Msg
+	wantMessagesHandled chan struct{}
+
+	program           *tea.Program
+	programHasQuit    atomic.Bool
+	programShouldQuit atomic.Bool
+}
+
+// Custom messages for testing the gdm model.
+
+type testGdmAddPollResultEvent struct {
+	event *gdm.EventData
+}
+
+type testGdmWaitForStage struct {
+	stage    proto.Stage
+	events   []*gdm.EventData
+	commands []tea.Cmd
+}
+
+type testGdmWaitForStageDone testGdmWaitForStage
+
+type testGdmWaitForStageCommandsDone struct {
+	seq int64
+}
+
+func (m *testGdmUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
+	returnErrorMsg, isError := msg.(PamReturnError)
+
+	idx := slices.IndexFunc(m.wantMessages, func(wm tea.Msg) bool {
+		match := reflect.DeepEqual(wm, msg)
+		if match {
+			return true
+		}
+		if !isError {
+			return false
+		}
+		pamErr, ok := wm.(PamReturnError)
+		if !ok {
+			return false
+		}
+		if pamErr.Message() != gdmTestIgnoredMessage {
+			return false
+		}
+		return pamErr.Status() == returnErrorMsg.Status()
+	})
+
+	if idx < 0 {
+		return
+	}
+
+	m.wantMessages = slices.Delete(m.wantMessages, idx, idx+1)
+	if len(m.wantMessages) == 0 {
+		close(m.wantMessagesHandled)
+	}
+}
+
+func (m *testGdmUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Debugf(context.TODO(), "%#v", msg)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	commands := []tea.Cmd{}
+
+	_, cmd := m.UIModel.Update(msg)
+	commands = append(commands, cmd)
+
+	switch msg := msg.(type) {
+	case testGdmAddPollResultEvent:
+		m.gdmHandler.appendPollResultEvents(msg.event)
+
+	case testGdmWaitForStage:
+		doneMsg := (*testGdmWaitForStageDone)(&msg)
+		if len(doneMsg.commands) > 0 {
+			seq := gdmTestSequentialMessages.Add(1)
+			doneCommandsMsg := testGdmWaitForStageCommandsDone{seq: seq}
+			doneMsg.commands = append(doneMsg.commands, sendEvent(doneCommandsMsg))
+			m.wantMessages = append(m.wantMessages, doneCommandsMsg)
+		}
+
+		waitFunc := m.gdmHandler.waitForStageChange(msg.stage)
+		if waitFunc == nil {
+			commands = append(commands, sendEvent(doneMsg))
+			break
+		}
+
+		m.wantMessages = append(m.wantMessages, doneMsg)
+
+		go func() {
+			log.Debugf(context.TODO(), "Waiting for stage reached: %#v\n", doneMsg)
+			waitFunc()
+			log.Debugf(context.TODO(), "Stage reached: %#v\n", doneMsg)
+
+			m.program.Send(doneMsg)
+		}()
+
+	case *testGdmWaitForStageDone:
+		msgCommands := tea.Sequence(msg.commands...)
+		if len(msg.events) > 0 {
+			m.gdmHandler.appendPollResultEvents(msg.events...)
+			// If we've events as poll results, let's wait for a polling cycle to complete
+			msgCommands = tea.Sequence(tea.Tick(gdmPollFrequency, func(t time.Time) tea.Msg {
+				return nil
+			}), msgCommands)
+		}
+		commands = append(commands, msgCommands)
+	}
+
+	m.maybeHandleWantMessageUnlocked(msg)
+	return m, tea.Sequence(commands...)
+}
+
+func (m *testGdmUIModel) filterFunc(model tea.Model, msg tea.Msg) tea.Msg {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, ok := msg.(tea.QuitMsg); ok {
+		// Quit is never sent to the Update func so we handle it earlier.
+		m.maybeHandleWantMessageUnlocked(msg)
+		m.programHasQuit.Store(true)
+		if !m.programShouldQuit.Load() {
+			return nil
+		}
+	}
+
+	return msg
+}
