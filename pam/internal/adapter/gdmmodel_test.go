@@ -144,12 +144,7 @@ func TestGdmModel(t *testing.T) {
 		},
 		"Broker selection stage caused by client-side user selection": {
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user"),
 			},
 			wantUsername: "gdm-selected-user",
 			wantGdmRequests: []gdm.RequestType{
@@ -210,25 +205,13 @@ func TestGdmModel(t *testing.T) {
 		},
 		"Challenge stage caused by client-side broker and authMode selection": {
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user-and-broker"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user-and-broker"),
 			},
 			messages: []tea.Msg{
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{stage: pam_proto.Stage_challenge},
@@ -266,18 +249,9 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-good-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-good-password",
+						}),
 					},
 				},
 			},
@@ -315,18 +289,9 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-good-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-good-password",
+						}),
 					},
 				},
 			},
@@ -366,18 +331,9 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "any-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-any-password",
+						}),
 					},
 				},
 			},
@@ -412,34 +368,16 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-bad-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-bad-password",
+						}),
 					},
 					commands: []tea.Cmd{
 						tea.Tick(gdmPollFrequency*2, func(t time.Time) tea.Msg {
 							return gdmTestAddPollResultEvent{
-								event: &gdm.EventData{
-									Type: gdm.EventType_isAuthenticatedRequested,
-									Data: &gdm.EventData_IsAuthenticatedRequested{
-										IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-											AuthenticationData: &authd.IARequest_AuthenticationData{
-												Item: &authd.IARequest_AuthenticationData_Challenge{
-													Challenge: "gdm-good-password",
-												},
-											},
-										},
-									},
-								},
+								event: gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+									Challenge: "gdm-good-password",
+								}),
 							}
 						}),
 					},
@@ -474,42 +412,21 @@ func TestGdmModel(t *testing.T) {
 				pam_test.WithIsAuthenticatedWantChallenge("gdm-good-password"),
 			),
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user-broker-and-auth-mode"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
 			messages: []tea.Msg{
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: secondBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(secondBrokerInfo.Id),
 					},
 					commands: []tea.Cmd{
 						sendEvent(gdmTestWaitForStage{
 							stage: pam_proto.Stage_challenge,
 							events: []*gdm.EventData{
-								{
-									Type: gdm.EventType_isAuthenticatedRequested,
-									Data: &gdm.EventData_IsAuthenticatedRequested{
-										IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-											AuthenticationData: &authd.IARequest_AuthenticationData{
-												Item: &authd.IARequest_AuthenticationData_Challenge{
-													Challenge: "gdm-good-password",
-												},
-											},
-										},
-									},
-								},
+								gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+									Challenge: "gdm-good-password",
+								}),
 							},
 						}),
 					},
@@ -540,58 +457,28 @@ func TestGdmModel(t *testing.T) {
 				pam_test.WithIsAuthenticatedMaxRetries(1),
 			),
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user-broker-and-auth-mode"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
 			messages: []tea.Msg{
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-bad-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-bad-password",
+						}),
 					},
 					commands: []tea.Cmd{
 						tea.Tick(gdmPollFrequency*2, func(t time.Time) tea.Msg {
 							return gdmTestAddPollResultEvent{
-								event: &gdm.EventData{
-									Type: gdm.EventType_isAuthenticatedRequested,
-									Data: &gdm.EventData_IsAuthenticatedRequested{
-										IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-											AuthenticationData: &authd.IARequest_AuthenticationData{
-												Item: &authd.IARequest_AuthenticationData_Challenge{
-													Challenge: "gdm-good-password",
-												},
-											},
-										},
-									},
-								},
+								event: gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+									Challenge: "gdm-good-password",
+								}),
 							}
 						}),
 					},
@@ -632,14 +519,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_stageChanged,
-							Data: &gdm.EventData_StageChanged{
-								StageChanged: &gdm.Events_StageChanged{
-									Stage: pam_proto.Stage_authModeSelection,
-								},
-							},
-						},
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
 					},
 					commands: []tea.Cmd{
 						sendEvent(gdmTestWaitForStage{stage: pam_proto.Stage_authModeSelection}),
@@ -680,14 +560,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_stageChanged,
-							Data: &gdm.EventData_StageChanged{
-								StageChanged: &gdm.Events_StageChanged{
-									Stage: pam_proto.Stage_authModeSelection,
-								},
-							},
-						},
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
 					},
 					commands: []tea.Cmd{
 						sendEvent(gdmTestWaitForStage{stage: pam_proto.Stage_authModeSelection}),
@@ -717,38 +590,19 @@ func TestGdmModel(t *testing.T) {
 		},
 		"AuthMode selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user-broker-and-auth-mode"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
 			messages: []tea.Msg{
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_stageChanged,
-							Data: &gdm.EventData_StageChanged{
-								StageChanged: &gdm.Events_StageChanged{
-									Stage: pam_proto.Stage_authModeSelection,
-								},
-							},
-						},
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
 					},
 					commands: []tea.Cmd{
 						sendEvent(gdmTestWaitForStage{stage: pam_proto.Stage_authModeSelection}),
@@ -784,68 +638,33 @@ func TestGdmModel(t *testing.T) {
 				pam_test.WithIsAuthenticatedWantChallenge("gdm-good-password"),
 			),
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user-broker-and-auth-mode"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
 			messages: []tea.Msg{
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_stageChanged,
-							Data: &gdm.EventData_StageChanged{
-								StageChanged: &gdm.Events_StageChanged{
-									Stage: pam_proto.Stage_authModeSelection,
-								},
-							},
-						},
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
 					},
 					commands: []tea.Cmd{
 						sendEvent(gdmTestWaitForStage{
 							stage: pam_proto.Stage_authModeSelection,
 							events: []*gdm.EventData{
-								{
-									Type: gdm.EventType_authModeSelected,
-									Data: &gdm.EventData_AuthModeSelected{
-										AuthModeSelected: &gdm.Events_AuthModeSelected{
-											AuthModeId: passwordUILayoutID,
-										},
-									},
-								},
+								gdmTestAuthModeSelectedEvent(passwordUILayoutID),
 							},
 							commands: []tea.Cmd{
 								sendEvent(gdmTestWaitForStage{
 									stage: pam_proto.Stage_challenge,
 									events: []*gdm.EventData{
-										{
-											Type: gdm.EventType_isAuthenticatedRequested,
-											Data: &gdm.EventData_IsAuthenticatedRequested{
-												IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-													AuthenticationData: &authd.IARequest_AuthenticationData{
-														Item: &authd.IARequest_AuthenticationData_Challenge{
-															Challenge: "gdm-good-password",
-														},
-													},
-												},
-											},
-										},
+										gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+											Challenge: "gdm-good-password",
+										}),
 									},
 								}),
 							},
@@ -886,68 +705,33 @@ func TestGdmModel(t *testing.T) {
 				pam_test.WithIsAuthenticatedWantChallenge("1234"),
 			),
 			gdmEvents: []*gdm.EventData{
-				{
-					Type: gdm.EventType_userSelected,
-					Data: &gdm.EventData_UserSelected{
-						UserSelected: &gdm.Events_UserSelected{UserId: "gdm-selected-user-broker-and-auth-mode"},
-					},
-				},
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
 			messages: []tea.Msg{
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_stageChanged,
-							Data: &gdm.EventData_StageChanged{
-								StageChanged: &gdm.Events_StageChanged{
-									Stage: pam_proto.Stage_authModeSelection,
-								},
-							},
-						},
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
 					},
 					commands: []tea.Cmd{
 						sendEvent(gdmTestWaitForStage{
 							stage: pam_proto.Stage_authModeSelection,
 							events: []*gdm.EventData{
-								{
-									Type: gdm.EventType_authModeSelected,
-									Data: &gdm.EventData_AuthModeSelected{
-										AuthModeSelected: &gdm.Events_AuthModeSelected{
-											AuthModeId: "pincode",
-										},
-									},
-								},
+								gdmTestAuthModeSelectedEvent("pincode"),
 							},
 							commands: []tea.Cmd{
 								sendEvent(gdmTestWaitForStage{
 									stage: pam_proto.Stage_challenge,
 									events: []*gdm.EventData{
-										{
-											Type: gdm.EventType_isAuthenticatedRequested,
-											Data: &gdm.EventData_IsAuthenticatedRequested{
-												IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-													AuthenticationData: &authd.IARequest_AuthenticationData{
-														Item: &authd.IARequest_AuthenticationData_Challenge{
-															Challenge: "1234",
-														},
-													},
-												},
-											},
-										},
+										gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+											Challenge: "1234",
+										}),
 									},
 								}),
 							},
@@ -981,6 +765,120 @@ func TestGdmModel(t *testing.T) {
 			},
 			wantStage:      pam_proto.Stage_challenge,
 			wantExitStatus: PamSuccess{BrokerID: firstBrokerInfo.Id},
+		},
+		"Broker selection selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
+			gdmEvents: []*gdm.EventData{
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
+			},
+			messages: []tea.Msg{
+				gdmTestWaitForStage{
+					stage: pam_proto.Stage_brokerSelection,
+					events: []*gdm.EventData{
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
+					},
+				},
+				gdmTestWaitForStage{
+					stage: pam_proto.Stage_challenge,
+					events: []*gdm.EventData{
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
+					},
+					commands: []tea.Cmd{
+						sendEvent(gdmTestWaitForStage{
+							stage: pam_proto.Stage_authModeSelection,
+							events: []*gdm.EventData{
+								gdmTestChangeStageEvent(pam_proto.Stage_brokerSelection),
+							},
+						}),
+					},
+				},
+			},
+			wantUsername:       "gdm-selected-user-broker-and-auth-mode",
+			wantSelectedBroker: firstBrokerInfo.Id,
+			wantGdmRequests: []gdm.RequestType{
+				gdm.RequestType_uiLayoutCapabilities,
+				gdm.RequestType_changeStage, // -> broker Selection
+				gdm.RequestType_changeStage, // -> authMode Selection
+				gdm.RequestType_changeStage, // -> challenge
+				gdm.RequestType_changeStage, // -> authMode Selection
+				gdm.RequestType_changeStage, // -> broker Selection
+			},
+			wantMessages: []tea.Msg{
+				startAuthentication{},
+			},
+			wantGdmEvents: []gdm.EventType{
+				gdm.EventType_userSelected,
+				gdm.EventType_brokersReceived,
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModeSelected,
+			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_authEvent,
+			},
+			wantStage:      pam_proto.Stage_brokerSelection,
+			wantExitStatus: gdmTestEarlyStopExitStatus,
+		},
+		"User selection selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
+			gdmEvents: []*gdm.EventData{
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
+			},
+			messages: []tea.Msg{
+				gdmTestWaitForStage{
+					stage: pam_proto.Stage_brokerSelection,
+					events: []*gdm.EventData{
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
+					},
+				},
+				gdmTestWaitForStage{
+					stage: pam_proto.Stage_challenge,
+					events: []*gdm.EventData{
+						gdmTestChangeStageEvent(pam_proto.Stage_authModeSelection),
+					},
+					commands: []tea.Cmd{
+						sendEvent(gdmTestWaitForStage{
+							stage: pam_proto.Stage_authModeSelection,
+							events: []*gdm.EventData{
+								gdmTestChangeStageEvent(pam_proto.Stage_brokerSelection),
+							},
+							commands: []tea.Cmd{
+								sendEvent(gdmTestWaitForStage{
+									stage: pam_proto.Stage_brokerSelection,
+									events: []*gdm.EventData{
+										gdmTestChangeStageEvent(pam_proto.Stage_userSelection),
+									},
+									commands: []tea.Cmd{
+										sendEvent(gdmTestWaitForStage{stage: pam_proto.Stage_userSelection}),
+									},
+								}),
+							},
+						}),
+					},
+				},
+			},
+			wantUsername:       "gdm-selected-user-broker-and-auth-mode",
+			wantSelectedBroker: firstBrokerInfo.Id,
+			wantGdmRequests: []gdm.RequestType{
+				gdm.RequestType_uiLayoutCapabilities,
+				gdm.RequestType_changeStage, // -> broker Selection
+				gdm.RequestType_changeStage, // -> authMode Selection
+				gdm.RequestType_changeStage, // -> challenge
+				gdm.RequestType_changeStage, // -> authMode Selection
+				gdm.RequestType_changeStage, // -> broker Selection
+				gdm.RequestType_changeStage, // -> user Selection
+			},
+			wantMessages: []tea.Msg{
+				startAuthentication{},
+			},
+			wantGdmEvents: []gdm.EventType{
+				gdm.EventType_userSelected,
+				gdm.EventType_brokersReceived,
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModeSelected,
+			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_authEvent,
+			},
+			wantStage:      pam_proto.Stage_userSelection,
+			wantExitStatus: gdmTestEarlyStopExitStatus,
 		},
 
 		// Error cases
@@ -1216,14 +1114,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{stage: proto.Stage_authModeSelection},
@@ -1255,14 +1146,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{stage: proto.Stage_authModeSelection},
@@ -1294,14 +1178,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{stage: proto.Stage_authModeSelection},
@@ -1334,14 +1211,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{stage: proto.Stage_challenge},
@@ -1377,31 +1247,15 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-password",
+						}),
 					},
 				},
 			},
@@ -1440,18 +1294,9 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-password",
+						}),
 					},
 				},
 			},
@@ -1487,14 +1332,7 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
@@ -1503,18 +1341,9 @@ func TestGdmModel(t *testing.T) {
 						sendEvent(gdmTestWaitForStage{
 							stage: pam_proto.Stage_challenge,
 							events: []*gdm.EventData{
-								{
-									Type: gdm.EventType_isAuthenticatedRequested,
-									Data: &gdm.EventData_IsAuthenticatedRequested{
-										IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-											AuthenticationData: &authd.IARequest_AuthenticationData{
-												Item: &authd.IARequest_AuthenticationData_Challenge{
-													Challenge: "gdm-wrong-password",
-												},
-											},
-										},
-									},
-								},
+								gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+									Challenge: "gdm-wrong-password",
+								}),
 							},
 						}),
 					},
@@ -1552,31 +1381,15 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_brokerSelection,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_brokerSelected,
-							Data: &gdm.EventData_BrokerSelected{
-								BrokerSelected: &gdm.Events_BrokerSelected{
-									BrokerId: firstBrokerInfo.Id,
-								},
-							},
-						},
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-wrong-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-wrong-password",
+						}),
 					},
 				},
 			},
@@ -1616,36 +1429,18 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
 					events: []*gdm.EventData{
-						{
-							Type: gdm.EventType_isAuthenticatedRequested,
-							Data: &gdm.EventData_IsAuthenticatedRequested{
-								IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-									AuthenticationData: &authd.IARequest_AuthenticationData{
-										Item: &authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-wrong-password",
-										},
-									},
-								},
-							},
-						},
+						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-wrong-password",
+						}),
 					},
 					commands: []tea.Cmd{
 						tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
 							return nil
 						}),
 						sendEvent(gdmTestAddPollResultEvent{
-							event: &gdm.EventData{
-								Type: gdm.EventType_isAuthenticatedRequested,
-								Data: &gdm.EventData_IsAuthenticatedRequested{
-									IsAuthenticatedRequested: &gdm.Events_IsAuthenticatedRequested{
-										AuthenticationData: &authd.IARequest_AuthenticationData{
-											Item: &authd.IARequest_AuthenticationData_Challenge{
-												Challenge: "another-wrong-password",
-											},
-										},
-									},
-								},
-							},
+							event: gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+								Challenge: "gdm-another-wrong-password",
+							}),
 						}),
 					},
 				},
