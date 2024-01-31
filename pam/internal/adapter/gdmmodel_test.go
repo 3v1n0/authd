@@ -45,8 +45,6 @@ func TestGdmModel(t *testing.T) {
 
 	gdmTestIgnoreStage := pam_proto.Stage(-1)
 
-	passwordUILayoutID := "Password"
-
 	firstBrokerInfo := &authd.ABResponse_BrokerInfo{
 		Id:        "testBroker",
 		Name:      "The best broker!",
@@ -57,6 +55,8 @@ func TestGdmModel(t *testing.T) {
 		Name:      "A broker that works too!",
 		BrandIcon: nil,
 	}
+
+	passwordUILayoutID := "Password"
 	singleBrokerClientOptions := []pam_test.DummyClientOptions{
 		// FIXME: Ideally we should use proper ID checks, but this can currently lead to
 		// races because the way our model is implemented and events can't be stopped and may
