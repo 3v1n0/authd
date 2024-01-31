@@ -1530,6 +1530,7 @@ func TestGdmModel(t *testing.T) {
 				tea.WithInput(nil),
 				tea.WithoutRenderer(),
 				tea.WithoutSignals(),
+				tea.WithoutSignalHandler(),
 				tea.WithFilter(appState.filterFunc),
 				tea.WithoutCatchPanics(),
 				// Explicitly set the output to something so that the program
