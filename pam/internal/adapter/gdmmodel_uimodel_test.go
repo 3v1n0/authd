@@ -14,8 +14,8 @@ import (
 	"github.com/ubuntu/authd/pam/internal/proto"
 )
 
-// testGdmUIModel is an override of [UIModel] used for testing the module with gdm.
-type testGdmUIModel struct {
+// gdmTestUIModel is an override of [UIModel] used for testing the module with gdm.
+type gdmTestUIModel struct {
 	UIModel
 
 	mu sync.Mutex
@@ -32,23 +32,23 @@ type testGdmUIModel struct {
 
 // Custom messages for testing the gdm model.
 
-type testGdmAddPollResultEvent struct {
+type gdmTestAddPollResultEvent struct {
 	event *gdm.EventData
 }
 
-type testGdmWaitForStage struct {
+type gdmTestWaitForStage struct {
 	stage    proto.Stage
 	events   []*gdm.EventData
 	commands []tea.Cmd
 }
 
-type testGdmWaitForStageDone testGdmWaitForStage
+type testGdmWaitForStageDone gdmTestWaitForStage
 
 type testGdmWaitForStageCommandsDone struct {
 	seq int64
 }
 
-func (m *testGdmUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
+func (m *gdmTestUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
 	returnErrorMsg, isError := msg.(PamReturnError)
 
 	idx := slices.IndexFunc(m.wantMessages, func(wm tea.Msg) bool {
@@ -79,7 +79,7 @@ func (m *testGdmUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
 	}
 }
 
-func (m *testGdmUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	log.Debugf(context.TODO(), "%#v", msg)
 
 	m.mu.Lock()
@@ -91,10 +91,10 @@ func (m *testGdmUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	commands = append(commands, cmd)
 
 	switch msg := msg.(type) {
-	case testGdmAddPollResultEvent:
+	case gdmTestAddPollResultEvent:
 		m.gdmHandler.appendPollResultEvents(msg.event)
 
-	case testGdmWaitForStage:
+	case gdmTestWaitForStage:
 		doneMsg := (*testGdmWaitForStageDone)(&msg)
 		if len(doneMsg.commands) > 0 {
 			seq := gdmTestSequentialMessages.Add(1)
@@ -135,7 +135,7 @@ func (m *testGdmUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Sequence(commands...)
 }
 
-func (m *testGdmUIModel) filterFunc(model tea.Model, msg tea.Msg) tea.Msg {
+func (m *gdmTestUIModel) filterFunc(model tea.Model, msg tea.Msg) tea.Msg {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
