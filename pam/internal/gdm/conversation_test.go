@@ -215,8 +215,9 @@ func TestDataConversationFunc(t *testing.T) {
 		inBinReq pam.BinaryConvRequester
 		outData  *Data
 
-		// Some tests may lead to some false-positive leak errors, once manually checked we can flag this.
-		mayLeak bool
+		// Some tests may lead to some false-positive leak errors, however in TestMain
+		// we have a final check for all tests ensuring this is not the case.
+		mayHitLeakSanitizer bool
 
 		wantReturn                   *Data
 		wantError                    error
@@ -233,7 +234,7 @@ func TestDataConversationFunc(t *testing.T) {
 
 		// Error cases
 		"Error on invalid protocol": {
-			mayLeak: true,
+			mayHitLeakSanitizer: true,
 			inBinReq: func() pam.BinaryConvRequester {
 				if pam_test.IsAddressSanitizerActive() {
 					return nil
@@ -247,7 +248,7 @@ func TestDataConversationFunc(t *testing.T) {
 			wantError:                    ErrProtoNotSupported,
 		},
 		"Error on unexpected JSON": {
-			mayLeak: true,
+			mayHitLeakSanitizer: true,
 			inBinReq: func() pam.BinaryConvRequester {
 				if pam_test.IsAddressSanitizerActive() {
 					return nil
@@ -275,7 +276,7 @@ func TestDataConversationFunc(t *testing.T) {
 			t.Parallel()
 			t.Cleanup(pam_test.MaybeDoLeakCheck)
 
-			if pam_test.IsAddressSanitizerActive() && tc.mayLeak {
+			if pam_test.IsAddressSanitizerActive() && tc.mayHitLeakSanitizer {
 				t.Skip("This test may cause false positive detection of leaks, so we ignore it")
 			}
 
