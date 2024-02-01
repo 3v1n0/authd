@@ -21,6 +21,21 @@ var daemonPath string
 func TestCLIIntegration(t *testing.T) {
 	t.Parallel()
 
+	// Due to external dependencies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
+	// can't install the dependencies there. So we need to be able to skip these tests on-demand.
+	if os.Getenv("AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS") != "" {
+		t.Skip("Skipping tests with external dependencies as requested")
+	}
+
+	// This happens when GO_WANT_HELPER_PROCESS is defined, in such case let's just skip.
+	if daemonPath == "" {
+		t.Skip("Test cannot run without an example daemon")
+	}
+
+	pamCleanup, err := buildPAM(filepath.Dir(daemonPath))
+	require.NoError(t, err, "Setup: Failed to build PAM executable")
+	t.Cleanup(pamCleanup)
+
 	outDir := filepath.Dir(daemonPath)
 
 	gpasswdOutput := filepath.Join(outDir, "gpasswd.output")
@@ -162,13 +177,6 @@ func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 }
 
 func TestMain(m *testing.M) {
-	// Due to external dependecies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
-	// can't install the dependencies there. So we need to be able to skip these tests on-demand.
-	if os.Getenv("AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS") != "" {
-		fmt.Println("Skipping tests with external dependencies as requested")
-		return
-	}
-
 	// Needed to skip the test setup when running the gpasswd mock.
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "" {
 		os.Exit(m.Run())
@@ -184,14 +192,6 @@ func TestMain(m *testing.M) {
 	}
 	defer daemonCleanup()
 	daemonPath = execPath
-
-	pamCleanup, err := buildPAM(filepath.Dir(execPath))
-	if err != nil {
-		log.Printf("Setup: Failed to build PAM executable: %v", err)
-		daemonCleanup()
-		os.Exit(1)
-	}
-	defer pamCleanup()
 
 	m.Run()
 }
