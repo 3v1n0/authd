@@ -32,6 +32,8 @@ func TestCLIIntegration(t *testing.T) {
 		t.Skip("Test cannot run without an example daemon")
 	}
 
+	const cliTestsSocketPath = "/tmp/pam-cli-tests.sock"
+
 	pamCleanup, err := buildPAM(filepath.Dir(daemonPath))
 	require.NoError(t, err, "Setup: Failed to build PAM executable")
 	t.Cleanup(pamCleanup)
@@ -43,7 +45,7 @@ func TestCLIIntegration(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	_, stopped := testutils.RunDaemon(ctx, t, daemonPath,
-		testutils.WithSocketPath("/tmp/pam-cli-tests.sock"),
+		testutils.WithSocketPath(cliTestsSocketPath),
 		testutils.WithEnvironment(grouptests.GPasswdMockEnv(t, gpasswdOutput, groupsFile)...),
 	)
 	t.Cleanup(func() {
@@ -101,7 +103,7 @@ func TestCLIIntegration(t *testing.T) {
 			var got string
 			splitTmp := strings.Split(string(tmp), "\n")
 			for i, str := range splitTmp {
-				if strings.HasPrefix(str, "> ./pam_authd socket=/tmp/pam-cli-tests.sock") {
+				if strings.HasPrefix(str, "> ./pam_authd socket="+cliTestsSocketPath) {
 					got = strings.Join(splitTmp[i:], "\n")
 					break
 				}

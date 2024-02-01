@@ -111,7 +111,7 @@ func (msg *jsonProtoMessage) release() {
 	}
 
 	C.free(unsafe.Pointer(msg.json))
-	C.free(unsafe.Pointer(msg))
+	// C.free(unsafe.Pointer(msg))
 }
 
 func (msg *jsonProtoMessage) protoName() string {

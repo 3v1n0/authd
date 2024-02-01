@@ -60,9 +60,11 @@ func IdempotentGPasswdOutput(t *testing.T, cmdsFilePath string) string {
 }
 
 // Mockgpasswd is the gpasswd mock.
-func Mockgpasswd(_ *testing.T) {
+func Mockgpasswd(t *testing.T) {
+	t.Helper()
+
 	if os.Getenv("GO_WANT_HELPER_PROCESS_DEST") == "" {
-		return
+		t.Skip("No helper process defined")
 	}
 
 	args := os.Args
