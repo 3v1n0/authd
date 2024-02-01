@@ -197,6 +197,11 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 			UiLayoutReceived: &gdm.Events_UiLayoutReceived{UiLayout: msg.layout},
 		}))
 
+	case startAuthentication:
+		return m, sendEvent(m.emitEventSync(&gdm.EventData_StartAuthentication{
+			StartAuthentication: &gdm.Events_StartAuthentication{},
+		}))
+
 	case isAuthenticatedResultReceived:
 		if msg.access == responses.AuthCancelled {
 			sendEvent(isAuthenticatedCancelled{})
