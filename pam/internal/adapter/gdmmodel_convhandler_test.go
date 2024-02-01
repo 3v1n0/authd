@@ -58,9 +58,9 @@ func (h *gdmConvHandler) checkAllRequestsHaveBeenHandled() bool {
 func (h *gdmConvHandler) RespondPAM(style pam.Style, prompt string) (string, error) {
 	switch style {
 	case pam.TextInfo:
-		h.t.Logf("GDM PAM Info Message: %s\n", prompt)
+		h.t.Logf("GDM PAM Info Message: %s", prompt)
 	case pam.ErrorMsg:
-		h.t.Logf("GDM PAM Error Message: %s\n", prompt)
+		h.t.Logf("GDM PAM Error Message: %s", prompt)
 	default:
 		return "", fmt.Errorf("PAM style %d not implemented", style)
 	}
