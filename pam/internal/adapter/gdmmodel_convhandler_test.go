@@ -39,6 +39,8 @@ type gdmConvHandler struct {
 	currentStage        pam_proto.Stage
 	stageChanges        []pam_proto.Stage
 	lastNotifiedStage   *pam_proto.Stage
+
+	startAuthRequested chan struct{}
 }
 
 func (h *gdmConvHandler) checkAllEventsHaveBeenEmitted() bool {
@@ -218,6 +220,12 @@ func (h *gdmConvHandler) handleEvent(event *gdm.EventData) error {
 		}) {
 			return fmt.Errorf(`unknown layout type: "%s"`, ev.UiLayoutReceived.UiLayout.Type)
 		}
+
+	case *gdm.EventData_StartAuthentication:
+		go func() {
+			// Mark the events received after or while we're returning but not when locked.
+			h.startAuthRequested <- struct{}{}
+		}()
 	}
 
 	return nil
@@ -247,6 +255,20 @@ func (h *gdmConvHandler) waitForStageChange(stage proto.Stage) func() {
 			}
 
 			h.currentStageChanged.Wait()
+		}
+	}
+}
+
+func (h *gdmConvHandler) waitForAuthenticationStarted() {
+	<-h.startAuthRequested
+}
+
+func (h *gdmConvHandler) consumeAuthenticationStartedEvents() {
+	for {
+		select {
+		case <-h.startAuthRequested:
+		default:
+			return
 		}
 	}
 }

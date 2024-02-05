@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/gdm"
 	"github.com/ubuntu/authd/pam/internal/proto"
@@ -48,8 +50,8 @@ type gdmTestWaitForStage struct {
 
 type gdmTestWaitForStageDone gdmTestWaitForStage
 
-type gdmTestSendAuthData struct {
-	item *authd.IARequestAuthenticationDataItem
+type gdmTestSendAuthDataWhenReady struct {
+	item authd.IARequestAuthenticationDataItem
 }
 
 func (m *gdmTestUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
@@ -133,6 +135,24 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}), msgCommands)
 		}
 		commands = append(commands, msgCommands)
+
+	case gdmTestSendAuthDataWhenReady:
+		doneMsg := gdmTestWaitForCommandsDone{seq: gdmTestSequentialMessages.Add(1)}
+		m.wantMessages = append(m.wantMessages, doneMsg)
+
+		go func() {
+			m.gdmHandler.waitForAuthenticationStarted()
+			m.gdmHandler.appendPollResultEvents(gdmTestIsAuthenticatedEvent(msg.item))
+			m.program.Send(tea.Sequence(tea.Tick(gdmPollFrequency, func(t time.Time) tea.Msg {
+				return sendEvent(doneMsg)
+			}), sendEvent(doneMsg))())
+		}()
+
+	case gdmTestWaitForCommandsDone:
+		fmt.Println("Sequential messages done:", msg.seq)
+
+	case isAuthenticatedCancelled:
+		m.gdmHandler.consumeAuthenticationStartedEvents()
 	}
 
 	m.maybeHandleWantMessageUnlocked(msg)

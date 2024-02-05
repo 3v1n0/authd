@@ -114,6 +114,10 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			commands = append(commands, selectAuthMode(res.AuthModeSelected.AuthModeId))
 
 		case *gdm.EventData_IsAuthenticatedRequested:
+			if !m.waitingAuth {
+				log.Warningf(context.TODO(), "unexpected authentication received: %#v", res.IsAuthenticatedRequested)
+				break
+			}
 			m.waitingAuth = false
 			if res.IsAuthenticatedRequested == nil || res.IsAuthenticatedRequested.AuthenticationData == nil {
 				return sendEvent(pamError{

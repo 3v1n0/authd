@@ -283,10 +283,10 @@ func TestGdmModel(t *testing.T) {
 				}))(),
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+					commands: []tea.Cmd{
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
 							Challenge: "gdm-good-password",
-						}),
+						}}),
 					},
 				},
 			},
@@ -324,10 +324,10 @@ func TestGdmModel(t *testing.T) {
 				}))(),
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+					commands: []tea.Cmd{
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
 							Challenge: "gdm-good-password",
-						}),
+						}}),
 					},
 				},
 			},
@@ -354,6 +354,34 @@ func TestGdmModel(t *testing.T) {
 				msg:      "Hi GDM, it's a pleasure to get you in!",
 			},
 		},
+		"Authentication is ignored if not requested by model first": {
+			clientOptions: append(slices.Clone(singleBrokerClientOptions),
+				pam_test.WithIsAuthenticatedWantChallenge("gdm-good-password")),
+			gdmEvents: []*gdm.EventData{
+				gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+					Challenge: "gdm-good-password",
+				}),
+			},
+			wantGdmRequests: []gdm.RequestType{
+				gdm.RequestType_uiLayoutCapabilities,
+			},
+			wantNoGdmRequests: []gdm.RequestType{
+				gdm.RequestType_changeStage,
+			},
+			wantGdmEvents: []gdm.EventType{
+				gdm.EventType_brokersReceived,
+			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_userSelected,
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
+			},
+			wantStage:      pam_proto.Stage_userSelection,
+			wantExitStatus: gdmTestEarlyStopExitStatus,
+		},
 		"Cancelled after server-side user, broker and authMode selection": {
 			clientOptions: append(slices.Clone(multiBrokerClientOptions),
 				pam_test.WithGetPreviousBrokerReturn(&firstBrokerInfo.Id, nil),
@@ -365,14 +393,9 @@ func TestGdmModel(t *testing.T) {
 				tea.Sequence(tea.Tick(gdmPollFrequency*2, func(t time.Time) tea.Msg {
 					return userSelected{username: "daemon-selected-user-and-broker"}
 				}))(),
-				gdmTestWaitForStage{
-					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-							Challenge: "gdm-any-password",
-						}),
-					},
-				},
+				gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+					Challenge: "gdm-any-password",
+				}},
 			},
 			wantUsername:       "daemon-selected-user-and-broker",
 			wantSelectedBroker: firstBrokerInfo.Id,
@@ -405,19 +428,13 @@ func TestGdmModel(t *testing.T) {
 				}))(),
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-							Challenge: "gdm-bad-password",
-						}),
-					},
 					commands: []tea.Cmd{
-						tea.Tick(gdmPollFrequency*2, func(t time.Time) tea.Msg {
-							return gdmTestAddPollResultEvent{
-								event: gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-									Challenge: "gdm-good-password",
-								}),
-							}
-						}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-bad-password",
+						}}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-good-password",
+						}}),
 					},
 				},
 			},
@@ -461,14 +478,9 @@ func TestGdmModel(t *testing.T) {
 						gdmTestSelectBrokerEvent(secondBrokerInfo.Id),
 					},
 					commands: []tea.Cmd{
-						sendEvent(gdmTestWaitForStage{
-							stage: pam_proto.Stage_challenge,
-							events: []*gdm.EventData{
-								gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-									Challenge: "gdm-good-password",
-								}),
-							},
-						}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-good-password",
+						}}),
 					},
 				},
 			},
@@ -509,19 +521,13 @@ func TestGdmModel(t *testing.T) {
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-							Challenge: "gdm-bad-password",
-						}),
-					},
 					commands: []tea.Cmd{
-						tea.Tick(gdmPollFrequency*2, func(t time.Time) tea.Msg {
-							return gdmTestAddPollResultEvent{
-								event: gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-									Challenge: "gdm-good-password",
-								}),
-							}
-						}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-bad-password",
+						}}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-good-password",
+						}}),
 					},
 				},
 			},
@@ -703,14 +709,9 @@ func TestGdmModel(t *testing.T) {
 								gdmTestAuthModeSelectedEvent(passwordUILayoutID),
 							},
 							commands: []tea.Cmd{
-								sendEvent(gdmTestWaitForStage{
-									stage: pam_proto.Stage_challenge,
-									events: []*gdm.EventData{
-										gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "gdm-good-password",
-										}),
-									},
-								}),
+								sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+									Challenge: "gdm-good-password",
+								}}),
 							},
 						}),
 					},
@@ -772,14 +773,9 @@ func TestGdmModel(t *testing.T) {
 								gdmTestAuthModeSelectedEvent("pincode"),
 							},
 							commands: []tea.Cmd{
-								sendEvent(gdmTestWaitForStage{
-									stage: pam_proto.Stage_challenge,
-									events: []*gdm.EventData{
-										gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-											Challenge: "1234",
-										}),
-									},
-								}),
+								sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+									Challenge: "1234",
+								}}),
 							},
 						}),
 					},
@@ -1298,14 +1294,9 @@ func TestGdmModel(t *testing.T) {
 						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
 					},
 				},
-				gdmTestWaitForStage{
-					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-							Challenge: "gdm-password",
-						}),
-					},
-				},
+				gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+					Challenge: "gdm-password",
+				}},
 			},
 			wantUsername:       "daemon-selected-user-for-client-selected-broker",
 			wantSelectedBroker: firstBrokerInfo.Id,
@@ -1339,14 +1330,9 @@ func TestGdmModel(t *testing.T) {
 			),
 			messages: []tea.Msg{
 				userSelected{username: "daemon-selected-user-and-broker"},
-				gdmTestWaitForStage{
-					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-							Challenge: "gdm-password",
-						}),
-					},
-				},
+				gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+					Challenge: "gdm-good-password",
+				}},
 			},
 			wantUsername:       "daemon-selected-user-and-broker",
 			wantSelectedBroker: firstBrokerInfo.Id,
@@ -1386,14 +1372,9 @@ func TestGdmModel(t *testing.T) {
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_authModeSelection,
 					commands: []tea.Cmd{
-						sendEvent(gdmTestWaitForStage{
-							stage: pam_proto.Stage_challenge,
-							events: []*gdm.EventData{
-								gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-									Challenge: "gdm-wrong-password",
-								}),
-							},
-						}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-wrong-password",
+						}}),
 					},
 				},
 			},
@@ -1434,10 +1415,10 @@ func TestGdmModel(t *testing.T) {
 				},
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+					commands: []tea.Cmd{
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
 							Challenge: "gdm-wrong-password",
-						}),
+						}}),
 					},
 				},
 			},
@@ -1476,20 +1457,13 @@ func TestGdmModel(t *testing.T) {
 				}))(),
 				gdmTestWaitForStage{
 					stage: pam_proto.Stage_challenge,
-					events: []*gdm.EventData{
-						gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-							Challenge: "gdm-wrong-password",
-						}),
-					},
 					commands: []tea.Cmd{
-						tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
-							return nil
-						}),
-						sendEvent(gdmTestAddPollResultEvent{
-							event: gdmTestIsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-								Challenge: "gdm-another-wrong-password",
-							}),
-						}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-wrong-password",
+						}}),
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-another-wrong-password",
+						}}),
 					},
 				},
 			},
@@ -1545,6 +1519,7 @@ func TestGdmModel(t *testing.T) {
 				pendingEventsFlushed: make(chan struct{}),
 				allRequestsReceived:  make(chan struct{}),
 				allEventsReceived:    make(chan struct{}),
+				startAuthRequested:   make(chan struct{}),
 				pendingEvents:        tc.gdmEvents,
 				wantEvents:           tc.wantGdmEvents,
 				wantRequests:         tc.wantGdmRequests,
