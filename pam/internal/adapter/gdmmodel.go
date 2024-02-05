@@ -20,6 +20,8 @@ const (
 
 type gdmModel struct {
 	pamMTx pam.ModuleTransaction
+
+	waitingAuth bool
 }
 
 type gdmPollDone struct{}
@@ -112,6 +114,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			commands = append(commands, selectAuthMode(res.AuthModeSelected.AuthModeId))
 
 		case *gdm.EventData_IsAuthenticatedRequested:
+			m.waitingAuth = false
 			if res.IsAuthenticatedRequested == nil || res.IsAuthenticatedRequested.AuthenticationData == nil {
 				return sendEvent(pamError{
 					status: pam.ErrSystem, msg: "missing auth requested",
@@ -132,7 +135,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			}
 			log.Infof(context.TODO(), "GDM Stage changed to %s", res.StageChanged.Stage)
 
-			if res.StageChanged.Stage != proto.Stage_challenge {
+			if res.StageChanged.Stage != proto.Stage_challenge || m.waitingAuth {
 				// Maybe this can be sent only if we ever hit the challenge phase.
 				commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
 			}
@@ -198,6 +201,11 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		}))
 
 	case startAuthentication:
+		if m.waitingAuth {
+			log.Warning(context.TODO(), "Ignored authentication start request while one is still going")
+			return m, nil
+		}
+		m.waitingAuth = true
 		return m, sendEvent(m.emitEventSync(&gdm.EventData_StartAuthentication{
 			StartAuthentication: &gdm.Events_StartAuthentication{},
 		}))
@@ -218,7 +226,11 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 				Msg:    msg.msg,
 			}},
 		}))
+
+	case isAuthenticatedCancelled:
+		m.waitingAuth = false
 	}
+
 	return m, nil
 }
 

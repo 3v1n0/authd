@@ -102,6 +102,13 @@ func TestGdmModel(t *testing.T) {
 			wantNoGdmRequests: []gdm.RequestType{
 				gdm.RequestType_changeStage, // -> broker Selection
 			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModesReceived,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
+			},
 			wantExitStatus: gdmTestEarlyStopExitStatus,
 		},
 		"Broker selection stage caused by server-side user selection": {
@@ -114,6 +121,13 @@ func TestGdmModel(t *testing.T) {
 			wantGdmEvents: []gdm.EventType{
 				gdm.EventType_userSelected,
 				gdm.EventType_brokersReceived,
+			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModesReceived,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_brokerSelection,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
@@ -139,6 +153,13 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_userSelected,
 				gdm.EventType_brokersReceived,
 			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModesReceived,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
+			},
 			wantStage:      pam_proto.Stage_brokerSelection,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
 		},
@@ -155,6 +176,13 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_userSelected,
 				gdm.EventType_brokersReceived,
 			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModesReceived,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
+			},
 			wantStage:      pam_proto.Stage_brokerSelection,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
 		},
@@ -168,6 +196,12 @@ func TestGdmModel(t *testing.T) {
 			wantGdmEvents: []gdm.EventType{
 				gdm.EventType_userSelected,
 				gdm.EventType_brokersReceived,
+			},
+			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_authModesReceived,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_brokerSelection,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
@@ -231,6 +265,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_authModesReceived,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 			},
 			wantNoGdmEvents: []gdm.EventType{
 				gdm.EventType_authEvent,
@@ -269,6 +304,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_challenge,
@@ -310,6 +346,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
 				gdm.EventType_authEvent,
+				gdm.EventType_startAuthentication,
 			},
 			wantStage: pam_proto.Stage_challenge,
 			wantExitStatus: PamSuccess{
@@ -351,6 +388,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 			},
 			wantStage:      pam_proto.Stage_challenge,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
@@ -397,7 +435,9 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent, // retry
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent, // denied
 			},
 			wantMessages: []tea.Msg{
@@ -446,6 +486,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_challenge,
@@ -498,7 +539,9 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
 			},
 			wantMessages: []tea.Msg{
@@ -576,7 +619,6 @@ func TestGdmModel(t *testing.T) {
 				gdm.RequestType_changeStage, // -> challenge
 				gdm.RequestType_changeStage, // -> authMode Selection
 			},
-			// wantMessages: []tea.Msg{gdmTestWaitCompletion{}},
 			wantGdmEvents: []gdm.EventType{
 				gdm.EventType_userSelected,
 				gdm.EventType_brokersReceived,
@@ -584,6 +626,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_authModesReceived,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 			},
 			wantStage:      pam_proto.Stage_authModeSelection,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
@@ -628,6 +671,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_authModeSelected,
 			},
 			wantNoGdmEvents: []gdm.EventType{
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_authModeSelection,
@@ -692,8 +736,10 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_challenge,
@@ -759,8 +805,10 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
 				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_challenge,
