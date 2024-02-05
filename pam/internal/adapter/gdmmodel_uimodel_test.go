@@ -36,6 +36,10 @@ type gdmTestAddPollResultEvent struct {
 	event *gdm.EventData
 }
 
+type gdmTestWaitForCommandsDone struct {
+	seq int64
+}
+
 type gdmTestWaitForStage struct {
 	stage    proto.Stage
 	events   []*gdm.EventData
@@ -44,8 +48,8 @@ type gdmTestWaitForStage struct {
 
 type gdmTestWaitForStageDone gdmTestWaitForStage
 
-type gdmTestWaitForStageCommandsDone struct {
-	seq int64
+type gdmTestSendAuthData struct {
+	item *authd.IARequestAuthenticationDataItem
 }
 
 func (m *gdmTestUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
@@ -98,7 +102,7 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		doneMsg := (*gdmTestWaitForStageDone)(&msg)
 		if len(doneMsg.commands) > 0 {
 			seq := gdmTestSequentialMessages.Add(1)
-			doneCommandsMsg := gdmTestWaitForStageCommandsDone{seq: seq}
+			doneCommandsMsg := gdmTestWaitForCommandsDone{seq: seq}
 			doneMsg.commands = append(doneMsg.commands, sendEvent(doneCommandsMsg))
 			m.wantMessages = append(m.wantMessages, doneCommandsMsg)
 		}
