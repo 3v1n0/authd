@@ -112,9 +112,9 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.wantMessages = append(m.wantMessages, doneMsg)
 
 		go func() {
-			log.Debugf(context.TODO(), "Waiting for stage reached: %#v\n", doneMsg)
+			log.Debugf(context.TODO(), "Waiting for stage reached: %#v", doneMsg)
 			waitFunc()
-			log.Debugf(context.TODO(), "Stage reached: %#v\n", doneMsg)
+			log.Debugf(context.TODO(), "Stage reached: %#v", doneMsg)
 
 			m.program.Send(doneMsg)
 		}()
