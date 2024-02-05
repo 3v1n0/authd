@@ -35,11 +35,10 @@ type gdmConvHandler struct {
 	receivedBrokers  []*authd.ABResponse_BrokerInfo
 	selectedBrokerID string
 
-	currentStageCond    sync.Cond
+	currentStageChanged sync.Cond
 	currentStage        pam_proto.Stage
 	stageChanges        []pam_proto.Stage
 	lastNotifiedStage   *pam_proto.Stage
-	currentStageChanged chan struct{}
 }
 
 func (h *gdmConvHandler) checkAllEventsHaveBeenEmitted() bool {
@@ -170,9 +169,7 @@ func (h *gdmConvHandler) handleAuthDRequest(gdmData *gdm.Data) (ret *gdm.Data, e
 		h.stageChanges = append(h.stageChanges, req.ChangeStage.Stage)
 
 		h.currentStage = req.ChangeStage.Stage
-		h.currentStageCond.L.Unlock()
-		h.currentStageCond.Broadcast()
-		h.currentStageCond.L.Lock()
+		h.currentStageChanged.Broadcast()
 
 		return &gdm.Data{
 			Type: gdm.DataType_response,
@@ -236,8 +233,8 @@ func (h *gdmConvHandler) waitForStageChange(stage proto.Stage) func() {
 	}
 
 	return func() {
-		h.currentStageCond.L.Lock()
-		defer h.currentStageCond.L.Unlock()
+		h.currentStageChanged.L.Lock()
+		defer h.currentStageChanged.L.Unlock()
 
 		for {
 			// We just got notified of a stage change but we should not notify all the waiting
@@ -249,7 +246,7 @@ func (h *gdmConvHandler) waitForStageChange(stage proto.Stage) func() {
 				return
 			}
 
-			h.currentStageCond.Wait()
+			h.currentStageChanged.Wait()
 		}
 	}
 }

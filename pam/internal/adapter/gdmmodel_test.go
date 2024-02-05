@@ -1541,11 +1541,10 @@ func TestGdmModel(t *testing.T) {
 			gdmHandler := &gdmConvHandler{
 				t:                    t,
 				mu:                   &gdmMutex,
-				currentStageCond:     *sync.NewCond(&gdmMutex),
+				currentStageChanged:  *sync.NewCond(&gdmMutex),
 				pendingEventsFlushed: make(chan struct{}),
 				allRequestsReceived:  make(chan struct{}),
 				allEventsReceived:    make(chan struct{}),
-				currentStageChanged:  make(chan struct{}),
 				pendingEvents:        tc.gdmEvents,
 				wantEvents:           tc.wantGdmEvents,
 				wantRequests:         tc.wantGdmRequests,
