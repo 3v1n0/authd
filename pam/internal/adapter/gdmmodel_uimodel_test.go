@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"slices"
 	"sync"
@@ -149,7 +148,7 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}()
 
 	case gdmTestWaitForCommandsDone:
-		fmt.Println("Sequential messages done:", msg.seq)
+		log.Debugf(context.TODO(), "Sequential messages done: %v", msg.seq)
 
 	case isAuthenticatedCancelled:
 		m.gdmHandler.consumeAuthenticationStartedEvents()
