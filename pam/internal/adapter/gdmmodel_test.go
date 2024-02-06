@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers/responses"
+	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/gdm"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 	"github.com/ubuntu/authd/pam/internal/proto"
@@ -1607,6 +1609,13 @@ func TestGdmModel(t *testing.T) {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
+			var buf bytes.Buffer
+			log.SetOutput(&buf)
+			t.Cleanup(func() {
+				log.SetOutput(os.Stderr)
+				t.Log(buf.String())
+			})
 
 			if tc.clientOptions == nil {
 				tc.clientOptions = singleBrokerClientOptions
