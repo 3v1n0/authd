@@ -41,6 +41,14 @@ func gdmTestRequireEqualData(t *testing.T, want any, actual any) {
 	require.Equal(t, string(wantJSON), string(actualJSON))
 }
 
+func gdmDataToJSON(t *testing.T, data *gdm.Data) string {
+	t.Helper()
+
+	json, err := data.JSON()
+	require.NoError(t, err)
+	return string(json)
+}
+
 func gdmTestSelectUserEvent(username string) *gdm.EventData {
 	return &gdm.EventData{
 		Type: gdm.EventType_userSelected,
