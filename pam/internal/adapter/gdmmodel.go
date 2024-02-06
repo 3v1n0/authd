@@ -39,15 +39,19 @@ func (m *gdmModel) protoHello() tea.Cmd {
 	if err != nil {
 		return sendEvent(pamError{
 			status: pam.ErrCredUnavail,
-			msg:    fmt.Sprintf("gdm initialization failed: %v", err),
+			msg:    fmt.Sprintf("GDM initialization failed: %v", err),
 		})
 	}
 	if reply.Type != gdm.DataType_hello || reply.Hello == nil ||
 		reply.Hello.Version != gdm.ProtoVersion {
+		version := -1
+		if reply.Hello != nil {
+			version = int(reply.Hello.Version)
+		}
 		return sendEvent(pamError{
 			status: pam.ErrCredUnavail,
-			msg: fmt.Sprintf("Gdm protocol initialization failed, type %s, data %#v",
-				reply.Type, reply.Hello),
+			msg: fmt.Sprintf("GDM protocol initialization failed, type %s, version %d",
+				reply.Type, version),
 		})
 	}
 	log.Debugf(context.TODO(), "Gdm Reply is %v", reply)
@@ -61,7 +65,7 @@ func requestUICapabilities(mTx pam.ModuleTransaction) tea.Cmd {
 		if err != nil {
 			return pamError{
 				status: pam.ErrSystem,
-				msg:    fmt.Sprintf("sending GDM Request failed: %v", err),
+				msg:    fmt.Sprintf("Sending GDM UI capabilities Request failed: %v", err),
 			}
 		}
 		if res == nil {
