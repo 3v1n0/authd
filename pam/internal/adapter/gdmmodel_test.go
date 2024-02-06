@@ -1668,7 +1668,7 @@ func TestGdmModel(t *testing.T) {
 		},
 		"Error on change stage using an unknown stage": {
 			gdmEvents: []*gdm.EventData{
-				gdmTestChangeStageEvent(pam_proto.Stage(-1)),
+				gdmTestChangeStageEvent(gdmTestIgnoreStage),
 			},
 			wantGdmRequests: []gdm.RequestType{
 				gdm.RequestType_uiLayoutCapabilities,
