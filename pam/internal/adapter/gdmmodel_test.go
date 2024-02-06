@@ -881,7 +881,7 @@ func TestGdmModel(t *testing.T) {
 			},
 			wantExitStatus: PamSuccess{BrokerID: firstBrokerInfo.Id},
 		},
-		"Broker selection selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
+		"Broker selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
 			gdmEvents: []*gdm.EventData{
 				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
@@ -933,7 +933,7 @@ func TestGdmModel(t *testing.T) {
 			wantStage:      pam_proto.Stage_brokerSelection,
 			wantExitStatus: gdmTestEarlyStopExitStatus,
 		},
-		"User selection selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
+		"User selection stage from client after client-side broker and auth mode selection if there is only one auth mode": {
 			gdmEvents: []*gdm.EventData{
 				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
 			},
