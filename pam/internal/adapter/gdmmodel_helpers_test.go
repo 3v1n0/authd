@@ -1,6 +1,10 @@
 package adapter
 
 import (
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/pam/internal/gdm"
 	"github.com/ubuntu/authd/pam/internal/proto"
@@ -24,6 +28,17 @@ func isSupersetOf[T constraints.Integer](a []T, b []T) bool {
 		tracker[value] = n - 1
 	}
 	return true
+}
+
+func gdmTestRequireEqualData(t *testing.T, want any, actual any) {
+	t.Helper()
+
+	wantJSON, err := json.MarshalIndent(want, "", "  ")
+	require.NoError(t, err)
+	actualJSON, err := json.MarshalIndent(actual, "", "  ")
+	require.NoError(t, err)
+
+	require.Equal(t, string(wantJSON), string(actualJSON))
 }
 
 func gdmTestSelectUserEvent(username string) *gdm.EventData {

@@ -215,24 +215,48 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		}))
 
 	case isAuthenticatedResultReceived:
-		if msg.access == responses.AuthCancelled {
-			sendEvent(isAuthenticatedCancelled{})
-			return m, nil
+		access := msg.access
+		authMsg, err := dataToMsg(msg.msg)
+		if err != nil {
+			return m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 		}
-		if msg.access == "" {
-			return m, sendEvent(pamError{
-				status: pam.ErrSystem,
-				msg:    "No authentication result"})
+
+		switch access {
+		case responses.AuthGranted:
+		case responses.AuthDenied:
+		case responses.AuthCancelled:
+			return m, sendEvent(isAuthenticatedCancelled{})
+		case responses.AuthRetry:
+		case responses.AuthNext:
+		default:
+			if authMsg == "" {
+				return m, sendEvent(isAuthenticatedResultReceived{
+					access: responses.AuthDenied,
+					msg:    `{"message": "No valid authentication result"}`,
+				})
+			}
+			return m, sendEvent(isAuthenticatedResultReceived{
+				access: responses.AuthDenied,
+				msg:    fmt.Sprintf(`{"message": "No valid authentication result: %s"}`, authMsg),
+			})
 		}
+
 		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
 			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
-				Access: msg.access,
-				Msg:    msg.msg,
+				Access: access,
+				Msg:    authMsg,
 			}},
 		}))
 
 	case isAuthenticatedCancelled:
 		m.waitingAuth = false
+
+		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
+			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
+				Access: responses.AuthCancelled,
+				Msg:    msg.msg,
+			}},
+		}))
 	}
 
 	return m, nil

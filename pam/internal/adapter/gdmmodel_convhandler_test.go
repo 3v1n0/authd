@@ -41,6 +41,7 @@ type gdmConvHandler struct {
 	lastNotifiedStage   *pam_proto.Stage
 
 	startAuthRequested chan struct{}
+	authEvents         []*authd.IAResponse
 }
 
 func (h *gdmConvHandler) checkAllEventsHaveBeenEmitted() bool {
@@ -226,6 +227,9 @@ func (h *gdmConvHandler) handleEvent(event *gdm.EventData) error {
 			// Mark the events received after or while we're returning but not when locked.
 			h.startAuthRequested <- struct{}{}
 		}()
+
+	case *gdm.EventData_AuthEvent:
+		h.authEvents = append(h.authEvents, ev.AuthEvent.Response)
 	}
 
 	return nil
