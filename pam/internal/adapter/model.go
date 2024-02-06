@@ -371,9 +371,14 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 
 	case pam_proto.Stage_challenge:
 		commands = append(commands, m.authenticationModel.Focus())
+
+	default:
+		return sendEvent(pamError{
+			status: pam.ErrSystem,
+			msg:    fmt.Sprintf("unknown PAM stage: '%s'", s),
+		})
 	}
 
-	// TODO: error
 	return tea.Sequence(commands...)
 }
 
