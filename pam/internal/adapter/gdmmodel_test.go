@@ -418,6 +418,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
 				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
 			},
 			wantStage:      pam_proto.Stage_challenge,
 			wantGdmAuthRes: []*authd.IAResponse{{Access: responses.AuthCancelled}},
@@ -652,6 +653,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_brokersReceived,
 				gdm.EventType_brokerSelected,
 				gdm.EventType_authModeSelected,
+				gdm.EventType_authEvent,
 			},
 			wantNoGdmEvents: []gdm.EventType{
 				gdm.EventType_authEvent,
@@ -694,6 +696,7 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_authModeSelected,
 				gdm.EventType_uiLayoutReceived,
 				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
 			},
 			wantGdmAuthRes: []*authd.IAResponse{{Access: responses.AuthCancelled}},
 			wantStage:      pam_proto.Stage_authModeSelection,
