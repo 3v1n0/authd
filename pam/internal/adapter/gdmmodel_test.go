@@ -557,6 +557,49 @@ func TestGdmModel(t *testing.T) {
 			wantStage:      pam_proto.Stage_challenge,
 			wantExitStatus: PamSuccess{BrokerID: firstBrokerInfo.Id},
 		},
+		"Cancelled auth after client-side user, broker and authMode selection": {
+			clientOptions: append(slices.Clone(singleBrokerClientOptions),
+				pam_test.WithIsAuthenticatedReturn(&authd.IAResponse{
+					Access: responses.AuthCancelled,
+				}, nil),
+			),
+			gdmEvents: []*gdm.EventData{
+				gdmTestSelectUserEvent("gdm-selected-user-broker-and-auth-mode"),
+			},
+			messages: []tea.Msg{
+				gdmTestWaitForStage{
+					stage: pam_proto.Stage_brokerSelection,
+					events: []*gdm.EventData{
+						gdmTestSelectBrokerEvent(firstBrokerInfo.Id),
+					},
+				},
+				gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+					Challenge: "gdm-some-password",
+				}},
+			},
+			wantUsername:       "gdm-selected-user-broker-and-auth-mode",
+			wantSelectedBroker: firstBrokerInfo.Id,
+			wantGdmRequests: []gdm.RequestType{
+				gdm.RequestType_uiLayoutCapabilities,
+				gdm.RequestType_changeStage, // -> broker Selection
+				gdm.RequestType_changeStage, // -> authMode Selection
+				gdm.RequestType_changeStage, // -> challenge
+			},
+			wantGdmEvents: []gdm.EventType{
+				gdm.EventType_userSelected,
+				gdm.EventType_brokersReceived,
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_startAuthentication,
+				gdm.EventType_authEvent,
+			},
+			wantMessages: []tea.Msg{
+				startAuthentication{},
+			},
+			wantStage:      pam_proto.Stage_challenge,
+			wantExitStatus: gdmTestEarlyStopExitStatus,
+		},
 		"AuthMode selection stage from client after server-side broker and auth mode selection if there is only one auth mode": {
 			clientOptions: append(slices.Clone(singleBrokerClientOptions),
 				pam_test.WithGetPreviousBrokerReturn(&firstBrokerInfo.Id, nil),
@@ -1489,6 +1532,47 @@ func TestGdmModel(t *testing.T) {
 			wantExitStatus: pamError{
 				status: pam.ErrAuth,
 				msg:    "Access denied",
+			},
+		},
+		"Error on authentication client because of empty auth data access": {
+			clientOptions: append(slices.Clone(singleBrokerClientOptions),
+				pam_test.WithGetPreviousBrokerReturn(&firstBrokerInfo.Id, nil),
+				pam_test.WithIsAuthenticatedReturn(&authd.IAResponse{}, nil),
+			),
+			messages: []tea.Msg{
+				tea.Sequence(tea.Tick(gdmPollFrequency*2, func(t time.Time) tea.Msg {
+					return userSelected{username: "daemon-selected-user-and-broker-with-wrong-pass"}
+				}))(),
+				gdmTestWaitForStage{
+					stage: pam_proto.Stage_challenge,
+					commands: []tea.Cmd{
+						sendEvent(gdmTestSendAuthDataWhenReady{&authd.IARequest_AuthenticationData_Challenge{
+							Challenge: "gdm-some-password",
+						}}),
+					},
+				},
+			},
+			wantUsername:       "daemon-selected-user-and-broker-with-wrong-pass",
+			wantSelectedBroker: firstBrokerInfo.Id,
+			wantGdmRequests: []gdm.RequestType{
+				gdm.RequestType_uiLayoutCapabilities,
+				gdm.RequestType_changeStage, // -> broker Selection
+				gdm.RequestType_changeStage, // -> authMode Selection
+				gdm.RequestType_changeStage, // -> challenge
+			},
+			wantGdmEvents: []gdm.EventType{
+				gdm.EventType_userSelected,
+				gdm.EventType_brokersReceived,
+				gdm.EventType_brokerSelected,
+				gdm.EventType_authModesReceived,
+				gdm.EventType_authModeSelected,
+				gdm.EventType_uiLayoutReceived,
+				gdm.EventType_authEvent, // denied
+			},
+			wantStage: gdmTestIgnoreStage,
+			wantExitStatus: pamError{
+				status: pam.ErrSystem,
+				msg:    "No valid authentication result",
 			},
 		},
 		"Error on change stage using an unknown stage": {

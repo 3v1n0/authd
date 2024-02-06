@@ -215,21 +215,34 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		}))
 
 	case isAuthenticatedResultReceived:
-		if msg.access == responses.AuthCancelled {
-			sendEvent(isAuthenticatedCancelled{})
-			return m, nil
+		access := msg.access
+		authMsg := msg.msg
+		var modelMsg tea.Msg
+
+		switch access {
+		case responses.AuthGranted:
+		case responses.AuthDenied:
+		case responses.AuthCancelled:
+			modelMsg = isAuthenticatedCancelled{}
+		case responses.AuthRetry:
+		case responses.AuthNext:
+		default:
+			access = responses.AuthDenied
+			if authMsg == "" {
+				authMsg = "No valid authentication result"
+			}
+			modelMsg = pamError{status: pam.ErrSystem, msg: authMsg}
 		}
-		if msg.access == "" {
-			return m, sendEvent(pamError{
-				status: pam.ErrSystem,
-				msg:    "No authentication result"})
-		}
-		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
-			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
-				Access: msg.access,
-				Msg:    msg.msg,
-			}},
-		}))
+
+		return m, tea.Sequence(
+			sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
+				AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
+					Access: access,
+					Msg:    authMsg,
+				}},
+			})),
+			sendEvent(modelMsg),
+		)
 
 	case isAuthenticatedCancelled:
 		m.waitingAuth = false
