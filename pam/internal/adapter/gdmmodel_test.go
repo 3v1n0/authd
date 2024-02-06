@@ -1725,6 +1725,7 @@ func TestGdmModel(t *testing.T) {
 				allRequestsReceived:  make(chan struct{}),
 				allEventsReceived:    make(chan struct{}),
 				startAuthRequested:   make(chan struct{}),
+				supportedLayouts:     tc.supportedLayouts,
 				pendingEvents:        tc.gdmEvents,
 				wantEvents:           tc.wantGdmEvents,
 				wantRequests:         tc.wantGdmRequests,
@@ -1741,9 +1742,7 @@ func TestGdmModel(t *testing.T) {
 				wantMessagesHandled: make(chan struct{}),
 			}
 
-			if tc.supportedLayouts != nil {
-				gdmHandler.supportedLayouts = tc.supportedLayouts
-			} else {
+			if tc.supportedLayouts == nil {
 				gdmHandler.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
 			}
 
