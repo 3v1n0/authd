@@ -12,6 +12,7 @@ import (
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/gdm"
+	"github.com/ubuntu/authd/pam/internal/gdm_test"
 	"github.com/ubuntu/authd/pam/internal/proto"
 )
 
@@ -141,7 +142,7 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		go func() {
 			m.gdmHandler.waitForAuthenticationStarted()
-			m.gdmHandler.appendPollResultEvents(gdmTestIsAuthenticatedEvent(msg.item))
+			m.gdmHandler.appendPollResultEvents(gdm_test.IsAuthenticatedEvent(msg.item))
 			m.program.Send(tea.Sequence(tea.Tick(gdmPollFrequency, func(t time.Time) tea.Msg {
 				return sendEvent(doneMsg)
 			}), sendEvent(doneMsg))())
