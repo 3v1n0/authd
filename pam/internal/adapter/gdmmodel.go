@@ -26,12 +26,6 @@ type gdmModel struct {
 
 type gdmPollDone struct{}
 
-func newGdmModel(mTx pam.ModuleTransaction) gdmModel {
-	return gdmModel{
-		pamMTx: mTx,
-	}
-}
-
 // Init initializes the main model orchestrator.
 func (m *gdmModel) Init() tea.Cmd {
 	return tea.Sequence(m.protoHello(),

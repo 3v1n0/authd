@@ -195,6 +195,18 @@ func TestGdmModule(t *testing.T) {
 			},
 			wantError: pam.ErrSystem,
 		},
+		// "Error on unknown authentication mode": {
+		// 	pamUser:     "invalid-auth-mode",
+		// 	authModeIDs: []string{passwordAuthID, "invalid auth-id"},
+		// 	eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+		// 		gdm.EventType_startAuthentication: {
+		// 			gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+		// 		},
+		// 		gdm.EventType_authEvent: {
+		// 			gdm_test.AuthModeSelectedEvent("invalid auth-id"),
+		// 		},
+		// 	},
+		// },
 		"Error (ignored) on local broker causes incomplete error": {
 			pamUser:    "user-foo",
 			brokerName: localBrokerName,

@@ -104,7 +104,7 @@ func (m *UIModel) Init() tea.Cmd {
 	var cmds []tea.Cmd
 
 	if m.ClientType == Gdm {
-		m.gdmModel = newGdmModel(m.PamMTx)
+		m.gdmModel = gdmModel{pamMTx: m.PamMTx}
 		cmds = append(cmds, m.gdmModel.Init())
 	}
 

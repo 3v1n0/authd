@@ -75,6 +75,14 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	// Attach logger and info handler.
 	// TODO
 
+	// log.SetLevel(log.DebugLevel)
+	// f, err := os.OpenFile("/tmp/logdebug", os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// defer f.Close()
+	// logrus.SetOutput(f)
+
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
 
@@ -129,6 +137,7 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	}
 
 	sendReturnMessageToPam(mTx, appState.ExitStatus())
+	log.Infof(context.TODO(), "Exit status is %#v", appState.ExitStatus())
 
 	switch exitStatus := appState.ExitStatus().(type) {
 	case adapter.PamSuccess:
@@ -145,6 +154,7 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
 
 	case adapter.PamReturnError:
+		log.Infof(context.TODO(), "Returning: %v: %s\n", exitStatus.Status(), exitStatus.Message())
 		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
 	}
 
