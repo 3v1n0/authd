@@ -16,34 +16,34 @@ Set Shell bash
 Hide
 Type "./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-mfa"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "2"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "1"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
@@ -54,12 +54,12 @@ Show
 
 Hide
 Escape
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
@@ -68,16 +68,16 @@ Show
 
 Hide
 Escape
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Sleep 5s
 Show
 
-Sleep 100ms
+Sleep 300ms
