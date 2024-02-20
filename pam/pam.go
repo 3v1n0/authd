@@ -261,4 +261,5 @@ func (h *pamModule) CloseSession(pam.ModuleTransaction, pam.Flags, []string) err
 //export go_pam_cleanup_module
 func go_pam_cleanup_module() {
 	runtime.GC()
+	// os.Exit(0)
 }
