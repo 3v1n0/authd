@@ -429,7 +429,47 @@ func buildPAMWrapperModule(t *testing.T) string {
 	if testutils.CoverDir() != "" {
 		cmd.Args = append(cmd.Args, "--coverage")
 		cmd.Args = append(cmd.Args, "-fprofile-abs-path")
-		cmd.Args = append(cmd.Args, "-fprofile-dir="+testutils.CoverDir())
+		// cmd.Args = append(cmd.Args, "-fprofile-dir="+testutils.CoverDir())
+
+		t.Cleanup(func() {
+			fmt.Println("Reading contents of", testutils.CoverDir())
+			fmt.Println(os.ReadDir(testutils.CoverDir()))
+			fmt.Println("Build dir is", filepath.Dir(libPath))
+			fmt.Println(os.ReadDir(filepath.Dir(libPath)))
+			t.Log("running gcovr...")
+			gcov := exec.Command("gcov")
+			// gcov := exec.Command("gcovr")
+			// gcov.Dir = filepath.Dir(libPath)
+			gcov.Dir = testutils.CoverDir()
+			gcov.Args = append(gcov.Args, "-pb", "-o", filepath.Dir(libPath),
+				soname+".so-module.gcno")
+			// filepath.Join(testutils.CoverDir(), "c-coverage")
+			// "-H", "-t", "-k", "-D", soname+".so-module.gcno")
+			// gcov.Args = append(gcov.Args,
+			// 	"--filter", "/home/marco/Dev/authd/pam",
+			// 	// "--object-directory", testutils.CoverDir(),
+			// 	"--verbose", "--html", "/run/user/1000/snap.firefox/coverage.html")
+			out, err := gcov.CombinedOutput()
+			require.NoError(t, err, string(out))
+			fmt.Println("gcovr run...", gcov.Args)
+			fmt.Println(string(out))
+
+			// out, _ = exec.Command("geninfo", libPath, "-o", "/tmp/coverage1.info").CombinedOutput()
+			// fmt.Println("GENINFO", string(out))
+			// geninfo "path for .gcda files" -o ./coverage1.info
+
+			fmt.Println(filepath.Dir(libPath))
+			// #nosec:G204 - we control the command arguments in tests
+			out, _ = exec.Command("ls", "-lht", filepath.Dir(libPath)).CombinedOutput()
+			fmt.Println(string(out))
+
+			fmt.Println(testutils.CoverDir())
+			// #nosec:G204 - we control the command arguments in tests
+			out, _ = exec.Command("ls", "-lht", testutils.CoverDir()).CombinedOutput()
+			fmt.Println(string(out))
+
+			// os.Rename(testutils.CoverDir(), "/tmp/coverage-data")
+		})
 	}
 	if pam_test.IsAddressSanitizerActive() {
 		cmd.Args = append(cmd.Args, "-fsanitize=address,undefined")
