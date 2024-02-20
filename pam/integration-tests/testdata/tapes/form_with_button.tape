@@ -16,44 +16,44 @@ Set Shell bash
 Hide
 Type "./pam_authd login socket=/tmp/pam-cli-authenticate-tests.sock"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-integration-form-w-button"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "2"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "7"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Tab
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
@@ -62,4 +62,4 @@ Enter
 Sleep 2s
 Show
 
-Sleep 100ms
+Sleep 300ms
