@@ -16,54 +16,54 @@ Set Shell bash
 Hide
 Type "./pam_authd socket=/tmp/pam-cli-tests.sock"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-integration-max-attempts"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "2"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "wrongpass"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "wrongpass"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "wrongpass"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "wrongpass"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "wrongpass"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
-Sleep 100ms
+Sleep 300ms

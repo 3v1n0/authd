@@ -16,31 +16,31 @@ Set Shell bash
 Hide
 Type "./pam_authd socket=/tmp/pam-cli-tests.sock"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-integration-remember-mode"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "2"
-Sleep 100ms
+Sleep 300ms
 Escape
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Type "7"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
@@ -52,19 +52,19 @@ Show
 Hide
 Type "./pam_authd socket=/tmp/pam-cli-tests.sock"
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-integration-remember-mode"
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
 Enter
-Sleep 100ms
+Sleep 300ms
 Show
 
 Hide
@@ -73,4 +73,4 @@ Enter
 Sleep 2s
 Show
 
-Sleep 100ms
+Sleep 300ms
