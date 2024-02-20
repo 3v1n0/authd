@@ -145,6 +145,7 @@ jobs:
 
           # Filter out the testutils package and the pb.go file
           grep -v -e "testutils" -e "pb.go" "${cov_dir}/coverage.out" >"${cov_dir}/coverage.out.filtered"
+          mv "${cov_dir}/coverage.out.filtered" "${cov_dir}/coverage.out"
 
       - name: Run tests (with race detector)
         run: |
@@ -162,6 +163,5 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          file: coverage/coverage.out.filtered
-          disable_search: true
+          directory: coverage
           token: ${{ secrets.CODECOV_TOKEN }}
