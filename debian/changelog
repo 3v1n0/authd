@@ -1,4 +1,4 @@
-authd (0.2.2~gdm4) noble; urgency=medium
+authd (0.2.2~gdm5) noble; urgency=medium
 
   * Add gdm support
 
