@@ -83,7 +83,7 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		// won't try to init some terminal fancy things that also appear
 		// to be racy...
 		// See: https://github.com/charmbracelet/bubbletea/issues/910
-		devNull, err := os.OpenFile("/dev/null", os.O_WRONLY|os.O_APPEND, 0600)
+		devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			return errors.Join(err, pam.ErrSystem)
 		}
