@@ -22,7 +22,8 @@ const (
 type gdmModel struct {
 	pamMTx pam.ModuleTransaction
 
-	waitingAuth bool
+	waitingAuth          bool
+	conversationsStopped bool
 }
 
 type gdmPollDone struct{}
@@ -167,6 +168,10 @@ func (m *gdmModel) emitEventSync(event gdm.Event) tea.Msg {
 }
 
 func (m *gdmModel) Update(msg tea.Msg) tea.Cmd {
+	if m.conversationsStopped {
+		return nil
+	}
+
 	switch msg := msg.(type) {
 	case gdmPollDone:
 		return tea.Sequence(
@@ -257,6 +262,10 @@ func (m *gdmModel) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (m *gdmModel) changeStage(s proto.Stage) tea.Cmd {
+	if m.conversationsStopped {
+		return nil
+	}
+
 	return func() tea.Msg {
 		_, err := gdm.SendRequest(m.pamMTx, &gdm.RequestData_ChangeStage{
 			ChangeStage: &gdm.Requests_ChangeStage{Stage: s},
@@ -270,4 +279,12 @@ func (m *gdmModel) changeStage(s proto.Stage) tea.Cmd {
 		log.Debugf(context.TODO(), "Gdm stage change to %v sent", s)
 		return nil
 	}
+}
+
+func (m *gdmModel) stopConversations() {
+	// We're about to exit: let's ensure that all the messages have been processed.
+	time.Sleep(gdmPollFrequency * 2)
+	for gdm.ConversationInProgress() {
+	}
+	m.conversationsStopped = true
 }
