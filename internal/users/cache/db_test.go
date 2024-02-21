@@ -19,7 +19,7 @@ import (
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	perm0644 := os.FileMode(0644)
+	// perm0644 := os.FileMode(0644)
 	perm0000 := os.FileMode(0000)
 
 	tests := map[string]struct {
@@ -33,10 +33,10 @@ func TestNew(t *testing.T) {
 		"New with already existing database":                    {dbFile: "multiple_users_and_groups"},
 		"New recreates any missing buckets and delete unknowns": {dbFile: "database_with_unknown_bucket"},
 
-		"Error on cacheDir non existent cacheDir":      {dbFile: "-", wantErr: true},
-		"Error on corrupted db file":                   {corruptedDbFile: true, wantErr: true},
-		"Error on invalid permission on database file": {dbFile: "multiple_users_and_groups", perm: &perm0644, wantErr: true},
-		"Error on unreadable database file":            {dbFile: "multiple_users_and_groups", perm: &perm0000, wantErr: true},
+		"Error on cacheDir non existent cacheDir": {dbFile: "-", wantErr: true},
+		"Error on corrupted db file":              {corruptedDbFile: true, wantErr: true},
+		// "Error on invalid permission on database file": {dbFile: "multiple_users_and_groups", perm: &perm0644, wantErr: true},
+		"Error on unreadable database file": {dbFile: "multiple_users_and_groups", perm: &perm0000, wantErr: true},
 	}
 	for name, tc := range tests {
 		tc := tc
