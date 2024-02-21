@@ -414,8 +414,8 @@ func buildPAMWrapperModule(t *testing.T) string {
 	if pam_test.IsAddressSanitizerActive() {
 		cmd.Args = append(cmd.Args, "-fsanitize=address,undefined")
 	}
-	if cflags := os.Getenv("CFLAGS"); cflags != "" {
-		cmd.Args = append(cmd.Args, cflags)
+	if cflags := os.Getenv("CFLAGS"); cflags != "" && os.Getenv("DEB_BUILD_ARCH") == "" {
+		cmd.Args = append(cmd.Args, strings.Split(cflags, " ")...)
 	}
 
 	cmd.Args = append(cmd.Args, []string{
@@ -427,8 +427,8 @@ func buildPAMWrapperModule(t *testing.T) string {
 		"-Wl,-soname," + soname + "",
 		"-lpam",
 	}...)
-	if ldflags := os.Getenv("LDFLAGS"); ldflags != "" {
-		cmd.Args = append(cmd.Args, ldflags)
+	if ldflags := os.Getenv("LDFLAGS"); ldflags != "" && os.Getenv("DEB_BUILD_ARCH") == "" {
+		cmd.Args = append(cmd.Args, strings.Split(ldflags, " ")...)
 	}
 
 	if testutils.CoverDir() != "" {
