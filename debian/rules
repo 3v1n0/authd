@@ -106,3 +106,7 @@ override_dh_auto_install:
 		-Dt debian/authd/etc/authd/brokers.d
 	install -m644 examplebroker/com.ubuntu.authd.ExampleBroker.service \
 		-Dt debian/authd/usr/share/dbus-1/system-services
+
+	# Install PAM service file
+	install -m644 debian/gdm3.gdm-authd.pam \
+		-D debian/authd/etc/pam.d/gdm-authd
