@@ -2016,9 +2016,9 @@ func TestGdmModel(t *testing.T) {
 func TestMain(m *testing.M) {
 	var err error
 	gdmTestPrivateKey, err = rsa.GenerateKey(rand.Reader, 2048)
-	defer pam_test.MaybeDoLeakCheck()
 	if err != nil {
 		panic(fmt.Sprintf("could not create an valid rsa key: %v", err))
 	}
-	os.Exit(m.Run())
+	defer pam_test.MaybeDoLeakCheck()
+	m.Run()
 }
