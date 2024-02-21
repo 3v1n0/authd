@@ -411,6 +411,10 @@ func buildPAMWrapperModule(t *testing.T) string {
 		"-O0",
 	}...)
 
+	if modulesPath := os.Getenv("AUTHD_PAM_MODULES_PATH"); modulesPath != "" {
+		cmd.Args = append(cmd.Args, os.Getenv("AUTHD_PAM_MODULES_PATH"))
+	}
+
 	if pam_test.IsAddressSanitizerActive() {
 		cmd.Args = append(cmd.Args, "-fsanitize=address,undefined")
 	}
