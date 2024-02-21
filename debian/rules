@@ -104,3 +104,5 @@ override_dh_auto_install:
 		-Dt debian/authd/usr/share/dbus-1/system.d
 	install -m644 examplebroker/ExampleBroker \
 		-Dt debian/authd/etc/authd/brokers.d
+	install -m644 examplebroker/com.ubuntu.authd.ExampleBroker.service \
+		-Dt debian/authd/usr/share/dbus-1/system-services
