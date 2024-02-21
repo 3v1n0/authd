@@ -22,7 +22,8 @@ const (
 type gdmModel struct {
 	pamMTx pam.ModuleTransaction
 
-	waitingAuth bool
+	waitingAuth          bool
+	conversationsStopped bool
 }
 
 type gdmPollDone struct{}
@@ -166,50 +167,54 @@ func (m *gdmModel) emitEventSync(event gdm.Event) tea.Msg {
 	return nil
 }
 
-func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
+func (m *gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
+	if m.conversationsStopped {
+		return *m, nil
+	}
+
 	switch msg := msg.(type) {
 	case gdmPollDone:
-		return m, tea.Sequence(
+		return *m, tea.Sequence(
 			tea.Tick(gdmPollFrequency, func(time.Time) tea.Msg { return nil }),
 			m.pollGdm())
 
 	case userSelected:
-		return m, m.emitEvent(&gdm.EventData_UserSelected{
+		return *m, m.emitEvent(&gdm.EventData_UserSelected{
 			UserSelected: &gdm.Events_UserSelected{UserId: msg.username},
 		})
 
 	case brokersListReceived:
-		return m, m.emitEvent(&gdm.EventData_BrokersReceived{
+		return *m, m.emitEvent(&gdm.EventData_BrokersReceived{
 			BrokersReceived: &gdm.Events_BrokersReceived{BrokersInfos: msg.brokers},
 		})
 
 	case brokerSelected:
-		return m, m.emitEvent(&gdm.EventData_BrokerSelected{
+		return *m, m.emitEvent(&gdm.EventData_BrokerSelected{
 			BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: msg.brokerID},
 		})
 
 	case authModesReceived:
-		return m, m.emitEvent(&gdm.EventData_AuthModesReceived{
+		return *m, m.emitEvent(&gdm.EventData_AuthModesReceived{
 			AuthModesReceived: &gdm.Events_AuthModesReceived{AuthModes: msg.authModes},
 		})
 
 	case authModeSelected:
-		return m, m.emitEvent(&gdm.EventData_AuthModeSelected{
+		return *m, m.emitEvent(&gdm.EventData_AuthModeSelected{
 			AuthModeSelected: &gdm.Events_AuthModeSelected{AuthModeId: msg.id},
 		})
 
 	case UILayoutReceived:
-		return m, sendEvent(m.emitEventSync(&gdm.EventData_UiLayoutReceived{
+		return *m, sendEvent(m.emitEventSync(&gdm.EventData_UiLayoutReceived{
 			UiLayoutReceived: &gdm.Events_UiLayoutReceived{UiLayout: msg.layout},
 		}))
 
 	case startAuthentication:
 		if m.waitingAuth {
 			log.Warning(context.TODO(), "Ignored authentication start request while one is still going")
-			return m, nil
+			return *m, nil
 		}
 		m.waitingAuth = true
-		return m, sendEvent(m.emitEventSync(&gdm.EventData_StartAuthentication{
+		return *m, sendEvent(m.emitEventSync(&gdm.EventData_StartAuthentication{
 			StartAuthentication: &gdm.Events_StartAuthentication{},
 		}))
 
@@ -217,25 +222,25 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		access := msg.access
 		authMsg, err := dataToMsg(msg.msg)
 		if err != nil {
-			return m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
+			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 		}
 
 		switch access {
 		case brokers.AuthGranted:
 		case brokers.AuthDenied:
 		case brokers.AuthCancelled:
-			return m, sendEvent(isAuthenticatedCancelled{})
+			return *m, sendEvent(isAuthenticatedCancelled{})
 		case brokers.AuthRetry:
 		case brokers.AuthNext:
 		default:
 			accessJSON, _ := json.Marshal(fmt.Sprintf("Access %q is not valid", access))
-			return m, sendEvent(isAuthenticatedResultReceived{
+			return *m, sendEvent(isAuthenticatedResultReceived{
 				access: brokers.AuthDenied,
 				msg:    fmt.Sprintf(`{"message": %s}`, accessJSON),
 			})
 		}
 
-		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
+		return *m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
 			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
 				Access: access,
 				Msg:    authMsg,
@@ -245,7 +250,7 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 	case isAuthenticatedCancelled:
 		m.waitingAuth = false
 
-		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
+		return *m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
 			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
 				Access: brokers.AuthCancelled,
 				Msg:    msg.msg,
@@ -253,10 +258,14 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		}))
 	}
 
-	return m, nil
+	return *m, nil
 }
 
-func (m gdmModel) changeStage(s proto.Stage) tea.Cmd {
+func (m *gdmModel) changeStage(s proto.Stage) tea.Cmd {
+	if m.conversationsStopped {
+		return nil
+	}
+
 	return func() tea.Msg {
 		_, err := gdm.SendRequest(m.pamMTx, &gdm.RequestData_ChangeStage{
 			ChangeStage: &gdm.Requests_ChangeStage{Stage: s},
@@ -270,4 +279,15 @@ func (m gdmModel) changeStage(s proto.Stage) tea.Cmd {
 		log.Debugf(context.TODO(), "Gdm stage change to %v sent", s)
 		return nil
 	}
+}
+
+func (m *gdmModel) stopConversations() {
+	// We're about to exit...
+	// Let's ensure that all the messages have been processed.
+	time.Sleep(gdmPollFrequency * 2)
+	m.conversationsStopped = true
+	fmt.Println("Waiting for conversations to complete...")
+	for gdm.ConversationInProgress() {
+	}
+	fmt.Println("DONE")
 }
