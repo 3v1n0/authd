@@ -28,7 +28,6 @@ type gdmTestUIModel struct {
 	wantMessagesHandled chan struct{}
 
 	program           *tea.Program
-	programHasQuit    atomic.Bool
 	programShouldQuit atomic.Bool
 }
 
@@ -166,7 +165,6 @@ func (m *gdmTestUIModel) filterFunc(model tea.Model, msg tea.Msg) tea.Msg {
 	if _, ok := msg.(tea.QuitMsg); ok {
 		// Quit is never sent to the Update func so we handle it earlier.
 		m.maybeHandleWantMessageUnlocked(msg)
-		m.programHasQuit.Store(true)
 		if !m.programShouldQuit.Load() {
 			return nil
 		}
