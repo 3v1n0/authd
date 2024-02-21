@@ -268,10 +268,10 @@ func (h *gdmConvHandler) waitForStageChange(stage proto.Stage) func() {
 		defer h.currentStageChanged.L.Unlock()
 
 		for {
-			// We just got notified of a stage change but we should not notify all the waiting
-			// waiting requests all together, each request to this function should be queued.
-			// So the goroutine that won the lock is the one that will be blocked if the stage
-			// matches and if it's the first one noticing such change.
+			// We just got notified for a stage change but we should not notify all the waiting
+			// requests all together, each request to this function should be queued.
+			// So the goroutine that won the lock is the one that will be unblocked if the stage
+			// matches and if that's the first one noticing such change.
 			if h.currentStage == stage && (h.lastNotifiedStage == nil || *h.lastNotifiedStage != stage) {
 				h.lastNotifiedStage = &stage
 				return
