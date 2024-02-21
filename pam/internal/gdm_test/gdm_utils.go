@@ -1,4 +1,4 @@
-package gdm_test
+package testutils
 
 import (
 	"encoding/json"
@@ -6,12 +6,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd"
-	"github.com/ubuntu/authd/pam/internal/gdm"
-	"github.com/ubuntu/authd/pam/internal/proto"
 )
 
-// RequireEqualData ensures that data is equal by checking the marshalled values.
-func RequireEqualData(t *testing.T, want any, actual any) {
+// GdmRequireEqualData ensures that data is equal by checking the marshalled values.
+func GdmRequireEqualData(t *testing.T, want any, actual any) {
 	t.Helper()
 
 	wantJSON, err := json.MarshalIndent(want, "", "  ")
@@ -22,8 +20,8 @@ func RequireEqualData(t *testing.T, want any, actual any) {
 	require.Equal(t, string(wantJSON), string(actualJSON))
 }
 
-// DataToJSON is a test helper function to convert GDM data to JSON.
-func DataToJSON(t *testing.T, data *gdm.Data) string {
+// GdmDataToJSON is a test helper function to convert GDM data to JSON.
+func GdmDataToJSON(t *testing.T, data *gdm.Data) string {
 	t.Helper()
 
 	json, err := data.JSON()
@@ -31,8 +29,8 @@ func DataToJSON(t *testing.T, data *gdm.Data) string {
 	return string(json)
 }
 
-// SelectUserEvent generates a SelectUser event.
-func SelectUserEvent(username string) *gdm.EventData {
+// GdmSelectUserEvent generates a SelectUser event.
+func GdmSelectUserEvent(username string) *gdm.EventData {
 	return &gdm.EventData{
 		Type: gdm.EventType_userSelected,
 		Data: &gdm.EventData_UserSelected{
@@ -41,8 +39,8 @@ func SelectUserEvent(username string) *gdm.EventData {
 	}
 }
 
-// SelectBrokerEvent generates a SelectBroker event.
-func SelectBrokerEvent(brokerID string) *gdm.EventData {
+// GdmSelectBrokerEvent generates a SelectBroker event.
+func GdmSelectBrokerEvent(brokerID string) *gdm.EventData {
 	return &gdm.EventData{
 		Type: gdm.EventType_brokerSelected,
 		Data: &gdm.EventData_BrokerSelected{
@@ -51,8 +49,8 @@ func SelectBrokerEvent(brokerID string) *gdm.EventData {
 	}
 }
 
-// ChangeStageEvent generates a ChangeStage event.
-func ChangeStageEvent(stage proto.Stage) *gdm.EventData {
+// GdmChangeStageEvent generates a ChangeStage event.
+func GdmChangeStageEvent(stage proto.Stage) *gdm.EventData {
 	return &gdm.EventData{
 		Type: gdm.EventType_stageChanged,
 		Data: &gdm.EventData_StageChanged{
@@ -61,8 +59,8 @@ func ChangeStageEvent(stage proto.Stage) *gdm.EventData {
 	}
 }
 
-// AuthModeSelectedEvent generates a AuthModeSelected event.
-func AuthModeSelectedEvent(authModeID string) *gdm.EventData {
+// GdmAuthModeSelectedEvent generates a AuthModeSelected event.
+func GdmAuthModeSelectedEvent(authModeID string) *gdm.EventData {
 	return &gdm.EventData{
 		Type: gdm.EventType_authModeSelected,
 		Data: &gdm.EventData_AuthModeSelected{
@@ -73,8 +71,8 @@ func AuthModeSelectedEvent(authModeID string) *gdm.EventData {
 	}
 }
 
-// IsAuthenticatedEvent generates a IsAuthenticated event.
-func IsAuthenticatedEvent(item authd.IARequestAuthenticationDataItem) *gdm.EventData {
+// GdmIsAuthenticatedEvent generates a IsAuthenticated event.
+func GdmIsAuthenticatedEvent(item authd.IARequestAuthenticationDataItem) *gdm.EventData {
 	return &gdm.EventData{
 		Type: gdm.EventType_isAuthenticatedRequested,
 		Data: &gdm.EventData_IsAuthenticatedRequested{

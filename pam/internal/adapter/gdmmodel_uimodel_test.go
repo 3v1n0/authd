@@ -141,7 +141,7 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		go func() {
 			m.gdmHandler.waitForAuthenticationStarted()
-			m.gdmHandler.appendPollResultEvents(gdm_test.IsAuthenticatedEvent(msg.item))
+			m.gdmHandler.appendPollResultEvents(gdm_test.GdmIsAuthenticatedEvent(msg.item))
 			m.program.Send(tea.Sequence(tea.Tick(gdmPollFrequency, func(t time.Time) tea.Msg {
 				return sendEvent(doneMsg)
 			}), sendEvent(doneMsg))())
