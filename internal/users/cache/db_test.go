@@ -452,6 +452,11 @@ func TestClear(t *testing.T) {
 				require.NoError(t, os.Remove(c.DbPath()), "Setup: should be able to remove database file")
 			}
 			if tc.readOnlyDir {
+				currentUser, err := user.Current()
+				require.NoError(t, err)
+				if currentUser.Username == "root" {
+					t.Skip("Can't do permission checks as root")
+				}
 				testutils.MakeReadOnly(t, filepath.Dir(c.DbPath()))
 			}
 
