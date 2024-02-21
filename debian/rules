@@ -65,6 +65,8 @@ override_dh_auto_build:
 
 	# Build the daemon
 	DH_GOLANG_BUILDPKG=github.com/ubuntu/authd/cmd/authd dh_auto_build
+	# env GOPATH=$(CURDIR)/obj-$(DEB_HOST_GNU_TYPE) \
+ 	# 	go install -tags withexamplebroker -trimpath -v github.com/ubuntu/authd/cmd/authd
 
 override_dh_auto_test:
 	# We need to specify these Rust related variables to the Go tests in order to build the NSS lib
