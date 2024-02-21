@@ -1823,7 +1823,7 @@ func TestGdmModel(t *testing.T) {
 				require.NoError(t, uiModel.PamMTx.SetItem(pam.User, tc.pamUser))
 			}
 
-			devNull, err := os.OpenFile("/dev/null", os.O_WRONLY|os.O_APPEND, 0600)
+			devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY|os.O_APPEND, 0600)
 			require.NoError(t, err)
 			teaOpts := []tea.ProgramOption{
 				tea.WithInput(nil),
