@@ -287,12 +287,10 @@ func (h *gdmConvHandler) waitForAuthenticationStarted() {
 }
 
 func (h *gdmConvHandler) consumeAuthenticationStartedEvents() {
-	for {
-		select {
-		case <-h.startAuthRequested:
-		default:
-			return
-		}
+	select {
+	case <-h.startAuthRequested:
+	default:
+		return
 	}
 }
 
