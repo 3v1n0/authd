@@ -68,6 +68,10 @@ override_dh_auto_build:
 	# env GOPATH=$(CURDIR)/obj-$(DEB_HOST_GNU_TYPE) \
  	# 	go install -tags withexamplebroker -trimpath -v github.com/ubuntu/authd/cmd/authd
 
+	env GOPATH=$(CURDIR)/obj-$(DEB_HOST_GNU_TYPE) \
+ 		go install -tags withexamplebroker -trimpath -v \
+		github.com/ubuntu/authd/examplebroker/examplebroker-bin
+
 override_dh_auto_test:
 	# We need to specify these Rust related variables to the Go tests in order to build the NSS lib
 	# with the cargo wrapper in the integration tests in order to force cargo to use vendored deps
@@ -94,3 +98,9 @@ override_dh_auto_install:
 	# Install systemd units
 	mkdir -p debian/authd/lib/systemd/system
 	install -m644 systemd/* debian/authd/lib/systemd/system/
+
+	# Install examplebroker broker configs
+	install -m644 examplebroker/com.ubuntu.authd.ExampleBroker.conf \
+		-Dt debian/authd/usr/share/dbus-1/system.d
+	install -m644 examplebroker/ExampleBroker \
+		-Dt debian/authd/etc/authd/brokers.d
