@@ -6,12 +6,10 @@ set -x
 module_libname=pam_authd.so
 loader_libname=pam_go_loader.so
 
-if [ -d "$PROJECT_ROOT"/vendor ]; then
-    go run github.com/msteinert/pam/v2/cmd/pam-moduler \
-        -libname "$module_libname" -type pamModule \
-        "${@}"
-    go generate -x -tags pam_module_generation
-fi
+go run github.com/msteinert/pam/v2/cmd/pam-moduler \
+    -libname "$module_libname" -type pamModule \
+    "${@}"
+go generate -x -tags pam_module_generation
 
 cc_args=()
 if [ -v AUTHD_PAM_MODULES_PATH ]; then
