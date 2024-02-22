@@ -13,6 +13,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/coreos/go-systemd/dbus"
+	"github.com/coreos/go-systemd/v22/dbus"
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/consts"
@@ -103,6 +105,23 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 
 	serviceName, err := mTx.GetItem(pam.Service)
 	if err != nil {
+		return err
+	}
+
+	conn, err := dbus.NewSystemdConnection()
+	if err != nil {
+		return err
+	}
+	unitState, err := conn.GetUnitProperty("authd", "UnitFileState")
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(string(unitState.Value), "disabled") ||
+		strings.HasPrefix(string(unitState.Value), "masked") {
+		err := fmt.Errorf("authd unit is not enabled: %w", pam.ErrSystem)
+		if err := showPamMessage(mTx, pam.ErrorMsg, err.Error()); err != nil {
+			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", err)
+		}
 		return err
 	}
 
