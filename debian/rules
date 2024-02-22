@@ -36,12 +36,13 @@ export AUTHD_PAM_MODULES_PATH = /usr/lib/$(DEB_TARGET_GNU_TYPE)/security
 export AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS=1
 
 # Defines the targets to be built as part of dh_auto_build
-export DH_GOLANG_BUILDPKG := $(AUTHD_GO_PACKAGE)/cmd/authd $(AUTHD_GO_PACKAGE)/pam
+export DH_GOLANG_BUILDPKG := $(AUTHD_GO_PACKAGE)/...
 
 # Run go generate on the targets
 export DH_GOLANG_GO_GENERATE := 1
 
 BUILDDIR := $(CURDIR)/obj-$(DEB_HOST_GNU_TYPE)
+BUILD_GOPATH := $(BUILDDIR)/src
 
 %:
 	dh $@ --buildsystem=golang --with=golang,apport
@@ -69,6 +70,11 @@ override_dh_auto_configure:
 override_dh_auto_build:
 	# Build the NSS library
 	$(CARGO) build --release
+
+	# Ensure that go can find the pam-moduler tool at generation phase
+	# See: https://salsa.debian.org/go-team/packages/dh-golang/-/merge_requests/19
+	install vendor/github.com/msteinert/pam/v2/cmd/pam-moduler/moduler.go \
+		-Dt $(BUILD_GOPATH)/github.com/msteinert/pam/v2/cmd/pam-moduler
 
 	# Build the daemon and libraries defined in $(DH_GOLANG_BUILDPKG)
 	dh_auto_build
