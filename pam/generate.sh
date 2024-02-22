@@ -7,8 +7,6 @@ module_libname=pam_authd.so
 loader_libname=pam_go_loader.so
 
 if [ -d "$PROJECT_ROOT"/vendor ]; then
-    echo Vendored dependencies detected, not re-generating pam_module.go
-else
     go run github.com/msteinert/pam/v2/cmd/pam-moduler \
         -libname "$module_libname" -type pamModule \
         "${@}"
