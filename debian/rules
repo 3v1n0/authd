@@ -105,4 +105,4 @@ override_dh_auto_install:
 
 	# Install systemd units
 	mkdir -p debian/authd/lib/systemd/system
-	install -m644 systemd/* debian/authd/lib/systemd/system/
+	install -m644 systemd/* debian/authd/usr/lib/systemd/system/
