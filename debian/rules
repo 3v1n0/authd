@@ -76,6 +76,8 @@ override_dh_auto_build:
 override_dh_auto_install:
 	dh_auto_install -- --no-source
 
+	/usr/share/cargo/bin/dh-cargo-built-using authd
+
 	# Ignore pam dummy binary
 	rm debian/authd/usr/bin/pam
 
