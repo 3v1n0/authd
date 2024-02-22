@@ -35,6 +35,9 @@ const (
 	// PAM module for the second stage authentication to select the default
 	// broker for the current user.
 	authenticationBrokerIDKey = "authentication-broker-id"
+
+	ignoreNextCalls = "ignore-next-calls"
+
 	// gdmServiceName is the name used by the the GDM service.
 	gdmServiceName = "gdm-authd"
 )
@@ -101,6 +104,16 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		return err
 	}
 
+	// _, err := mTx.GetData(ignoreNextCalls)
+	// if err == pam.ErrNoModuleData {
+	// 	return err;
+	// }
+	// if err != pam.ErrNoModuleData {
+	// 	return err;
+	// }
+	// mTx.SetData(ignoreNextCalls, true)
+
+	// systemctl is-enabled
 	serviceName, err := mTx.GetItem(pam.Service)
 	if err != nil {
 		return err
