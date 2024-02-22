@@ -92,6 +92,15 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
 
+	// Do not try to start authentication again if we've been already through this.
+	_, err := mTx.GetData(authenticationBrokerIDKey)
+	if err == nil && parsedArgs["force_reauth"] != "true" {
+		return pam.ErrIgnore
+	}
+	if err != nil && !errors.Is(err, pam.ErrNoModuleData) {
+		return err
+	}
+
 	serviceName, err := mTx.GetItem(pam.Service)
 	if err != nil {
 		return err
