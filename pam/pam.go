@@ -35,6 +35,8 @@ const (
 	// PAM module for the second stage authentication to select the default
 	// broker for the current user.
 	authenticationBrokerIDKey = "authentication-broker-id"
+	// gdmServiceName is the name used by the the GDM service.
+	gdmServiceName = "gdm-authd"
 )
 
 func parseArgs(args []string) map[string]string {
@@ -90,7 +92,13 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
 
-	if gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
+	serviceName, err := mTx.GetItem(pam.Service)
+	if err != nil {
+		return err
+	}
+
+	if serviceName == gdmServiceName &&
+		gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		// Explicitly set the output to something so that the program
 		// won't try to init some terminal fancy things that also appear
 		// to be racy...

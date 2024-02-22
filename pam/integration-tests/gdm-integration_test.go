@@ -290,7 +290,7 @@ func testGdmModule(t *testing.T, libPath string, args []string) {
 				cancel()
 				<-stopped
 			})
-			serviceFile := createServiceFile(t, "module-loader", libPath,
+			serviceFile := createServiceFile(t, "gdm-authd", libPath,
 				append(slices.Clone(args), "socket="+socketPath), pamDebugIgnoreError)
 
 			gh := newGdmTestModuleHandler(t, serviceFile, tc.pamUser)
