@@ -1,0 +1,9 @@
+tar-ignore = authd/*.pb.go
+tar-ignore = */pam/*.pb.go
+tar-ignore = */internal/*.pb.go
+tar-ignore = */pam_module*.go
+tar-ignore = */.git*
+tar-ignore = */.go*
+tar-ignore = */.editor*
+tar-ignore = *.so
+tar-ignore = *.o
