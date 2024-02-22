@@ -33,7 +33,9 @@ Description: Authentication daemon for cloud-based identity provider
 
 Package: authd
 Architecture: any
-Built-Using: ${misc:Built-Using},
+Built-Using: ${misc:Built-Using}, ${cargo:Built-Using}
+X-Cargo-Built-Using: ${cargo:X-Cargo-Built-Using},
+Static-Built-Using: ${misc:Static-Built-Using}, ${cargo:Static-Built-Using},
 Depends: ${shlibs:Depends},
          ${misc:Depends},
 Description: ${source:Synopsis}
