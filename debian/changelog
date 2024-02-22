@@ -1,4 +1,4 @@
-authd (0.2.1) noble; urgency=medium
+authd (0.2.1.1) noble; urgency=medium
 
   * Adjust Rust dependencies
     - Rollback cc to 1.83: Version 1.84 was removed due to some problems with
