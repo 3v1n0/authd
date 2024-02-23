@@ -1,9 +1,13 @@
-tar-ignore = authd/*.pb.go
+tar-ignore = authd.pb.go
+tar-ignore = authd_*.pb.go
 tar-ignore = */pam/*.pb.go
+tar-ignore = */pam/pam_authd.h
 tar-ignore = */internal/*.pb.go
 tar-ignore = */pam_module*.go
 tar-ignore = */.git*
 tar-ignore = */.go*
 tar-ignore = */.editor*
+tar-ignore = */.mailmap
+tar-ignore = */.vscode
 tar-ignore = *.so
 tar-ignore = *.o
