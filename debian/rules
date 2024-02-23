@@ -37,6 +37,8 @@ export AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS=1
 # Defines the targets to be built as part of dh_auto_build
 export DH_GOLANG_BUILDPKG := $(AUTHD_GO_PACKAGE)/...
 
+EXAMPLE_BROKER_BUILD_TAG := with_standalone_examplebroker
+
 # Run go generate on the targets
 export DH_GOLANG_GO_GENERATE := 1
 
@@ -78,7 +80,10 @@ override_dh_auto_build:
 		-Dt $(BUILD_GOPATH)/github.com/msteinert/pam/v2/cmd/pam-moduler
 
 	# Build the daemon and libraries defined in $(DH_GOLANG_BUILDPKG)
-	dh_auto_build
+	# but we manually include the example broker because otherwise it's not
+	# part of the normal install.
+	dh_auto_build -- -tags $(EXAMPLE_BROKER_BUILD_TAG) \
+		$(AUTHD_GO_PACKAGE)/examplebroker/examplebroker-bin
 
 override_dh_auto_install:
 	dh_auto_install --destdir=debian/tmp -- --no-source

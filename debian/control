@@ -44,3 +44,13 @@ Description: ${source:Synopsis}
  .
  This package contains the authentication daemon together with the PAM & NSS
  modules.
+
+Package: authd-example-broker
+Architecture: any
+Built-Using: ${misc:Built-Using},
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+Description: ${source:Synopsis} - Example broker
+ ${source:Extended-Description}
+ .
+ This package contains an example broker for testing and autopkgtests purposes.

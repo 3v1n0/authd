@@ -1,0 +1,7 @@
+usr/bin/examplebroker-bin /usr/libexec/authd-examplebroker
+
+examplebroker/com.ubuntu.authd.ExampleBroker.conf /usr/share/dbus-1/system.d
+examplebroker/ExampleBroker /etc/authd/brokers.d
+examplebroker/com.ubuntu.authd.ExampleBroker.service /usr/share/dbus-1/system-services
+
+systemd/authd-examplebroker.* /usr/lib/systemd/system/
