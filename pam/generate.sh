@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT=$PWD/..
+PROJECT_ROOT=$(realpath "$(dirname "$0")")/..
 module_libname=pam_authd.so
 loader_libname=pam_go_loader.so
 
