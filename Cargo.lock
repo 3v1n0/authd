@@ -600,6 +600,7 @@ dependencies = [
  "log",
  "paste",
  "prost",
+ "rustix",
  "simple_logger",
  "sysinfo",
  "syslog",
