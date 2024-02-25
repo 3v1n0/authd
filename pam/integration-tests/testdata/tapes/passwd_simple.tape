@@ -16,24 +16,24 @@ Set Shell bash
 Hide
 Type "./pam_authd passwd socket=/tmp/pam-cli-chauthtok-tests.sock"
 Enter
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user1"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Enter
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Type "2"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
@@ -44,13 +44,13 @@ Show
 
 Hide
 Type "newpass"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Tab
 Type "newpass"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
@@ -61,19 +61,19 @@ Show
 Hide
 Type "./pam_authd login socket=/tmp/pam-cli-chauthtok-tests.sock"
 Enter
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user1"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Enter
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
@@ -82,4 +82,4 @@ Enter
 Sleep 2s
 Show
 
-Sleep 300ms
+Sleep 500ms

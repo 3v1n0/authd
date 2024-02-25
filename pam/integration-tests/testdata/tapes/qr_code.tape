@@ -16,39 +16,39 @@ Set Shell bash
 Hide
 Type "./pam_authd login socket=/tmp/pam-cli-authenticate-tests.sock"
 Enter
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-integration-qr-code"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Enter
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Type "2"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Escape
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Type "6"
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
 Tab
-Sleep 300ms
+Sleep 500ms
 Show
 
 Hide
@@ -60,4 +60,4 @@ Hide
 Sleep 5s
 Show
 
-Sleep 300ms
+Sleep 500ms
