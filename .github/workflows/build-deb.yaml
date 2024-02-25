@@ -37,7 +37,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Build debian packages and sources
-      uses: canonical/desktop-engineering/gh-actions/common/build-debian@main
+      uses: canonical/desktop-engineering/gh-actions/common/build-debian@build-deb-lintian
       with:
         docker-image: ubuntu:devel
 
