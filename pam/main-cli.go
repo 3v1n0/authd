@@ -57,7 +57,7 @@ func main() {
 		panic("Unknown PAM operation: " + os.Args[1])
 	}
 
-	pamRes := pamFunc(mTx, pam.Flags(0), os.Args)
+	pamRes := pamFunc(mTx, pam.Flags(0), os.Args[2:])
 	user, _ := mTx.GetItem(pam.User)
 
 	printPamResult(fmt.Sprintf(resultMsg, user), pamRes)
