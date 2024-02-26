@@ -128,7 +128,7 @@ Username: user-local-broker
 
 PAM ChangeAuthTok() for user "user-local-broker" exited with error (PAM exit code: 25): The retu
 rn value should be ignored by PAM dispatch:
-PAM AcctMgmt() exited with error (PAM exit code: 25): The return value should be ignored by PAM
+PAM Error Message: Can't set default broker ("local") for "user-local-broker": rpc error: code =
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd passwd socket=/tmp/pam-cli-chauthtok-tests.sock
   Select your provider
@@ -161,5 +161,5 @@ PAM AcctMgmt() exited with error (PAM exit code: 25): The return value should be
 
 PAM ChangeAuthTok() for user "user-local-broker" exited with error (PAM exit code: 25): The retu
 rn value should be ignored by PAM dispatch:
-PAM AcctMgmt() exited with error (PAM exit code: 25): The return value should be ignored by PAM
+PAM Error Message: Can't set default broker ("local") for "user-local-broker": rpc error: code =
 ────────────────────────────────────────────────────────────────────────────────
