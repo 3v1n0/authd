@@ -2,7 +2,7 @@ module github.com/ubuntu/authd
 
 go 1.21.0
 
-toolchain go1.21.6
+toolchain go1.22.3
 
 require (
 	github.com/charmbracelet/bubbles v0.18.0
