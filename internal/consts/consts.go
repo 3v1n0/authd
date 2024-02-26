@@ -16,7 +16,7 @@ const (
 	DefaultLogLevel = log.WarnLevel
 
 	// DefaultSocketPath is the default socket path.
-	DefaultSocketPath = "/run/authd.sock"
+	DefaultSocketPath = "/var/run/authd.sock"
 
 	// DefaultBrokersConfPath is the default configuration directory for the brokers.
 	DefaultBrokersConfPath = "/etc/authd/brokers.d/"

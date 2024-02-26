@@ -6,7 +6,7 @@ Wants=dbus.service
 After=dbus.service
 
 [Socket]
-ListenStream=/run/authd.sock
+ListenStream=/var/run/authd.sock
 FlushPending=yes
 
 [Install]

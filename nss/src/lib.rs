@@ -34,7 +34,7 @@ fn socket_path() -> String {
             );
         }
     }
-    "/run/authd.sock".to_string()
+    "/var/run/authd.sock".to_string()
 }
 
 /// grpc_status_to_nss_response converts a gRPC status to a NSS response.
