@@ -259,7 +259,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var gdmCmd tea.Cmd
 		if m.ClientType == Gdm {
-			gdmCmd = m.gdmModel.Update(msg)
+			m.gdmModel, gdmCmd = m.gdmModel.Update(msg)
 		}
 
 		return m, tea.Sequence(
@@ -285,7 +285,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	if m.ClientType == Gdm {
-		cmd = m.gdmModel.Update(msg)
+		m.gdmModel, cmd = m.gdmModel.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
