@@ -100,10 +100,15 @@ jobs:
       run: |
         apt install autopkgtest
 
+    - name: Create test user
+      run: |
+        apt install adduser
+        adduser --disabled-password --gecos "" tester
+
     - name: Run autopkgtests
       run: |
         mv -v ./*-debian-source/* .
         mv -v ./*-debian-packages/* .
-        autopkgtest --apt-pocket proposed --apt-upgrade --no-built-binaries \
+        autopkgtest --apt-pocket proposed --apt-upgrade --no-built-binaries --user=tester \
           *_${{ needs.build-deb-package.outputs.pkg-version }}*.deb \
           ${{ needs.build-deb-package.outputs.pkg-name }}_${{ needs.build-deb-package.outputs.pkg-version }}_source.changes -- null
