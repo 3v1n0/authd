@@ -44,7 +44,7 @@ func main() {
 		}))
 
 	var resultMsg string
-	var pamFunc func(pam.ModuleTransaction, pam.Flags, []string) error
+	var pamFunc pam.ModuleHandlerFunc
 	switch os.Args[1] {
 	case "login":
 		pamFunc = module.Authenticate
