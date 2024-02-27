@@ -17,7 +17,7 @@ type (
 	Level = logrus.Level
 
 	// Handler is the log handler function.
-	Handler = func(_ context.Context, _ Level, args ...interface{})
+	Handler = func(_ context.Context, _ Level, format string, args ...interface{})
 )
 
 var (
@@ -42,7 +42,9 @@ const (
 )
 
 func logFuncAdapter(logrusFunc func(args ...interface{})) Handler {
-	return func(_ context.Context, _ Level, args ...interface{}) { logrusFunc(args...) }
+	return func(_ context.Context, _ Level, format string, args ...interface{}) {
+		logrusFunc(fmt.Sprintf(format, args...))
+	}
 }
 
 var handlers = map[Level]Handler{
@@ -74,11 +76,7 @@ func log(context context.Context, level Level, args ...interface{}) {
 		return
 	}
 
-	handlersMu.RLock()
-	handler := handlers[level]
-	handlersMu.RUnlock()
-
-	handler(context, level, args...)
+	logf(context, level, fmt.Sprint(args...))
 }
 
 func logf(context context.Context, level Level, format string, args ...interface{}) {
@@ -86,7 +84,11 @@ func logf(context context.Context, level Level, format string, args ...interface
 		return
 	}
 
-	log(context, level, fmt.Sprintf(format, args...))
+	handlersMu.RLock()
+	handler := handlers[level]
+	handlersMu.RUnlock()
+
+	handler(context, level, format, args...)
 }
 
 // Debug is a temporary placeholder.
