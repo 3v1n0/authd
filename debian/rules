@@ -41,6 +41,10 @@ export AUTHD_DAEMONS_PATH := /usr/libexec
 # they need external commands (e.g. `vhs`) that are not available in the build environment.
 export AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS=1
 
+# Skip some tests that fail when running as root as it may happen when building the packages
+# in sbuild or similar environments.
+export AUTHD_SKIP_ROOT_TESTS := 1
+
 # Defines the targets to be built as part of dh_auto_build
 export DH_GOLANG_BUILDPKG := $(AUTHD_GO_PACKAGE)/cmd/authd \
 	$(AUTHD_GO_PACKAGE)/pam \

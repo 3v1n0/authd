@@ -64,7 +64,7 @@ func TestNew(t *testing.T) {
 				if *tc.perm == perm0644 {
 					currentUser, err := user.Current()
 					require.NoError(t, err)
-					if currentUser.Username == "root" {
+					if os.Getenv("AUTHD_SKIP_ROOT_TESTS") != "" && currentUser.Username == "root" {
 						t.Skip("Can't do permission checks as root")
 					}
 				}
@@ -462,7 +462,7 @@ func TestClear(t *testing.T) {
 			if tc.readOnlyDir {
 				currentUser, err := user.Current()
 				require.NoError(t, err)
-				if currentUser.Username == "root" {
+				if os.Getenv("AUTHD_SKIP_ROOT_TESTS") != "" && currentUser.Username == "root" {
 					t.Skip("Can't do permission checks as root")
 				}
 				testutils.MakeReadOnly(t, filepath.Dir(c.DbPath()))
