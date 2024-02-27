@@ -110,12 +110,24 @@ func initLogging(args map[string]string) (func(), error) {
 		return func() { f.Close() }, nil
 	}
 
+	disableTerminalLogging := func() {
+		if log.IsLevelEnabled(log.DebugLevel) {
+			return
+		}
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			return
+		}
+		log.SetLevel(log.WarnLevel)
+	}
+
 	if !journal.Enabled() {
 		log.SetHandler(nil)
+		disableTerminalLogging()
 		return func() {}, nil
 	}
 	if args["disable_journal"] == "true" {
 		log.SetHandler(nil)
+		disableTerminalLogging()
 		return func() {}, nil
 	}
 
@@ -169,9 +181,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	// Initialize localization
 	// TODO
 
-	// Attach logger and info handler.
-	// TODO
-
+	parsedArgs := parseArgs(args)
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
 
