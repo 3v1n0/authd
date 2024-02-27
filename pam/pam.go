@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/coreos/go-systemd/journal"
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/consts"
@@ -28,6 +29,7 @@ import (
 // pamModule is the structure that implements the pam.ModuleHandler interface
 // that is called during pam operations.
 type pamModule struct {
+	journalEnabled bool
 }
 
 const (
@@ -78,7 +80,7 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 	}
 }
 
-func initLogging(args map[string]string) {
+func (h *pamModule) initLogging(args map[string]string) {
 	level := log.InfoLevel
 	if args["debug"] == "true" {
 		level = log.DebugLevel
@@ -108,6 +110,7 @@ func initLogging(args map[string]string) {
 		}
 		journal.Print(journalPriority, format, args...)
 	})
+	h.journalEnabled = true
 }
 
 // Authenticate is the method that is invoked during pam_authenticate request.
@@ -131,7 +134,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
 
-	initLogging(parsedArgs)
+	h.initLogging(parsedArgs)
 
 	if gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		// Explicitly set the output to something so that the program
@@ -209,7 +212,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 // AcctMgmt sets any used brokerID as default for the user.
 func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
-	initLogging(parseArgs(args))
+	h.initLogging(parseArgs(args))
 
 	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
 	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
@@ -308,7 +311,18 @@ func (h *pamModule) CloseSession(pam.ModuleTransaction, pam.Flags, []string) err
 	return pam.ErrIgnore
 }
 
-// go_pam_cleanup_module is called by the go-loader PAM module during onload.
+// func setupLogging() {
+// 	log.
+// }
+
+// // go_pam_init_module is called by the go-loader PAM module on load.
+// //
+// //export go_pam_init_module
+// func go_pam_init_module() {
+// 	setupLogging()
+// }
+
+// go_pam_cleanup_module is called by the go-loader PAM module during unload.
 //
 //export go_pam_cleanup_module
 func go_pam_cleanup_module() {
