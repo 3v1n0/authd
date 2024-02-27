@@ -93,12 +93,23 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 	}
 }
 
-func initLogging(args map[string]string) {
+func initLogging(args map[string]string) (func(), error) {
 	level := log.InfoLevel
 	if args["debug"] == "true" {
 		level = log.DebugLevel
 	}
 	log.SetLevel(level)
+
+	if out, ok := args["logfile"]; ok && out != "" {
+		f, err := os.OpenFile(out, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
+		if err != nil {
+			return nil, err
+		}
+		log.SetOutput(f)
+		return func() { f.Close() }, nil
+	}
+
+	return func() {}, nil
 }
 
 // Authenticate is the method that is invoked during pam_authenticate request.
@@ -139,7 +150,11 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
 
-	initLogging(parsedArgs)
+	closeLogging, err := initLogging(parsedArgs)
+	if err != nil {
+		return err
+	}
+	defer closeLogging()
 
 	if gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		// Explicitly set the output to something so that the program
@@ -218,7 +233,11 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 // AcctMgmt sets any used brokerID as default for the user.
 func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
-	initLogging(parseArgs(args))
+	closeLogging, err := initLogging(parseArgs(args))
+	if err != nil {
+		return err
+	}
+	defer closeLogging()
 
 	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
 	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
