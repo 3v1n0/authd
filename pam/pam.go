@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/coreos/go-systemd/journal"
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/consts"
@@ -79,6 +80,7 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 }
 
 func initLogging(args map[string]string) (func(), error) {
+	fmt.Println("Args are", args)
 	level := log.InfoLevel
 	if args["debug"] == "true" {
 		level = log.DebugLevel
@@ -93,6 +95,34 @@ func initLogging(args map[string]string) (func(), error) {
 		log.SetOutput(f)
 		return func() { f.Close() }, nil
 	}
+
+	if !journal.Enabled() {
+		log.SetHandler(nil)
+		return func() {}, nil
+	}
+	if args["disable_journal"] == "true" {
+		log.SetHandler(nil)
+		return func() {}, nil
+	}
+
+	fmt.Println("USING JOURNAL!!!")
+
+	log.SetHandler(func(_ context.Context, level log.Level, format string, args ...interface{}) {
+		journalPriority := journal.PriNotice
+		switch level {
+		case log.DebugLevel:
+			journalPriority = journal.PriDebug
+		case log.InfoLevel:
+			journalPriority = journal.PriInfo
+		case log.WarnLevel:
+			journalPriority = journal.PriWarning
+		case log.ErrorLevel:
+			journalPriority = journal.PriErr
+		}
+		journal.Print(journalPriority, format, args...)
+	})
+
+	return func() { log.SetHandler(nil) }, nil
 }
 
 // Authenticate is the method that is invoked during pam_authenticate request.
