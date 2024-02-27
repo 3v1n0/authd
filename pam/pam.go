@@ -93,6 +93,14 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 	}
 }
 
+func initLogging(args map[string]string) {
+	level := log.InfoLevel
+	if args["debug"] == "true" {
+		level = log.DebugLevel
+	}
+	log.SetLevel(level)
+}
+
 // Authenticate is the method that is invoked during pam_authenticate request.
 func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
 	// Do not try to start authentication again if we've been already through this.
@@ -130,6 +138,8 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 	var pamClientType adapter.PamClientType
 	var teaOpts []tea.ProgramOption
+
+	initLogging(parsedArgs)
 
 	if gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		// Explicitly set the output to something so that the program
@@ -208,6 +218,8 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 // AcctMgmt sets any used brokerID as default for the user.
 func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
+	initLogging(parseArgs(args))
+
 	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
 	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
 		return pam.ErrIgnore
