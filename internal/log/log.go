@@ -4,6 +4,7 @@ package log
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -141,4 +142,9 @@ func Errorf(context context.Context, format string, args ...interface{}) {
 // Infof is a temporary placeholder.
 func Infof(context context.Context, format string, args ...interface{}) {
 	logf(context, InfoLevel, format, args...)
+}
+
+// SetOutput sets the log output.
+func SetOutput(out io.Writer) {
+	logrus.SetOutput(out)
 }
