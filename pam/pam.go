@@ -84,6 +84,30 @@ func initLogging(args map[string]string) {
 		level = log.DebugLevel
 	}
 	log.SetLevel(level)
+
+	if !journal.Enabled() {
+		log.SetHandler(nil)
+		return
+	}
+	if args["disable_journal"] == "true" {
+		log.SetHandler(nil)
+		return
+	}
+
+	log.SetHandler(func(_ context.Context, level log.Level, format string, args ...interface{}) {
+		journalPriority := journal.PriNotice
+		switch level {
+		case log.DebugLevel:
+			journalPriority = journal.PriDebug
+		case log.InfoLevel:
+			journalPriority = journal.PriInfo
+		case log.WarnLevel:
+			journalPriority = journal.PriWarning
+		case log.ErrorLevel:
+			journalPriority = journal.PriErr
+		}
+		journal.Print(journalPriority, format, args...)
+	})
 }
 
 // Authenticate is the method that is invoked during pam_authenticate request.

@@ -65,6 +65,7 @@ func main() {
 	}
 
 	args = append(args, "debug=true")
+	args = append(args, "disable_journal=true")
 	pamRes := pamFunc(mTx, pam.Flags(0), args)
 	user, _ := mTx.GetItem(pam.User)
 
