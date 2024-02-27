@@ -161,6 +161,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Exit cases
 	case PamReturnStatus:
+		log.Debugf(context.TODO(), "%#v", msg)
 		if m.exitStatus != nil {
 			// Nothing to do, we're already exiting...
 			return m, nil
@@ -170,6 +171,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Events
 	case UsernameOrBrokerListReceived:
+		log.Debugf(context.TODO(), "%#v", msg)
 		if m.username() == "" {
 			return m, nil
 		}
@@ -183,6 +185,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			AutoSelectForUser(m.Client, m.username()))
 
 	case BrokerSelected:
+		log.Debugf(context.TODO(), "%#v", msg)
 		if m.sessionStartingForBroker == "" {
 			m.sessionStartingForBroker = msg.BrokerID
 			return m, startBrokerSession(m.Client, msg.BrokerID, m.username(), m.SessionMode)
@@ -191,6 +194,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Sequence(endSession(m.Client, m.currentSession), sendEvent(msg))
 		}
 	case SessionStarted:
+		log.Debugf(context.TODO(), "%#v", msg)
 		m.sessionStartingForBroker = ""
 		pubASN1, err := base64.StdEncoding.DecodeString(msg.encryptionKey)
 		if err != nil {
@@ -223,9 +227,11 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, sendEvent(GetAuthenticationModesRequested{})
 
 	case ChangeStage:
+		log.Debugf(context.TODO(), "%#v", msg)
 		return m, m.changeStage(msg.Stage)
 
 	case GetAuthenticationModesRequested:
+		log.Debugf(context.TODO(), "%#v", msg)
 		if m.currentSession == nil || !m.authModeSelectionModel.IsReady() {
 			return m, nil
 		}
@@ -236,6 +242,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case AuthModeSelected:
+		log.Debugf(context.TODO(), "%#v", msg)
 		if m.currentSession == nil {
 			return m, nil
 		}
@@ -252,7 +259,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, getLayout(m.Client, m.currentSession.sessionID, msg.ID)
 
 	case UILayoutReceived:
-		log.Debug(context.TODO(), "UILayoutReceived", msg.layout)
+		log.Debugf(context.TODO(), "%#v", msg)
 		if m.currentSession == nil {
 			return m, nil
 		}
@@ -268,6 +275,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.changeStage(pam_proto.Stage_challenge))
 
 	case SessionEnded:
+		log.Debugf(context.TODO(), "%#v", msg)
 		m.sessionStartingForBroker = ""
 		m.currentSession = nil
 		return m, nil
