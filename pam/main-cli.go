@@ -13,6 +13,13 @@ import (
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 )
 
+func clearTerminal() {
+	// Use ANSI codes to clear the terminal.
+	// We may need this to prevent bubbletea window to hide our printed messages.
+	// See: https://en.wikipedia.org/wiki/ANSI_escape_code.
+	fmt.Print("\033[H\033[2J")
+}
+
 // Simulating pam on the CLI for manual testing.
 func main() {
 	log.SetLevel(log.DebugLevel)
@@ -26,6 +33,7 @@ func main() {
 	module := &pamModule{}
 	mTx := pam_test.NewModuleTransactionDummy(pam.ConversationFunc(
 		func(style pam.Style, msg string) (string, error) {
+			clearTerminal()
 			switch style {
 			case pam.TextInfo:
 				fmt.Fprintf(os.Stderr, "PAM Info Message: %s\n", msg)
