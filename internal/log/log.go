@@ -47,18 +47,26 @@ func logFuncAdapter(logrusFunc func(args ...interface{})) Handler {
 	}
 }
 
-var handlers = map[Level]Handler{
+var defaultHandlers = map[Level]Handler{
 	DebugLevel: logFuncAdapter(logrus.Debug),
 	InfoLevel:  logFuncAdapter(logrus.Info),
 	WarnLevel:  logFuncAdapter(logrus.Warn),
 	ErrorLevel: logFuncAdapter(logrus.Error),
 }
+var handlers = defaultHandlers
 var handlersMu = sync.RWMutex{}
 
 // SetLevelHandler allows to define the default handler function for a given level.
 func SetLevelHandler(level Level, handler Handler) {
 	handlersMu.Lock()
 	defer handlersMu.Unlock()
+	if handler == nil {
+		h, ok := defaultHandlers[level]
+		if !ok {
+			return
+		}
+		handler = h
+	}
 	handlers[level] = handler
 }
 
@@ -66,6 +74,10 @@ func SetLevelHandler(level Level, handler Handler) {
 func SetHandler(handler Handler) {
 	handlersMu.Lock()
 	defer handlersMu.Unlock()
+	if handler == nil {
+		handlers = defaultHandlers
+		return
+	}
 	for _, level := range logrus.AllLevels {
 		handlers[level] = handler
 	}
