@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 
 	"github.com/msteinert/pam/v2"
-	"github.com/sirupsen/logrus"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 )
 
@@ -23,16 +22,6 @@ func clearTerminal() {
 // Simulating pam on the CLI for manual testing.
 func main() {
 	logDir := os.Getenv("AUTHD_PAM_CLI_LOG_DIR")
-	if logDir == "" {
-		logDir = os.TempDir()
-	}
-	logPath := filepath.Join(logDir, "authd-pam-cli.log")
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
-	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	logrus.SetOutput(f)
 
 	module := &pamModule{}
 	mTx := pam_test.NewModuleTransactionDummy(pam.ConversationFunc(
@@ -60,11 +49,15 @@ func main() {
 		pamFunc = module.ChangeAuthTok
 		resultMsg = "PAM ChangeAuthTok() for user %q"
 	default:
-		f.Close()
 		panic("Unknown PAM operation: " + action)
 	}
 
 	args = append(args, "debug=true")
+	if logDir != "" {
+		logPath := filepath.Join(logDir, "authd-pam-cli.log")
+		args = append(args, "logfile="+logPath)
+		args = append(args, "disable_journal=true")
+	}
 	pamRes := pamFunc(mTx, pam.Flags(0), args)
 	user, _ := mTx.GetItem(pam.User)
 
