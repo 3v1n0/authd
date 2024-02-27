@@ -42,12 +42,12 @@ func TestCLIAuthenticate(t *testing.T) {
 	gpasswdOutput := filepath.Join(outDir, "gpasswd", "authenticate.output")
 	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
 
-	socketPath := "/tmp/pam-cli-authenticate-tests.sock"
+	const socketPathEnv = "AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK"
 	ctx, cancel := context.WithCancel(context.Background())
-	_, stopped := testutils.RunDaemon(ctx, t, daemonPath,
-		testutils.WithSocketPath(socketPath),
+	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath,
 		testutils.WithEnvironment(grouptests.GPasswdMockEnv(t, gpasswdOutput, groupsFile)...),
 	)
+
 	t.Cleanup(func() {
 		cancel()
 		<-stopped
@@ -91,6 +91,7 @@ func TestCLIAuthenticate(t *testing.T) {
 			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, pathEnv)
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", socketPathEnv, socketPath))
 			cmd.Dir = outDir
 
 			out, err := cmd.CombinedOutput()
@@ -103,7 +104,7 @@ func TestCLIAuthenticate(t *testing.T) {
 			var got string
 			splitTmp := strings.Split(string(tmp), "\n")
 			for i, str := range splitTmp {
-				if strings.HasPrefix(str, fmt.Sprintf("> ./pam_authd login socket=%s", socketPath)) {
+				if strings.HasPrefix(str, fmt.Sprintf("> ./pam_authd login socket=${%s}", socketPathEnv)) {
 					got = strings.Join(splitTmp[i:], "\n")
 					break
 				}
@@ -133,10 +134,9 @@ func TestCLIChangeAuthTok(t *testing.T) {
 	gpasswdOutput := filepath.Join(outDir, "gpasswd", "chauthtok.output")
 	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
 
-	socketPath := "/tmp/pam-cli-chauthtok-tests.sock"
+	const socketPathEnv = "AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK"
 	ctx, cancel := context.WithCancel(context.Background())
-	_, stopped := testutils.RunDaemon(ctx, t, daemonPath,
-		testutils.WithSocketPath(socketPath),
+	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath,
 		testutils.WithEnvironment(grouptests.GPasswdMockEnv(t, gpasswdOutput, groupsFile)...),
 	)
 	t.Cleanup(func() {
@@ -174,6 +174,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, pathEnv)
+			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", socketPathEnv, socketPath))
 			cmd.Dir = outDir
 
 			out, err := cmd.CombinedOutput()
@@ -186,7 +187,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			var got string
 			splitTmp := strings.Split(string(tmp), "\n")
 			for i, str := range splitTmp {
-				if strings.HasPrefix(str, fmt.Sprintf("> ./pam_authd passwd socket=%s", socketPath)) {
+				if strings.HasPrefix(str, fmt.Sprintf("> ./pam_authd passwd socket=${%s}", socketPathEnv)) {
 					got = strings.Join(splitTmp[i:], "\n")
 					break
 				}
