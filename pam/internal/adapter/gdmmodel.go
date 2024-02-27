@@ -136,7 +136,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 					status: pam.ErrSystem, msg: "missing stage changed",
 				})
 			}
-			log.Infof(context.TODO(), "GDM Stage changed to %s", res.StageChanged.Stage)
+			log.Debugf(context.TODO(), "GDM Stage changed to %s", res.StageChanged.Stage)
 
 			if m.waitingAuth && res.StageChanged.Stage != proto.Stage_challenge {
 				// Maybe this can be sent only if we ever hit the challenge phase.

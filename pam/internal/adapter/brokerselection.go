@@ -96,7 +96,7 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 	case brokerSelected:
 		broker := brokerFromID(msg.brokerID, m.availableBrokers)
 		if broker == nil {
-			log.Infof(context.TODO(), "broker %q is not part of current active brokers", msg.brokerID)
+			log.Debugf(context.TODO(), "broker %q is not part of current active brokers", msg.brokerID)
 			return m, nil
 		}
 		// Select correct line to ensure model is synchronised
@@ -177,7 +177,7 @@ func AutoSelectForUser(client authd.PAMClient, username string) tea.Cmd {
 			})
 		// We keep a chance to manually select the broker, not a blocker issue.
 		if err != nil {
-			log.Infof(context.TODO(), "can't get previous broker for %q", username)
+			log.Debugf(context.TODO(), "can't get previous broker for %q", username)
 			return nil
 		}
 		brokerID := r.GetPreviousBroker()

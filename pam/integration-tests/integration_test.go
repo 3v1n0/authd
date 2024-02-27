@@ -80,7 +80,7 @@ func TestCLIAuthenticate(t *testing.T) {
 			})
 
 			// #nosec:G204 - we control the command arguments in tests
-			cmd := exec.Command("vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
+			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, pathEnv)
 			cmd.Env = append(cmd.Env, "AUTHD_PAM_CLI_LOG_DIR="+outDir)
@@ -168,7 +168,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			})
 
 			// #nosec:G204 - we control the command arguments in tests
-			cmd := exec.Command("vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
+			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", tc.tape+".tape"))
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, pathEnv)
 			cmd.Env = append(cmd.Env, "AUTHD_PAM_CLI_LOG_DIR="+filepath.Dir(cliLog))
@@ -223,7 +223,7 @@ func appendGoBinToPath(t *testing.T) string {
 	require.NoError(t, err, "Could not get GOPATH: %v: %s", err, out)
 
 	env := os.Getenv("PATH")
-	return fmt.Sprintf("PATH=%s:%s", strings.TrimSpace(string(out)+"/bin"), env)
+	return "PATH=" + strings.Join([]string{filepath.Join(strings.TrimSpace(string(out)), "/bin"), env}, ":")
 }
 
 // saveArtifactsForDebug saves the specified artifacts to a temporary directory if the test failed.

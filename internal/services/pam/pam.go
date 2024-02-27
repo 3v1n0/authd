@@ -60,7 +60,7 @@ func (s Service) GetPreviousBroker(ctx context.Context, req *authd.GPBRequest) (
 
 	brokerID, err := s.userManager.BrokerForUser(req.GetUsername())
 	if err != nil {
-		log.Infof(ctx, "Could not get previous broker for user %q from cache: %v", req.GetUsername(), err)
+		log.Debugf(ctx, "Could not get previous broker for user %q from cache: %v", req.GetUsername(), err)
 		return &authd.GPBResponse{}, nil
 	}
 

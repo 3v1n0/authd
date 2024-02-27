@@ -158,7 +158,7 @@ func (m authModeSelectionModel) Update(msg tea.Msg) (authModeSelectionModel, tea
 	case authModeSelected:
 		// Ensure auth mode id is valid
 		if !validAuthModeID(msg.id, m.availableAuthModes) {
-			log.Infof(context.TODO(), "authentication mode %q is not part of currently available authentication mode", msg.id)
+			log.Debugf(context.TODO(), "authentication mode %q is not part of currently available authentication mode", msg.id)
 			return m, nil
 		}
 		m.currentAuthModeSelectedID = msg.id
