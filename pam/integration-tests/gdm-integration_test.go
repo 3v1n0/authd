@@ -39,11 +39,6 @@ const (
 func testGdmModule(t *testing.T, libPath string, args []string) {
 	t.Helper()
 
-	// This happens when GO_WANT_HELPER_PROCESS is defined, in such case let's just skip.
-	if daemonPath == "" {
-		t.Skip("Test cannot run without an example daemon")
-	}
-
 	if !pam.CheckPamHasStartConfdir() {
 		t.Skip("can't test with this libpam version!")
 	}
