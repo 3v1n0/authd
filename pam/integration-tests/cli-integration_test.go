@@ -25,11 +25,6 @@ func prepareCLITest(t *testing.T) {
 		t.Skip("Skipping tests with external dependencies as requested")
 	}
 
-	// This happens when GO_WANT_HELPER_PROCESS is defined, in such case let's just skip.
-	if daemonPath == "" {
-		t.Skip("Test cannot run without an example daemon")
-	}
-
 	pamCleanup, err := buildPAM(filepath.Dir(daemonPath))
 	require.NoError(t, err, "Setup: Failed to build PAM executable")
 	t.Cleanup(pamCleanup)
