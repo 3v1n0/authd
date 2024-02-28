@@ -16,24 +16,24 @@ Set Shell bash
 Hide
 Type "./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}"
 Enter
-Sleep 300ms
+Sleep 100ms
 Show
 
 Hide
 Escape
 Backspace
 Type "user-local-broker"
-Sleep 300ms
+Sleep 100ms
 Show
 
 Hide
 Enter
-Sleep 300ms
+Sleep 100ms
 Show
 
 Hide
 Enter
-Sleep 300ms
+Sleep 100ms
 Show
 
-Sleep 300ms
+Sleep 100ms
