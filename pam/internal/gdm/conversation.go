@@ -6,27 +6,49 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
+	"sync"
 
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/internal/log"
 )
 
-var conversations atomic.Int32
+var conversations int
+var conversationsMu = sync.Mutex{}
+var conversationsCond = sync.Cond{L: &conversationsMu}
 
 // ConversationInProgress checks if conversations are currently active.
 func ConversationInProgress() bool {
-	return conversations.Load() > 0
+	return false
+	// return conversations.Load() > 0
+}
+
+func WaitForConversationsStopped() {
+	conversationsMu.Lock()
+	defer conversationsMu.Unlock()
+
+	for conversations != 0 {
+		conversationsCond.Wait()
+	}
 }
 
 func sendToGdm(pamMTx pam.ModuleTransaction, data []byte) ([]byte, error) {
-	conversations.Add(1)
-	defer conversations.Add(-1)
 	binReq, err := NewBinaryJSONProtoRequest(data)
 	if err != nil {
 		return nil, err
 	}
 	defer binReq.Release()
+
+	conversationsMu.Lock()
+	conversations++
+	conversationsMu.Unlock()
+
+	defer func() {
+		conversationsMu.Lock()
+		conversations--
+		conversationsCond.Broadcast()
+		conversationsMu.Unlock()
+	}()
+
 	res, err := pamMTx.StartConv(binReq)
 	if err != nil {
 		return nil, err

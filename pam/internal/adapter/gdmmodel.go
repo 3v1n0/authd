@@ -297,8 +297,7 @@ func (m gdmModel) stopConversations() gdmModel {
 
 	wait := make(chan struct{})
 	go func() {
-		for gdm.ConversationInProgress() {
-		}
+		gdm.WaitForConversationsStopped()
 		wait <- struct{}{}
 	}()
 
