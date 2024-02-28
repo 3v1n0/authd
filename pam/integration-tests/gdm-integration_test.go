@@ -363,13 +363,13 @@ func TestGdmModuleWithCWrapper(t *testing.T) {
 func buildPAMModule(t *testing.T) string {
 	t.Helper()
 
-	cmd := exec.Command("go", "build", "-C", "..",
-		"-buildmode=c-shared", "-gcflags=-dwarflocationlists=true")
-	cmd.Env = append(os.Environ(), `CGO_CFLAGS=-O0 -g3`)
+	cmd := exec.Command("go", "build", "-C", "..")
 	if testutils.CoverDir() != "" {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
+	cmd.Args = append(cmd.Args, "-buildmode=c-shared", "-gcflags=-dwarflocationlists=true")
+	cmd.Env = append(os.Environ(), `CGO_CFLAGS=-O0 -g3`)
 	if pam_test.IsAddressSanitizerActive() {
 		cmd.Args = append(cmd.Args, "-asan")
 	}
