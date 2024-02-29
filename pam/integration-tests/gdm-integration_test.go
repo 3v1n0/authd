@@ -36,9 +36,8 @@ const (
 	phoneAck1ID    = "phoneack1"
 )
 
+//nolint:thelper // This is actually a test!
 func testGdmModule(t *testing.T, libPath string, args []string) {
-	t.Helper()
-
 	if !pam.CheckPamHasStartConfdir() {
 		t.Skip("can't test with this libpam version!")
 	}
