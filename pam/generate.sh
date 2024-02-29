@@ -28,6 +28,6 @@ fi
 ${CC:-cc} -o go-loader/"$loader_libname" \
     go-loader/module.c ${CFLAGS:-} -Wl,--as-needed -Wl,--allow-shlib-undefined \
     -shared -fPIC -Wl,--unresolved-symbols=report-all \
-    -Wl,-soname,"$loader_libname" -lpam ${LDFLAGS:-} "${cc_args[@]}"
+    -Wl,-soname,"$loader_libname" -lpam ${LDFLAGS:-} $(pkg-config --cflags --libs glib-2.0) "${cc_args[@]}"
 
 chmod 644 go-loader/"$loader_libname"

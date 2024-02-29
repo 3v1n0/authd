@@ -2,7 +2,6 @@ use crate::error;
 use libc::gid_t;
 use libnss::group::{Group, GroupHooks};
 use libnss::interop::Response;
-use tokio::runtime::Builder;
 use tonic::Request;
 
 use crate::client::{self, authd};
@@ -28,15 +27,7 @@ impl GroupHooks for AuthdGroup {
 
 /// get_all_entries connects to the grpc server and asks for all group entries.
 fn get_all_entries() -> Response<Vec<Group>> {
-    let rt = match Builder::new_current_thread().enable_all().build() {
-        Ok(rt) => rt,
-        Err(e) => {
-            error!("could not create runtime for NSS: {}", e);
-            return Response::Unavail;
-        }
-    };
-
-    rt.block_on(async {
+    super::RT.block_on(async {
         let mut client = match client::new_client().await {
             Ok(c) => c,
             Err(e) => {
@@ -58,15 +49,7 @@ fn get_all_entries() -> Response<Vec<Group>> {
 
 /// get_entry_by_gid connects to the grpc server and asks for the group entry with the given gid.
 fn get_entry_by_gid(gid: gid_t) -> Response<Group> {
-    let rt = match Builder::new_current_thread().enable_all().build() {
-        Ok(rt) => rt,
-        Err(e) => {
-            error!("could not create runtime for NSS: {}", e);
-            return Response::Unavail;
-        }
-    };
-
-    rt.block_on(async {
+    super::RT.block_on(async {
         let mut client = match client::new_client().await {
             Ok(c) => c,
             Err(e) => {
@@ -88,15 +71,7 @@ fn get_entry_by_gid(gid: gid_t) -> Response<Group> {
 
 /// get_entry_by_name connects to the grpc server and asks for the group entry with the given name.
 fn get_entry_by_name(name: String) -> Response<Group> {
-    let rt = match Builder::new_current_thread().enable_all().build() {
-        Ok(rt) => rt,
-        Err(e) => {
-            error!("could not create runtime for NSS: {}", e);
-            return Response::Unavail;
-        }
-    };
-
-    rt.block_on(async {
+    super::RT.block_on(async {
         let mut client = match client::new_client().await {
             Ok(c) => c,
             Err(e) => {

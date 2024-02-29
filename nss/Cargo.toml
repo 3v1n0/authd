@@ -30,6 +30,8 @@ simple_logger = {version = "4.3.3", features = ["stderr"]}
 syslog = "6.1.0"
 ctor = "0.2.7"
 sysinfo = "0.30.5"
+async-dropper = { version = "0.3.1", features = ["tokio", "simple"] }
+async-trait = "0.1.77"
 
 [build-dependencies]
 tonic-build = "0.11.0"

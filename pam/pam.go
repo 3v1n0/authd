@@ -31,6 +31,10 @@ import (
 type pamModule struct {
 }
 
+func init() {
+	runtime.LockOSThread()
+}
+
 const (
 	// authenticationBrokerIDKey is the Key used to store the data in the
 	// PAM module for the second stage authentication to select the default
@@ -95,6 +99,7 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 
 // Authenticate is the method that is invoked during pam_authenticate request.
 func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
+	fmt.Println("START AUTHENTICATINGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG")
 	// Do not try to start authentication again if we've been already through this.
 	// Since PAM modules can be stacked, so we may suffer reentry that is fine but it should
 	// be explicitly allowed.
@@ -303,5 +308,6 @@ func (h *pamModule) CloseSession(pam.ModuleTransaction, pam.Flags, []string) err
 //
 //export go_pam_cleanup_module
 func go_pam_cleanup_module() {
-	runtime.GC()
+	fmt.Println("GOODBYE!")
+	// runtime.GC()
 }

@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <glib.h>
 
 #ifndef AUTHD_PAM_MODULES_PATH
 #  if defined(__x86_64__) && defined(__gnu_linux__)
@@ -74,12 +75,25 @@ load_module (pam_handle_t *pamh,
 {
   void *go_module;
 
+  void *foo;
+  if (pam_get_data (pamh, "go-module-loading", (const void **) &go_module) == PAM_SUCCESS) {
+    g_print("SOmething is loading already...");
+    return NULL;
+  }
+  pam_set_data (pamh, "go-module-loading", &pamh, NULL);
+
   if (pam_get_data (pamh, "go-module", (const void **) &go_module) == PAM_SUCCESS)
     return go_module;
 
+    g_print ("About to load goooooo %p\n", pamh);
+  g_usleep (G_USEC_PER_SEC * 2);
+  g_print("Sleep done\n");
+  
   go_module = dlopen (module_path, RTLD_LAZY);
   if (!go_module)
     return NULL;
+
+  g_print("loaded!!!\n");
 
   pam_set_data (pamh, "go-module", go_module, on_go_module_removed);
 
@@ -119,6 +133,7 @@ call_pam_function (pam_handle_t *pamh,
       return PAM_MODULE_UNKNOWN;
     }
 
+  g_print("Calling through %s\n", function);
   if (*sub_module == '/')
     strncpy (module_path, sub_module, PATH_MAX - 1);
   else
@@ -138,7 +153,10 @@ call_pam_function (pam_handle_t *pamh,
       return PAM_OPEN_ERR;
     }
 
-  return func (pamh, flags, argc, argv);
+  g_print("About to call function %s: %p\n", function, func);
+  int ret = func (pamh, flags, argc, argv);
+  g_print("DONE to call function %s: %p, ret: %d\n", function, func, ret);
+  return ret;
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
