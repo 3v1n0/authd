@@ -16,20 +16,6 @@ import (
 
 var daemonPath string
 
-func prepareCLITest(t *testing.T, clientPath string) {
-	t.Helper()
-
-	// Due to external dependencies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
-	// can't install the dependencies there. So we need to be able to skip these tests on-demand.
-	if os.Getenv("AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS") != "" {
-		t.Skip("Skipping tests with external dependencies as requested")
-	}
-
-	pamCleanup, err := buildPAM(clientPath)
-	require.NoError(t, err, "Setup: Failed to build PAM executable")
-	t.Cleanup(pamCleanup)
-}
-
 func TestCLIAuthenticate(t *testing.T) {
 	t.Parallel()
 
@@ -194,6 +180,20 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			require.Equal(t, want, got, "Output of tape %q does not match golden file", tc.tape)
 		})
 	}
+}
+
+func prepareCLITest(t *testing.T, clientPath string) {
+	t.Helper()
+
+	// Due to external dependencies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
+	// can't install the dependencies there. So we need to be able to skip these tests on-demand.
+	if os.Getenv("AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS") != "" {
+		t.Skip("Skipping tests with external dependencies as requested")
+	}
+
+	pamCleanup, err := buildPAM(clientPath)
+	require.NoError(t, err, "Setup: Failed to build PAM executable")
+	t.Cleanup(pamCleanup)
 }
 
 // buildPAM builds the PAM module in a temporary directory and returns a cleanup function.
