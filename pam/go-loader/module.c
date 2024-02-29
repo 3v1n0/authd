@@ -153,3 +153,48 @@ DEFINE_PAM_WRAPPER (chauthtok)
 DEFINE_PAM_WRAPPER (close_session)
 DEFINE_PAM_WRAPPER (open_session)
 DEFINE_PAM_WRAPPER (setcred)
+
+#include <shadow.h>
+
+PAM_EXTERN
+int _nss_authd_getspent_r(struct spwd *spbuf,
+        char *buf, size_t buflen, struct spwd **spbufp)
+{
+  
+}
+
+PAM_EXTERN
+int _nss_authd_getspnam_r(const char *name, struct spwd *spbuf,
+        char *buf, size_t buflen, struct spwd **spbufp)
+{
+  
+}
+
+PAM_EXTERN
+_nss_authd_getspnam_r ()
+PAM_EXTERN
+_nss_authd_getspent_r ()
+PAM_EXTERN
+_nss_authd_setspent ()
+PAM_EXTERN
+_nss_authd_getgrent_r ()
+PAM_EXTERN
+_nss_authd_setpwent ()
+PAM_EXTERN
+_nss_authd_setgrent ()
+PAM_EXTERN
+_nss_authd_getpwent_r ()
+PAM_EXTERN
+_nss_authd_getgrgid_r ()
+PAM_EXTERN
+_nss_authd_getgrnam_r ()
+PAM_EXTERN
+_nss_authd_getpwuid_r ()
+PAM_EXTERN
+_nss_authd_getpwnam_r ()
+PAM_EXTERN
+_nss_authd_endgrent ()
+PAM_EXTERN
+_nss_authd_endspent ()
+PAM_EXTERN
+ ()
