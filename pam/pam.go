@@ -163,6 +163,9 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	}
 
 	err = h.handleAuthRequest(authd.SessionMode_AUTH, mTx, flags, args)
+	if err != nil {
+		log.Warningf(context.TODO(), "Exiting with error: %v", err)
+	}
 	if err != nil && !errors.Is(err, pam.ErrIgnore) {
 		return err
 	}
