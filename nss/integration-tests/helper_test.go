@@ -74,7 +74,8 @@ func outNSSCommandForLib(t *testing.T, socketPath, originOut string, shouldPreCh
 	}
 
 	if shouldPreCheck {
-		cmd.Env = append(cmd.Env, "AUTHD_NSS_SHOULD_PRE_CHECK=1")
+		// Simulate to be under SSH, that implies doing a pre-check.
+		cmd.Env = append(cmd.Env, "SSH_CONNECTION=localhost")
 	}
 
 	var out bytes.Buffer
