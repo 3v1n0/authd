@@ -112,7 +112,8 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		}
 		gh.brokerID = gh.brokersInfos[idx].Id
 		gh.t.Logf("Using broker '%s'", gh.brokersInfos[idx].Name)
-		require.Equal(gh.t, gh.selectedBrokerName, gh.brokersInfos[idx].Name)
+		require.Equal(gh.t, gh.selectedBrokerName, gh.brokersInfos[idx].Name,
+			"Selected broker name does not match expected one")
 
 	case *gdm.EventData_AuthModesReceived:
 		gh.authModes = ev.AuthModesReceived.AuthModes
@@ -137,7 +138,8 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 			return fmt.Errorf("unexpected authentication started with mode '%s', we've nothing to reply",
 				gh.authModeID)
 		}
-		require.Equal(gh.t, gh.selectedAuthModeIDs[0], gh.authModes[idx].Id)
+		require.Equal(gh.t, gh.selectedAuthModeIDs[0], gh.authModes[idx].Id,
+			"Selected authentication mode ID does not match expected one")
 		gh.selectedAuthModeIDs = slices.Delete(gh.selectedAuthModeIDs, 0, 1)
 
 	case *gdm.EventData_AuthEvent:
