@@ -63,7 +63,7 @@ func TestSetLevelHandler(t *testing.T) {
 	t.Cleanup(func() {
 		log.SetLevel(defaultLevel)
 		for _, level := range supportedLevels {
-			log.SetLevelHandler(level, nil)
+			log.SetLevelHandler(context.TODO(), level, nil)
 		}
 	})
 
@@ -72,7 +72,7 @@ func TestSetLevelHandler(t *testing.T) {
 			handlerCalled := false
 			wantArgs := []any{true, 5.5, []string{"bar"}}
 			wantCtx := context.TODO()
-			log.SetLevelHandler(level, func(ctx context.Context, l log.Level, format string, args ...interface{}) {
+			log.SetLevelHandler(context.TODO(), level, func(ctx context.Context, l log.Level, format string, args ...interface{}) {
 				handlerCalled = true
 				require.Equal(t, wantCtx, ctx)
 				require.Equal(t, level, l)
@@ -89,7 +89,7 @@ func TestSetLevelHandler(t *testing.T) {
 			require.False(t, handlerCalled)
 
 			handlerCalled = false
-			log.SetLevelHandler(level, nil)
+			log.SetLevelHandler(context.TODO(), level, nil)
 
 			callLogHandler(wantCtx, level, wantArgs...)
 			require.False(t, handlerCalled)
@@ -102,7 +102,7 @@ func TestSetLevelHandler(t *testing.T) {
 			wantArgs := []any{true, 5.5, []string{"bar"}}
 			wantFormat := "Bool is %v, float is %f, array is %v"
 			wantCtx := context.TODO()
-			log.SetLevelHandler(level, func(ctx context.Context, l log.Level, format string, args ...interface{}) {
+			log.SetLevelHandler(context.TODO(), level, func(ctx context.Context, l log.Level, format string, args ...interface{}) {
 				handlerCalled = true
 				require.Equal(t, wantCtx, ctx)
 				require.Equal(t, level, l)
@@ -118,21 +118,21 @@ func TestSetLevelHandler(t *testing.T) {
 			require.False(t, handlerCalled)
 
 			handlerCalled = false
-			log.SetLevelHandler(level, nil)
+			log.SetLevelHandler(context.TODO(), level, nil)
 
 			callLogHandlerf(wantCtx, level, wantFormat, wantArgs...)
 			require.False(t, handlerCalled)
 		})
 	}
 
-	log.SetLevelHandler(log.Level(99999999), nil)
+	log.SetLevelHandler(context.TODO(), log.Level(99999999), nil)
 }
 
 func TestSetHandler(t *testing.T) {
 	defaultLevel := log.GetLevel()
 	t.Cleanup(func() {
 		log.SetLevel(defaultLevel)
-		log.SetHandler(nil)
+		log.SetHandler(context.TODO(), nil)
 	})
 
 	handlerCalled := false
@@ -140,7 +140,7 @@ func TestSetHandler(t *testing.T) {
 	wantArgs := []any{true, 5.5, []string{"bar"}}
 	wantCtx := context.TODO()
 
-	log.SetHandler(func(ctx context.Context, l log.Level, format string, args ...interface{}) {
+	log.SetHandler(context.TODO(), func(ctx context.Context, l log.Level, format string, args ...interface{}) {
 		handlerCalled = true
 		require.Equal(t, wantCtx, ctx)
 		require.Equal(t, wantLevel, l)
@@ -161,7 +161,7 @@ func TestSetHandler(t *testing.T) {
 		require.False(t, handlerCalled)
 	}
 
-	log.SetHandler(nil)
+	log.SetHandler(context.TODO(), nil)
 	for _, level := range supportedLevels {
 		t.Run(fmt.Sprintf("Set log handler, ignoring level %s", level), func(t *testing.T) {})
 
@@ -173,7 +173,7 @@ func TestSetHandler(t *testing.T) {
 	}
 
 	wantFormat := "Bool is %v, float is %f, array is %v"
-	log.SetHandler(func(ctx context.Context, l log.Level, format string, args ...interface{}) {
+	log.SetHandler(context.TODO(), func(ctx context.Context, l log.Level, format string, args ...interface{}) {
 		handlerCalled = true
 		require.Equal(t, wantCtx, ctx)
 		require.Equal(t, wantLevel, l)
@@ -195,7 +195,7 @@ func TestSetHandler(t *testing.T) {
 		require.False(t, handlerCalled)
 	}
 
-	log.SetHandler(nil)
+	log.SetHandler(context.TODO(), nil)
 	for _, level := range supportedLevels {
 		t.Run(fmt.Sprintf("Set log handler, ignoring level %s", level), func(t *testing.T) {})
 

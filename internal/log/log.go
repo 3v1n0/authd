@@ -54,17 +54,29 @@ func logFuncAdapter(logrusFunc func(args ...interface{})) Handler {
 	}
 }
 
-var defaultHandlers = map[Level]Handler{
+type handlersMap map[Level]Handler
+
+var defaultHandlers = handlersMap{
 	DebugLevel: logFuncAdapter(logrus.Debug),
 	InfoLevel:  logFuncAdapter(logrus.Info),
 	WarnLevel:  logFuncAdapter(logrus.Warn),
 	ErrorLevel: logFuncAdapter(logrus.Error),
 }
-var handlers = maps.Clone(defaultHandlers)
+var handlers = map[context.Context]handlersMap{}
 var handlersMu = sync.RWMutex{}
 
+func ensureHandlers(ctx context.Context) handlersMap {
+	contextHandlers, ok := handlers[ctx]
+	if ok {
+		return contextHandlers
+	}
+	contextHandlers = make(map[logrus.Level]Handler)
+	handlers[ctx] = contextHandlers
+	return contextHandlers
+}
+
 // SetLevelHandler allows to define the default handler function for a given level.
-func SetLevelHandler(level Level, handler Handler) {
+func SetLevelHandler(ctx context.Context, level Level, handler Handler) {
 	handlersMu.Lock()
 	defer handlersMu.Unlock()
 	if handler == nil {
@@ -74,19 +86,21 @@ func SetLevelHandler(level Level, handler Handler) {
 		}
 		handler = h
 	}
-	handlers[level] = handler
+	ensureHandlers(ctx)[level] = handler
 }
 
 // SetHandler allows to define the default handler function for all log levels.
-func SetHandler(handler Handler) {
+func SetHandler(ctx context.Context, handler Handler) {
 	handlersMu.Lock()
 	defer handlersMu.Unlock()
+	ensureHandlers(ctx)
 	if handler == nil {
-		handlers = maps.Clone(defaultHandlers)
+		handlers[ctx] = maps.Clone(defaultHandlers)
 		return
 	}
+	contextHandlers := handlers[ctx]
 	for _, level := range logrus.AllLevels {
-		handlers[level] = handler
+		contextHandlers[level] = handler
 	}
 }
 
@@ -104,8 +118,20 @@ func logf(context context.Context, level Level, format string, args ...interface
 	}
 
 	handlersMu.RLock()
-	handler := handlers[level]
+	contextHandlers, ok := handlers[context]
+	if !ok {
+		contextHandlers = defaultHandlers
+	}
+
+	handler, ok := contextHandlers[level]
+	if !ok {
+		handler = defaultHandlers[level]
+	}
 	handlersMu.RUnlock()
+
+	if handler == nil {
+		return
+	}
 
 	handler(context, level, format, args...)
 }
