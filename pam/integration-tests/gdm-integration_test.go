@@ -270,8 +270,8 @@ func testGdmModule(t *testing.T, libPath string, args []string) {
 	for name, tc := range testCases {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
-			t.Cleanup(pam_test.MaybeDoLeakCheck)
 			t.Parallel()
+			t.Cleanup(pam_test.MaybeDoLeakCheck)
 
 			// We run a daemon for each test, because here we don't want to
 			// make assumptions whether the state of the broker and each test
