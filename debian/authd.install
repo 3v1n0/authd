@@ -15,4 +15,4 @@ ${env:BUILT_PAM_LIBS_PATH}/go-loader/pam_authd_loader.so ${env:AUTHD_PAM_MODULES
 ${env:BUILT_PAM_LIBS_PATH}/go-exec/pam_authd_exec.so ${env:AUTHD_PAM_MODULES_PATH}
 
 # Install NSS library with right soname
-target/${DEB_HOST_RUST_TYPE}/release/libnss_authd.so => /usr/lib/${DEB_TARGET_GNU_TYPE}/libnss_authd.so.2
+target/${env:DEB_HOST_RUST_TYPE}/release/libnss_authd.so => /usr/lib/${env:DEB_TARGET_GNU_TYPE}/libnss_authd.so.2
