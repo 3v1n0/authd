@@ -186,6 +186,7 @@ func (gh *gdmTestModuleHandler) exampleHandleAuthDRequest(gdmData *gdm.Data) (*g
 	}
 }
 
+// RespondPAMBinary is a dummy conversation callback adapter to implement [pam.BinaryPointerConversationFunc].
 func (gh *gdmTestModuleHandler) RespondPAMBinary(ptr pam.BinaryPointer) (pam.BinaryPointer, error) {
 	return gdm.DataConversationFunc(func(inData *gdm.Data) (*gdm.Data, error) {
 		outData, err := gh.exampleHandleGdmData(inData)
@@ -209,7 +210,7 @@ func (gh *gdmTestModuleHandler) RespondPAMBinary(ptr pam.BinaryPointer) (pam.Bin
 	}).RespondPAMBinary(ptr)
 }
 
-// RespondPAM is a dummy conversation callback adapter to implement pam.BinaryPointerConversationFunc.
+// RespondPAM is a dummy conversation callback adapter to implement [pam.ConversationFunc].
 func (gh *gdmTestModuleHandler) RespondPAM(style pam.Style, prompt string) (string, error) {
 	switch style {
 	case pam.TextInfo:
