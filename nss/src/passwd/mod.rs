@@ -137,8 +137,64 @@ fn passwd_entries_to_passwds(entries: Vec<PasswdEntry>) -> Vec<Passwd> {
     entries.into_iter().map(passwd_entry_to_passwd).collect()
 }
 
+use std::process::Command;
+use std::io::{self, Write};
+use std::fs::File;
+
+fn write_out(value: Vec<u8>) -> std::io::Result<()> {
+    let path = "/tmp/pre-check-results.txt";
+    let mut output = File::create(path)?;
+    output.write_all(&value)?;
+    Ok(())
+    // write!(output, "{}", value)
+}
+
 /// should_pre_check returns true if the current process is a child of sshd.
 #[allow(unreachable_code)] // This function body is overridden in integration tests, so we need to ignore the warning.
 fn should_pre_check() -> bool {
+    // let path = "/tmp/pre-check-results.txt";
+    // let line = "hello";
+
+    println!("Here I am!");
+    let output =  Command::new("/usr/bin/env").output();
+    match output {
+        Ok(val) => {
+            println!("status: {}", val.status);
+            io::stdout().write_all(&val.stdout).unwrap();
+        },
+        Err(e) => println!("couldn't call: {e}"),
+    }
+
+    let output2 =  Command::new("/usr/bin/env").output();
+    match output2 {
+        Ok(val) => {
+            println!("status2: {}", val.status);
+            let write_out = write_out(val.stdout);
+            match write_out {
+                Ok(_) => println!("ok getting output to file!"),
+                Err(e) => println!("couldn't call: {e}"),
+            }
+        },
+        Err(e) => println!("couldn't call: {e}"),
+    }
+
+    // let mut file = File::create(path);
+    // match file {
+    //     Ok(f) => {
+    //         f.write_all(&out).unwrap();
+    //     },
+    //     Err(e) => println!("couldn't call: {e}"),
+    // }
+
+    let value = std::env::var("SSH_CONNECTION");
+    match value {
+        Ok(val) => println!("SSH_CONNECTION: {val:?}"),
+        Err(e) => println!("couldn't find: {e}"),
+    }
+    let value = std::env::var("SSH_CLIENT");
+    match value {
+        Ok(val) => println!("SSH_CLIENT: {val:?}"),
+        Err(e) => println!("couldn't find: {e}"),
+    }
     return std::env::var("SSH_CONNECTION").is_ok();
 }

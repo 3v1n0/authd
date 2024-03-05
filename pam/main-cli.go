@@ -56,6 +56,14 @@ func main() {
 	user, _ := mTx.GetItem(pam.User)
 
 	printPamResult(fmt.Sprintf(resultMsg, user), pamRes)
+	if pamRes != nil {
+		var pamError pam.Error
+		if errors.As(err, &pamError) {
+			os.Exit(int(pamError))
+		}
+		os.Exit(1)
+	}
+	os.Exit(0)
 
 	// Simulate setting auth broker as default.
 	printPamResult("PAM AcctMgmt()", module.AcctMgmt(mTx, pam.Flags(0), args))

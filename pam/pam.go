@@ -20,7 +20,6 @@ import (
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/adapter"
 	"github.com/ubuntu/authd/pam/internal/gdm"
-	"golang.org/x/term"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
@@ -98,6 +97,7 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 	// Do not try to start authentication again if we've been already through this.
 	// Since PAM modules can be stacked, so we may suffer reentry that is fine but it should
 	// be explicitly allowed.
+	fmt.Println("Authenticating...")
 	_, err := mTx.GetData(alreadyAuthenticatedKey)
 	if err == nil && parseArgs(args)["force_reauth"] != "true" {
 		return pam.ErrIgnore
@@ -118,6 +118,7 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 
 // ChangeAuthTok is the method that is invoked during pam_sm_chauthtok request.
 func (h *pamModule) ChangeAuthTok(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
+	fmt.Println("Authenticating...")
 	return h.handleAuthRequest(authd.SessionMode_PASSWD, mTx, flags, args)
 }
 
@@ -149,11 +150,13 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 			tea.WithoutCatchPanics(),
 			tea.WithOutput(devNull),
 		)
-	} else if term.IsTerminal(int(os.Stdin.Fd())) {
-		pamClientType = adapter.InteractiveTerminal
+		// } else if term.IsTerminal(int(os.Stdin.Fd())) {
 	} else {
-		return fmt.Errorf("pam module used through an unsupported client: %w", pam.ErrSystem)
+		pamClientType = adapter.InteractiveTerminal
 	}
+	// } else {
+	// 	return fmt.Errorf("pam module used through an unsupported client: %w", pam.ErrSystem)
+	// }
 
 	client, closeConn, err := newClient(parseArgs(args))
 	if err != nil {
