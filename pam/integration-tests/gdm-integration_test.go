@@ -39,7 +39,7 @@ const (
 //nolint:thelper // This is actually a test!
 func testGdmModule(t *testing.T, libPath string, args []string) {
 	if !pam.CheckPamHasStartConfdir() {
-		t.Skip("can't test with this libpam version!")
+		t.Fatal("can't test with this libpam version!")
 	}
 
 	require.True(t, pam.CheckPamHasBinaryProtocol(),
