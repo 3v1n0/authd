@@ -162,6 +162,9 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 		return err
 	}
 
+	// fmt.Println("Using authentication for service")
+	// fmt.Println(mTx.GetItem(pam.Service))
+
 	err = h.handleAuthRequest(authd.SessionMode_AUTH, mTx, flags, args)
 	if err != nil && !errors.Is(err, pam.ErrIgnore) {
 		return err

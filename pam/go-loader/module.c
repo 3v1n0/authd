@@ -21,12 +21,12 @@
  */
 
 #include <dlfcn.h>
-#include <limits.h>
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <glib.h>
 
 #ifndef AUTHD_PAM_MODULES_PATH
 #  if defined(__x86_64__) && defined(__gnu_linux__)
@@ -36,6 +36,12 @@
 #    error "Can't build without a AUTHD_PAM_MODULES_PATH defined"
 #  endif
 #endif
+
+/* If this fails then our assumptions on using the return value as the pam
+ * exit status is not valid anymore, so we need to refactor things to use
+ * another way to communicate the exit status.
+ */
+G_STATIC_ASSERT (_PAM_RETURN_VALUES < 255);
 
 /* When a Go shared library is loaded from C, go starts various goroutine
  * (as init() at first) and if the loading code is then performing a fork

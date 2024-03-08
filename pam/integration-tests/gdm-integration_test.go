@@ -383,12 +383,24 @@ func buildPAMModule(t *testing.T) string {
 	return libPath
 }
 
+func getPkgConfigFlags(t *testing.T, args []string) []string {
+	t.Helper()
+
+	out, err := exec.Command("pkg-config", args...).CombinedOutput()
+	require.NoError(t, err)
+	return strings.Split(strings.TrimSpace(string(out)), " ")
+}
+
 func buildPAMWrapperModule(t *testing.T) string {
 	t.Helper()
 
 	compiler := os.Getenv("CC")
 	if compiler == "" {
 		compiler = "cc"
+	}
+
+	pkgConfigDeps := []string{
+		"glib-2.0",
 	}
 
 	//nolint:gosec // G204 it's a test so we should allow using any compiler safely.
@@ -404,6 +416,8 @@ func buildPAMWrapperModule(t *testing.T) string {
 		"-g3",
 		"-O0",
 	}...)
+	cmd.Args = append(cmd.Args,
+		getPkgConfigFlags(t, append([]string{"--cflags"}, pkgConfigDeps...))...)
 
 	if modulesPath := os.Getenv("AUTHD_PAM_MODULES_PATH"); modulesPath != "" {
 		cmd.Args = append(cmd.Args, fmt.Sprintf("-DAUTHD_PAM_MODULES_PATH=%q",
@@ -425,6 +439,9 @@ func buildPAMWrapperModule(t *testing.T) string {
 		"-Wl,-soname," + soname + "",
 		"-lpam",
 	}...)
+	cmd.Args = append(cmd.Args,
+		getPkgConfigFlags(t, append([]string{"--libs"}, pkgConfigDeps...))...)
+
 	if ldflags := os.Getenv("LDFLAGS"); ldflags != "" && os.Getenv("DEB_BUILD_ARCH") == "" {
 		cmd.Args = append(cmd.Args, strings.Split(ldflags, " ")...)
 	}
