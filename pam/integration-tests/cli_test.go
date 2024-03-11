@@ -235,7 +235,7 @@ func TestPamCLIRunStandalone(t *testing.T) {
 	outStr := string(out)
 	t.Log(outStr)
 
-	require.Contains(t, outStr, pam.ErrSystem.Error())
+	require.Contains(t, outStr, pam.ErrAuthinfoUnavail.Error())
 	require.Contains(t, outStr, pam.ErrIgnore.Error())
 }
 
