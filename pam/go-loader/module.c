@@ -56,7 +56,7 @@ typedef int (*PamHandler)(pam_handle_t *,
                           const char **argv);
 
 static void
-on_go_module_removed (pam_handle_t *pamh,
+on_exec_module_removed (pam_handle_t *pamh,
                       void         *go_module,
                       int           error_status)
 {
@@ -81,7 +81,7 @@ load_module (pam_handle_t *pamh,
   if (!go_module)
     return NULL;
 
-  pam_set_data (pamh, "go-module", go_module, on_go_module_removed);
+  pam_set_data (pamh, "go-module", go_module, on_exec_module_removed);
 
   void (*init_module) (void);
   *(void **) (&init_module) = dlsym (go_module, "go_pam_init_module");

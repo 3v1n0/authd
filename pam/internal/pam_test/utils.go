@@ -70,3 +70,23 @@ func cBytesToBytes(ptr pam.BinaryPointer, size int) []byte {
 func releaseCBytesPointer(ptr pam.BinaryPointer) {
 	C.free(unsafe.Pointer(ptr))
 }
+
+// ErrorTest is like pam.Error but we redefine some hopefully unused errors to values for testing purposes.
+type ErrorTest pam.Error
+
+const (
+	// ErrorInvalid is an invalid error value.
+	ErrorInvalid = pam.ErrAbort
+
+	// ErrorInvalidMethod is used on invalid method calls.
+	ErrorInvalidMethod = pam.ErrCredInsufficient
+
+	// ErrorReturnMismatch is used on unexpected return values.
+	ErrorReturnMismatch = pam.ErrCred
+
+	// ErrorInvalidArguments is used on invalid arguments.
+	ErrorInvalidArguments = pam.ErrAuthtokDisableAging
+
+	// ErrorArgumentTypeMismatch is used on invalid arguments types.
+	ErrorArgumentTypeMismatch = pam.ErrAuthtokLockBusy
+)

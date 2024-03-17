@@ -278,6 +278,7 @@ func testGdmModule(t *testing.T, libPath string, args []string) {
 			ctx, cancel := context.WithCancel(context.Background())
 			socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath,
 				testutils.WithEnvironment(grouptests.GPasswdMockEnv(t, gpasswdOutput, groupsFile)...),
+				testutils.WithWaitForBroker(exampleBrokerName),
 			)
 			t.Cleanup(func() {
 				cancel()
@@ -377,12 +378,33 @@ func buildPAMModule(t *testing.T) string {
 
 	cmd.Args = append(cmd.Args, "-tags=pam_debug,pam_gdm_debug", "-o", libPath)
 	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out), "Setup: could not compile PAM module")
+	require.NoError(t, err, "Setup: could not compile PAM module: %s", out)
+	if string(out) != "" {
+		t.Log(string(out))
+	}
 
 	return libPath
 }
 
 func buildPAMWrapperModule(t *testing.T) string {
+	t.Helper()
+
+	// pkgConfigDeps := []string{
+	// 	"glib-2.0",
+	// }
+
+	return buildCPAMModule(t, []string{"../go-loader/module.c"}, nil, "pam_authd_loader")
+}
+
+func getPkgConfigFlags(t *testing.T, args []string) []string {
+	t.Helper()
+
+	out, err := exec.Command("pkg-config", args...).CombinedOutput()
+	require.NoError(t, err, "Can't run pkg-config: %s", out)
+	return strings.Split(strings.TrimSpace(string(out)), " ")
+}
+
+func buildCPAMModule(t *testing.T, sources []string, pkgConfigDeps []string, soname string) string {
 	t.Helper()
 
 	compiler := os.Getenv("CC")
@@ -392,18 +414,22 @@ func buildPAMWrapperModule(t *testing.T) string {
 
 	//nolint:gosec // G204 it's a test so we should allow using any compiler safely.
 	cmd := exec.Command(compiler)
-	soname := "pam_authd_loader"
 	libPath := filepath.Join(t.TempDir(), soname+".so")
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(libPath), 0700),
 		"Setup: Can't create loader build path")
 	t.Logf("Compiling PAM Wrapper library at %s", libPath)
-	cmd.Args = append(cmd.Args, []string{
-		"-o", libPath,
-		"../go-loader/module.c",
+	cmd.Args = append(cmd.Args, "-o", libPath)
+	cmd.Args = append(cmd.Args, sources...)
+	cmd.Args = append(cmd.Args,
+		"-Wall",
 		"-g3",
 		"-O0",
-	}...)
+	)
+	if len(pkgConfigDeps) > 0 {
+		cmd.Args = append(cmd.Args,
+			getPkgConfigFlags(t, append([]string{"--cflags"}, pkgConfigDeps...))...)
+	}
 
 	if modulesPath := os.Getenv("AUTHD_PAM_MODULES_PATH"); modulesPath != "" {
 		cmd.Args = append(cmd.Args, fmt.Sprintf("-DAUTHD_PAM_MODULES_PATH=%q",
@@ -425,6 +451,11 @@ func buildPAMWrapperModule(t *testing.T) string {
 		"-Wl,-soname," + soname + "",
 		"-lpam",
 	}...)
+	if len(pkgConfigDeps) > 0 {
+		cmd.Args = append(cmd.Args,
+			getPkgConfigFlags(t, append([]string{"--libs"}, pkgConfigDeps...))...)
+	}
+
 	if ldflags := os.Getenv("LDFLAGS"); ldflags != "" && os.Getenv("DEB_BUILD_ARCH") == "" {
 		cmd.Args = append(cmd.Args, strings.Split(ldflags, " ")...)
 	}
@@ -432,24 +463,44 @@ func buildPAMWrapperModule(t *testing.T) string {
 	if testutils.CoverDir() != "" {
 		cmd.Args = append(cmd.Args, "--coverage")
 		cmd.Args = append(cmd.Args, "-fprofile-abs-path")
+		// cmd.Args = append(cmd.Args, "-fprofile-dir=", filepath.Dir(libPath))
+
+		notesFilename := soname + ".so-module.gcno"
+		dataFilename := soname + ".so-module.gcda"
 
 		t.Cleanup(func() {
+			ls, _ := exec.Command("ls", "-lht", filepath.Dir(libPath)).CombinedOutput()
+			fmt.Println(string(ls))
 			t.Log("Running gcov...")
 			gcov := exec.Command("gcov")
 			gcov.Args = append(gcov.Args,
 				"-pb", "-o", filepath.Dir(libPath),
-				soname+".so-module.gcno")
+				notesFilename)
 			gcov.Dir = testutils.CoverDir()
 			out, err := gcov.CombinedOutput()
-			require.NoError(t, err, string(out),
-				"Teardown: Can't get coverage report on C library")
+			require.NoError(t, err,
+				"Teardown: Can't get coverage report on C library: %s", out)
 			t.Log(string(out))
+
+			// Also keep track of notes and data files as they're useful to generate
+			// an html output locally using geninfo + genhtml.
+			err = os.Rename(filepath.Join(filepath.Dir(libPath), dataFilename),
+				filepath.Join(testutils.CoverDir(), dataFilename))
+			require.NoError(t, err,
+				"Teardown: Can't move coverage report for c Library: %v", err)
+			err = os.Rename(filepath.Join(filepath.Dir(libPath), notesFilename),
+				filepath.Join(testutils.CoverDir(), notesFilename))
+			require.NoError(t, err,
+				"Teardown: Can't move coverage report for c Library: %v", err)
 		})
 	}
 
 	t.Logf("Running compiler command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
 	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out), "Setup: could not compile PAM module wrapper")
+	require.NoError(t, err, "Setup: could not compile PAM module %s: %s", soname, out)
+	if string(out) != "" {
+		t.Log(string(out))
+	}
 
 	return libPath
 }
@@ -460,11 +511,20 @@ func createServiceFile(t *testing.T, name string, libPath string, args []string,
 	serviceFile := filepath.Join(t.TempDir(), name)
 	t.Logf("Creating service file at %s", serviceFile)
 
+	for idx, arg := range args {
+		args[idx] = fmt.Sprintf("[%s]", strings.ReplaceAll(arg, "]", "\\]"))
+	}
+
 	err := os.WriteFile(serviceFile,
 		[]byte(fmt.Sprintf(`auth [success=done ignore=ignore default=die] %[1]s %[2]s
 auth requisite pam_debug.so auth=%[3]s
 account [success=done ignore=ignore default=die] %[1]s %[2]s
-account requisite pam_debug.so acct=%[3]s`, libPath, strings.Join(args, " "), ignoreError)),
+account requisite pam_debug.so acct=%[3]s
+session [success=done ignore=ignore default=die] %[1]s %[2]s
+session requisite pam_debug.so acct=%[3]s
+password [success=done ignore=ignore default=die] %[1]s %[2]s
+password requisite pam_debug.so acct=%[3]s`,
+			libPath, strings.Join(args, " "), ignoreError)),
 		0600)
 	require.NoError(t, err, "Setup: could not create service file")
 	return serviceFile
