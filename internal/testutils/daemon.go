@@ -6,21 +6,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type daemonOptions struct {
-	cachePath  string
-	existentDB string
-	socketPath string
-	env        []string
+	cachePath     string
+	existentDB    string
+	socketPath    string
+	waitForBroker string
+	env           []string
 }
 
 // DaemonOption represents an optional function that can be used to override some of the daemon default values.
@@ -51,6 +54,13 @@ func WithSocketPath(path string) DaemonOption {
 func WithEnvironment(env ...string) DaemonOption {
 	return func(o *daemonOptions) {
 		o.env = env
+	}
+}
+
+// WithWaitForBroker requires to wait until the broker is available.
+func WithWaitForBroker(brokerName string) DaemonOption {
+	return func(o *daemonOptions) {
+		o.waitForBroker = brokerName
 	}
 }
 
@@ -123,6 +133,31 @@ paths:
 		// Since this is not production code, we should be fine with using it.
 		conn.WaitForStateChange(waitCtx, conn.GetState())
 		require.NoError(t, waitCtx.Err(), "Setup: wait for daemon to be ready timed out")
+	}
+
+	if opts.waitForBroker == "" {
+		return opts.socketPath, stopped
+	}
+
+	done := make(chan struct{})
+	go func() {
+		client := authd.NewPAMClient(conn)
+		brokers, err := client.AvailableBrokers(ctx, &authd.Empty{})
+		require.NoError(t, err, "Setup: can't get available brokers")
+
+		if !slices.ContainsFunc(brokers.BrokersInfos, func(bi *authd.ABResponse_BrokerInfo) bool {
+			return bi.Name == opts.waitForBroker
+		}) {
+			return
+		}
+
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second * 3):
+		t.Fatalf("Setup no broker %s found in time", opts.waitForBroker)
 	}
 
 	return opts.socketPath, stopped
