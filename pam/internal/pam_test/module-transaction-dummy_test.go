@@ -101,8 +101,9 @@ func TestSetPutEnv(t *testing.T) {
 		},
 
 		"Unset a not-previously set value": {
-			env:       "NEVER_SET_ENV",
-			wantValue: ptrValue(""),
+			env:          "NEVER_SET_ENV",
+			wantPutError: pam.ErrBadItem,
+			wantValue:    ptrValue(""),
 		},
 
 		"Unset a preset value": {
