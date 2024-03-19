@@ -560,12 +560,7 @@ func TestExecModule(t *testing.T) {
 func preparePamTransaction(t *testing.T, libPath string, moduleArgs []string, user string) *pam.Transaction {
 	t.Helper()
 
-	// libpam won't ever return a pam.ErrIgnore, so we use a fallback error.
-	// We use incomplete here, but it could be any.
-	const pamDebugIgnoreError = "incomplete"
-
-	serviceFile := createServiceFile(t, "exec-module", libPath, moduleArgs,
-		pamDebugIgnoreError)
+	serviceFile := createServiceFile(t, "exec-module", libPath, moduleArgs)
 	tx, err := pam.StartConfDir(filepath.Base(serviceFile), user, nil, filepath.Dir(serviceFile))
 	require.NoError(t, err, "PAM: Error to initialize module")
 	require.NotNil(t, tx, "PAM: Transaction is not set")
