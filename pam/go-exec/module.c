@@ -690,7 +690,8 @@ handle_module_options (int argc, const
   args = g_ptr_array_new_full (argc, g_free);
   argc = g_strv_length (args_strv);
   for (int i = 1; i < argc; ++i)
-    g_ptr_array_add (args, g_steal_pointer (&args_strv[i]));
+    if (!g_str_equal (args_strv[i], "--"))
+      g_ptr_array_add (args, g_steal_pointer (&args_strv[i]));
 
   if (out_args)
     *out_args = g_steal_pointer (&args);
@@ -738,13 +739,13 @@ do_pam_action (pam_handle_t *pamh,
 
       for (int i = 0; i < argc; ++i)
         {
-          g_string_append (str_args, argv[i]);
+          g_string_append_printf (str_args, "'%s'", argv[i]);
 
           if (i < argc - 1)
             g_string_append_c (str_args, ' ');
         }
 
-      g_debug ("Called with arguments '%s'", str_args->str);
+      g_debug ("Called with arguments: %s", str_args->str);
     }
 
   module_data = setup_shared_module_data (pamh);
