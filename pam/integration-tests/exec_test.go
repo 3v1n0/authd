@@ -554,46 +554,65 @@ func TestExecModule(t *testing.T) {
 	}
 }
 
-func getModuleArgs(clientPath string, args []string) []string {
-	moduleArgs := []string{"--debug"}
+func getModuleArgs(clientPath string, args []string, moduleLog string, clientLog string) []string {
+	// moduleArgs = slices.Insert(slices.Clone(moduleArgs), 1, fmt.Sprintf("-client-log=%s", clientLog))
+	moduleArgs := []string{"--debug", fmt.Sprintf("--log-file=%s", moduleLog)}
 	if env := testutils.CoverDirEnv(); env != "" {
-		moduleArgs = append(moduleArgs, "-e", testutils.CoverDirEnv())
+		moduleArgs = append(moduleArgs, "--env="+testutils.CoverDirEnv())
 	}
-	moduleArgs = append(moduleArgs, clientPath)
+	moduleArgs = append(moduleArgs, clientPath, "--", "-client-log", clientLog)
 	return append(moduleArgs, args...)
 }
 
 func preparePamTransaction(t *testing.T, libPath string, clientPath string, args []string, user string) *pam.Transaction {
 	t.Helper()
 
-	serviceFile := createServiceFile(t, "exec-module", libPath, getModuleArgs(clientPath, args))
+	moduleLog := filepath.Join(t.TempDir(), "module.log")
+	clientLog := filepath.Join(t.TempDir(), "client.log")
+	moduleArgs := getModuleArgs(clientPath, args, moduleLog, clientLog)
+
+	serviceFile := createServiceFile(t, "exec-module", libPath, moduleArgs)
 	tx, err := pam.StartConfDir(filepath.Base(serviceFile), user, nil, filepath.Dir(serviceFile))
 	require.NoError(t, err, "PAM: Error to initialize module")
 	require.NotNil(t, tx, "PAM: Transaction is not set")
 	t.Cleanup(func() { require.NoError(t, tx.End(), "PAM: can't end transaction") })
 
-	return preparePamTransactionForServiceFile(t, serviceFile, user)
+	return preparePamTransactionForServiceFile(t, serviceFile, user, []string{moduleLog, clientLog})
 }
 
 func preparePamTransactionWithActionArgs(t *testing.T, libPath string, clientPath string, actionArgs actionArgsMap, user string) *pam.Transaction {
 	t.Helper()
 
+	moduleLog := filepath.Join(t.TempDir(), "module.log")
+	clientLog := filepath.Join(t.TempDir(), "client.log")
+
 	actionArgs = maps.Clone(actionArgs)
 	for a := range actionArgs {
-		actionArgs[a] = getModuleArgs(clientPath, actionArgs[a])
+		actionArgs[a] = getModuleArgs(clientPath, actionArgs[a], moduleLog, clientLog)
 	}
 
 	serviceFile := createServiceFileWithActionArgs(t, "exec-module", libPath, actionArgs)
-	return preparePamTransactionForServiceFile(t, serviceFile, user)
+	return preparePamTransactionForServiceFile(t, serviceFile, user, []string{moduleLog, clientLog})
 }
 
-func preparePamTransactionForServiceFile(t *testing.T, serviceFile string, user string) *pam.Transaction {
+func preparePamTransactionForServiceFile(t *testing.T, serviceFile string, user string, logFiles []string) *pam.Transaction {
 	t.Helper()
 
 	tx, err := pam.StartConfDir(filepath.Base(serviceFile), user, nil, filepath.Dir(serviceFile))
 	require.NoError(t, err, "PAM: Error to initialize module")
 	require.NotNil(t, tx, "PAM: Transaction is not set")
 	t.Cleanup(func() { require.NoError(t, tx.End(), "PAM: can't end transaction") })
+	t.Cleanup(func() {
+		for _, logFile := range logFiles {
+			t.Logf("== %s ==", logFile)
+			content, err := os.ReadFile(logFile)
+			if os.IsNotExist(err) {
+				return
+			}
+			require.NoError(t, err, "TearDown: can't read module log")
+			t.Log(string(content))
+		}
+	})
 
 	return tx
 }
