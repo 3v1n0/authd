@@ -255,21 +255,21 @@ func TestExecModule(t *testing.T) {
 			t.Parallel()
 			t.Cleanup(pam_test.MaybeDoLeakCheck)
 
-			// FIXME: Do data-check per action.
-			methodCalls := []cliMethodCall{
-				{"GetData", []any{"exec-client-flags"}, []any{tc.flags, nil}},
-			}
+			tx := preparePamTransactionWithActionArgs(t, libPath, actionArgsMap{
+				pam_test.Auth: append(slices.Clone(baseModuleArgs), methodCallsAsArgs([]cliMethodCall{
+					{"GetData", []any{"exec-client-flags-authenticate"}, []any{tc.flags, nil}},
+				})...),
+				pam_test.Account: append(slices.Clone(baseModuleArgs), methodCallsAsArgs([]cliMethodCall{
+					{"GetData", []any{"exec-client-flags-authenticate"}, []any{tc.flags, nil}},
+				})...),
+				pam_test.Session: append(slices.Clone(baseModuleArgs), methodCallsAsArgs([]cliMethodCall{
+					{"GetData", []any{"exec-client-flags-session"}, []any{tc.flags, nil}},
+				})...),
+				// We can't fully test this since PAM adds some flags we don't control to SetCred and ChangeAuthTok
+				pam_test.Password: baseModuleArgs,
+			}, "")
 
-			moduleArgs := append(slices.Clone(baseModuleArgs), methodCallsAsArgs(methodCalls)...)
-			tx := preparePamTransaction(t, libPath, moduleArgs, "")
-
-			// We can't use performAllPAMActions since PAM adds some flags we don't control to SetCred and ChangeAuthTok
-			t.Run("Authenticate", func(t *testing.T) { require.NoError(t, tx.Authenticate(tc.flags)) })
-			t.Run("AcctMgmt", func(t *testing.T) { require.NoError(t, tx.AcctMgmt(tc.flags)) })
-			t.Run("Open and Close Session", func(t *testing.T) {
-				require.NoError(t, tx.OpenSession(tc.flags))
-				require.NoError(t, tx.CloseSession(tc.flags))
-			})
+			performAllPAMActions(t, tx, tc.flags, nil)
 		})
 	}
 
