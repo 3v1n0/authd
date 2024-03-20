@@ -20,6 +20,7 @@
  * Author: Marco Trevisan <marco.trevisan@canonical.com>
  */
 
+#include <unistd.h>
 #define G_LOG_DOMAIN "authd-pam-exec"
 
 #include <gio/gio.h>
@@ -42,9 +43,11 @@ typedef struct
 {
   pam_handle_t    *pamh;
   const char      *current_action;
+  GFile           *log_file;
 
   GPid             child_pid;
   guint            child_watch_id;
+  GSource         *child_watch_source;
   int              exit_status;
 
   GDBusServer     *server;
@@ -102,6 +105,12 @@ const char *UBUNTU_AUTHD_PAM_OBJECT_NODE =
   "      <arg type='s' name='key' direction='in'/>"
   "      <arg type='i' name='status' direction='out'/>"
   "      <arg type='v' name='ret' direction='out'/>"
+  "    </method>"
+  "    <method name='Prompt'>"
+  "      <arg type='s' name='style' direction='in'/>"
+  "      <arg type='s' name='msg' direction='in'/>"
+  "      <arg type='i' name='status' direction='out'/>"
+  "      <arg type='v' name='response' direction='out'/>"
   "    </method>"
   "  </interface>"
   "</node>";
@@ -170,7 +179,31 @@ log_writer (GLogLevelFlags   log_level,
             gsize            n_fields,
             gpointer         user_data)
 {
+  ModuleData *module_data = user_data;
   g_autofree char *log = NULL;
+
+  if (G_IS_FILE (module_data->log_file))
+    {
+      g_autoptr (GFileOutputStream) stream = NULL;
+      g_autoptr (GError) error = NULL;
+      g_autofree char *log_line = NULL;
+
+      log_line = g_log_writer_format_fields (log_level, fields, n_fields, FALSE);
+
+      stream = g_file_append_to (module_data->log_file, G_FILE_CREATE_REPLACE_DESTINATION,
+                                 module_data->cancellable, &error);
+
+      if (stream)
+        {
+          if (g_output_stream_write_all (G_OUTPUT_STREAM (stream), log_line, strlen (log_line),
+                                         NULL, module_data->cancellable, &error) &&
+              g_output_stream_write_all (G_OUTPUT_STREAM (stream), "\n", 1,
+                                         NULL, module_data->cancellable, &error))
+            return G_LOG_WRITER_HANDLED;
+        }
+
+      g_printerr ("Can't write log to file: %s", error->message);
+    }
 
   log = g_log_writer_format_fields (log_level, fields, n_fields,
                                     g_log_writer_supports_color (STDERR_FILENO));
@@ -202,6 +235,7 @@ action_module_data_cleanup (ActionModuleData *module_data)
 
   g_clear_object (&module_data->cancellable);
   g_clear_object (&module_data->connection);
+  g_clear_object (&module_data->log_file);
   g_clear_pointer (&module_data->loop, g_main_loop_unref);
   g_clear_handle_id (&module_data->child_watch_id, g_source_remove);
   g_clear_handle_id (&module_data->child_pid, g_spawn_close_pid);
@@ -244,7 +278,7 @@ setup_shared_module_data (pam_handle_t *pamh)
   module_data->pamh = pamh;
   pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed);
 
-  g_log_set_writer_func (log_writer, NULL, NULL);
+  g_log_set_writer_func (log_writer, module_data, NULL);
 
   return module_data;
 }
@@ -292,6 +326,7 @@ on_child_gone (GPid   pid,
     }
 
   module_data->child_watch_id = 0;
+  // g_clear_pointer (&module_data->child_watch_source, g_source_destroy);
 
   g_clear_handle_id (&module_data->child_pid, g_spawn_close_pid);
   g_main_loop_quit (module_data->loop);
@@ -652,10 +687,12 @@ handle_module_options (int argc, const
                        char **argv,
                        GPtrArray **out_args,
                        char ***out_env_variables,
+                       char **out_log_file,
                        GError **error)
 {
   g_autoptr(GOptionContext) options_context = NULL;
   g_autoptr(GPtrArray) args = NULL;
+  g_autofree char *log_file = NULL;
   g_auto(GStrv) args_strv = NULL;
   g_auto(GStrv) env_variables = NULL;
   gboolean debug_enabled = FALSE;
@@ -663,6 +700,7 @@ handle_module_options (int argc, const
   const GOptionEntry options_entries[] = {
     { "env", 'e', 0, G_OPTION_ARG_STRING_ARRAY, &env_variables, NULL, NULL },
     { "debug", 'd', 0, G_OPTION_ARG_NONE, &debug_enabled, NULL, NULL },
+    { "log-file", 'l', 0, G_OPTION_ARG_FILENAME, &log_file, NULL, NULL },
     G_OPTION_ENTRY_NULL
   };
 
@@ -689,7 +727,10 @@ handle_module_options (int argc, const
   /* We can now remove the first element that was added */
   args = g_ptr_array_new_full (argc, g_free);
   argc = g_strv_length (args_strv);
-  for (int i = 1; i < argc; ++i)
+  int start_index = 1;
+  if (argc > 1 && g_str_equal (args_strv[1], "--"))
+    start_index++;
+  for (int i = start_index; i < argc; ++i)
     g_ptr_array_add (args, g_steal_pointer (&args_strv[i]));
 
   if (out_args)
@@ -697,6 +738,9 @@ handle_module_options (int argc, const
 
   if (out_env_variables)
     *out_env_variables = g_steal_pointer (&env_variables);
+
+  if (out_log_file)
+    *out_log_file = g_steal_pointer (&log_file);
 
   g_log_set_debug_enabled (debug_enabled);
 
@@ -718,6 +762,7 @@ do_pam_action (pam_handle_t *pamh,
   g_auto(GStrv) exec_args = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *exe = NULL;
+  g_autofree char *log_file = NULL;
   g_autofd int stdin_fd = -1;
   g_autofd int stdout_fd = -1;
   g_autofd int stderr_fd = -1;
@@ -726,7 +771,7 @@ do_pam_action (pam_handle_t *pamh,
 
   g_debug ("Starting %s", action);
 
-  if (!handle_module_options (argc, argv, &args, &env_variables, &error))
+  if (!handle_module_options (argc, argv, &args, &env_variables, &log_file, &error))
     {
       notify_error (pamh, action, "impossible to parse arguments: %s", error->message);
       return PAM_SYSTEM_ERR;
@@ -753,6 +798,9 @@ do_pam_action (pam_handle_t *pamh,
       notify_error (pamh, action, "can't create module data");
       return PAM_SYSTEM_ERR;
     }
+
+  if (log_file && !module_data->log_file)
+    module_data->log_file = g_file_new_for_path (log_file);
 
   if (!args || args->len < 1)
     {
@@ -861,6 +909,47 @@ do_pam_action (pam_handle_t *pamh,
       g_debug ("Launching '%s'", exec_args);
     }
 
+
+  // g_autoptr (GSocket) socket = NULL;
+
+  // socket = g_socket_new (G_SOCKET_FAMILY_IPV4,
+  //                      G_SOCKET_TYPE_STREAM,
+  //                      G_SOCKET_PROTOCOL_TCP,
+  //                      &error);
+  // // int pair[2];
+  // // if (socketpair (AF_UNIX, SOCK_STREAM, 0, pair) < 0)
+  // //   {
+  // //     int errsv = errno;
+  // //     log_error ( action,pamh, "can't create DBus connection: %s", action, g_strerror (err);
+  // //     return PAM_SYSTEM_ERR;
+  // //   }
+
+  // // /* Build up the server stuff */
+  // // socket = g_socket_new_from_fd (pair[1], &error);
+
+  // if (socket == NULL)
+  //   {
+  //     log_error (p action,amh, "can't create a socket: %s", action, error);
+  //     return PAM_SYSTEM_ERR;
+  //   }
+
+  // g_autoptr (GSocketConnection) socket_conn = NULL;
+  // g_autoptr (GIOStream) iostream = NULL;
+  // g_autoptr (GDBusConnection) conn = NULL;
+
+  // socket_conn = g_socket_connection_factory_create_connection (socket);
+
+  // g_autofree char *guid = g_dbus_generate_guid ();
+  // conn = g_dbus_connection_new_sync (G_IO_STREAM (socket_conn), guid,
+  //                        G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_SERVER |
+  //                        G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_REQUIRE_SAME_USER,
+  //                        NULL, NULL, &error);
+  // if (conn == NULL)
+  //   {
+  //     log_error (p action,amh, "can't create DBus connection: %s", action, error);
+  //     return PAM_SYSTEM_ERR;
+  //   }
+
   if (!g_spawn_async_with_fds (NULL,
                                (char **) args->pdata,
                                (GStrv) envp->pdata,
@@ -884,6 +973,13 @@ do_pam_action (pam_handle_t *pamh,
     g_child_watch_add_full (G_PRIORITY_HIGH, child_pid,
                             on_child_gone, module_data, NULL);
 
+  // g_autoptr(GSource) source = g_child_watch_source_new (child_pid);
+  // g_source_set_priority (source, G_PRIORITY_HIGH);
+  // g_source_set_callback (source, (GSourceFunc) on_child_gone, module_data, NULL);
+  // g_source_attach (source, NULL);
+  // module_data->child_watch_source = source;
+  // g_clear_pointer (&module_data->child_watch_source, g_source_destroy);
+
   g_main_loop_run (module_data->loop);
 
   if (module_data->exit_status >= _PAM_RETURN_VALUES)
@@ -893,11 +989,11 @@ do_pam_action (pam_handle_t *pamh,
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
-  PAM_EXTERN int \
-    (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
-  { \
-    return do_pam_action (pamh, #name, flags, argc, argv); \
-  }
+        PAM_EXTERN int \
+          (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
+        { \
+          return do_pam_action (pamh, #name, flags, argc, argv); \
+        }
 
 DEFINE_PAM_WRAPPER (acct_mgmt)
 DEFINE_PAM_WRAPPER (authenticate)

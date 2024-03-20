@@ -31,13 +31,11 @@ func TestExecModule(t *testing.T) {
 
 	execClient := buildExecClient(t)
 
-	baseModuleArgs := []string{
-		execClient,
-		"--debug",
-	}
+	baseModuleArgs := []string{"--debug"}
 	if env := testutils.CoverDirEnv(); env != "" {
 		baseModuleArgs = append(baseModuleArgs, "-e", testutils.CoverDirEnv())
 	}
+	baseModuleArgs = append(baseModuleArgs, "--", execClient)
 
 	// We do multiple tests inside this test function not to have to re-compile
 	// the library and to ensure that we don't have to care about merging its coverage.
@@ -574,24 +572,52 @@ func TestExecModule(t *testing.T) {
 func preparePamTransaction(t *testing.T, libPath string, moduleArgs []string, user string) *pam.Transaction {
 	t.Helper()
 
+	moduleLog := filepath.Join(t.TempDir(), "module.log")
+	clientLog := filepath.Join(t.TempDir(), "client.log")
+	// moduleArgs = slices.Insert(slices.Clone(moduleArgs), 1, fmt.Sprintf("-client-log=%s", clientLog))
+	moduleArgs = append(moduleArgs, fmt.Sprintf("-client-log=%s", clientLog))
+	moduleArgs = append(moduleArgs, fmt.Sprintf("--log-file=%s", moduleLog))
+
 	serviceFile := createServiceFile(t, "exec-module", libPath, moduleArgs)
-	return preparePamTransactionForServiceFile(t, serviceFile, user)
+	return preparePamTransactionForServiceFile(t, serviceFile, user, []string{moduleLog, clientLog})
 }
 
 func preparePamTransactionWithActionArgs(t *testing.T, libPath string, actionArgs actionArgsMap, user string) *pam.Transaction {
 	t.Helper()
 
+	moduleLog := filepath.Join(t.TempDir(), "module.log")
+	clientLog := filepath.Join(t.TempDir(), "client.log")
+
+	actionArgs = maps.Clone(actionArgs)
+	for action := range actionArgs {
+		// actionArgs[action] = slices.Insert(slices.Clone(actionArgs[action]), 1, fmt.Sprintf("-client-log=%s", clientLog))
+		actionArgs[action] = append(actionArgs[action], fmt.Sprintf("--log-file=%s", moduleLog))
+	}
 	serviceFile := createServiceFileWithActionArgs(t, "exec-module", libPath, actionArgs)
-	return preparePamTransactionForServiceFile(t, serviceFile, user)
+	return preparePamTransactionForServiceFile(t, serviceFile, user, []string{moduleLog, clientLog})
 }
 
-func preparePamTransactionForServiceFile(t *testing.T, serviceFile string, user string) *pam.Transaction {
+func preparePamTransactionForServiceFile(t *testing.T, serviceFile string, user string, logFiles []string) *pam.Transaction {
 	t.Helper()
+
+	cnt, _ := os.ReadFile(serviceFile)
+	fmt.Println(string(cnt))
 
 	tx, err := pam.StartConfDir(filepath.Base(serviceFile), user, nil, filepath.Dir(serviceFile))
 	require.NoError(t, err, "PAM: Error to initialize module")
 	require.NotNil(t, tx, "PAM: Transaction is not set")
 	t.Cleanup(func() { require.NoError(t, tx.End(), "PAM: can't end transaction") })
+	t.Cleanup(func() {
+		for _, logFile := range logFiles {
+			t.Logf("== %s ==", logFile)
+			content, err := os.ReadFile(logFile)
+			if os.IsNotExist(err) {
+				return
+			}
+			require.NoError(t, err, "TearDown: can't read module log")
+			t.Log(string(content))
+		}
+	})
 
 	return tx
 }
