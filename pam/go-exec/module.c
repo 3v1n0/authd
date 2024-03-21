@@ -585,16 +585,16 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
 
   if (client_pid != module_data->child_pid && client_pid != getpid ())
     {
+#ifndef AUTHD_TEST_MODULE
       notify_error (module_data->pamh, module_data->current_action,
                     "Child PID is not matching the expected one");
-#ifdef AUTHD_TEST_MODULE
+      return FALSE;
+#else /*if defined (AUTHD_TEST_MODULE) */
       /* When testing under go it may happen to have different pids, it's not
        * big deal here, since we're already quite confident we're allowed.
        */
-      g_warning ("Client pid PID %" G_PID_FORMAT " is not the expected %" G_PID_FORMAT,
-                 client_pid, module_data->child_pid);
-#else
-      return FALSE;
+      g_debug ("Client pid PID %" G_PID_FORMAT " is not the expected %" G_PID_FORMAT,
+               client_pid, module_data->child_pid);
 #endif
     }
 
