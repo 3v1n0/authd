@@ -60,7 +60,7 @@ func mainFunc() error {
 	case "setcred":
 		return module.SetCred(mTx, flags, args)
 	default:
-		return fmt.Errorf("%w: unknown action %s", pam.ErrSystem, action)
+		return fmt.Errorf("unknown action %s: %v", action, pam.ErrSystem)
 	}
 }
 
