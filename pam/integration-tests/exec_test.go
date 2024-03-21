@@ -19,6 +19,8 @@ import (
 
 var execModuleSources = []string{"../go-exec/module.c"}
 
+const execServiceName = "exec-module"
+
 func TestExecModule(t *testing.T) {
 	t.Parallel()
 	t.Cleanup(pam_test.MaybeDoLeakCheck)
@@ -294,6 +296,10 @@ func TestExecModule(t *testing.T) {
 			item:      pam.User,
 			value:     ptrValue("the-user"),
 			wantValue: ptrValue("the-user"),
+		},
+		"Getting the preset service name": {
+			item:      pam.Service,
+			wantValue: ptrValue(execServiceName),
 		},
 
 		// Error cases
@@ -789,7 +795,7 @@ func preparePamTransaction(t *testing.T, libPath string, clientPath string, args
 func preparePamTransactionWithConv(t *testing.T, libPath string, clientPath string, args []string, user string, conv pam.ConversationHandler) *pam.Transaction {
 	t.Helper()
 
-	serviceFile := createServiceFile(t, "exec-module", libPath, getModuleArgs(clientPath, args))
+	serviceFile := createServiceFile(t, execServiceName, libPath, getModuleArgs(clientPath, args))
 	return preparePamTransactionForServiceFile(t, serviceFile, user, conv)
 }
 
@@ -801,7 +807,7 @@ func preparePamTransactionWithActionArgs(t *testing.T, libPath string, clientPat
 		actionArgs[a] = getModuleArgs(clientPath, actionArgs[a])
 	}
 
-	serviceFile := createServiceFileWithActionArgs(t, "exec-module", libPath, actionArgs)
+	serviceFile := createServiceFileWithActionArgs(t, execServiceName, libPath, actionArgs)
 	return preparePamTransactionForServiceFile(t, serviceFile, user, nil)
 }
 
