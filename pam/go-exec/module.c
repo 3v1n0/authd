@@ -553,7 +553,7 @@ on_connection_closed (GDBusConnection *connection,
 static gboolean
 on_new_connection (G_GNUC_UNUSED GDBusServer *server,
                    GDBusConnection           *connection,
-                   G_GNUC_UNUSED void       * user_data)
+                   gpointer                   user_data)
 {
   g_autoptr(GDBusNodeInfo) node = NULL;
   g_autoptr(GError) error = NULL;
