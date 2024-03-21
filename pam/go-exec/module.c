@@ -47,6 +47,7 @@ typedef struct
   guint            child_watch_id;
   int              exit_status;
 
+  GMainContext    *main_context;
   GDBusServer     *server;
   GDBusConnection *connection;
   GCancellable    *cancellable;
@@ -241,6 +242,7 @@ on_exec_module_removed (pam_handle_t *pamh,
       g_free (module_data->server_tmpdir);
     }
 
+  g_clear_pointer (&module_data->main_context, g_main_context_unref);
   g_clear_object (&module_data->connection);
   g_clear_object (&module_data->server);
   g_free (module_data);
@@ -249,14 +251,26 @@ on_exec_module_removed (pam_handle_t *pamh,
 static ModuleData *
 setup_shared_module_data (pam_handle_t *pamh)
 {
+  g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
   static const char *module_data_key = "go-exec-module-data";
+  GMainContext *context;
   ModuleData *module_data = NULL;
+
+  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
 
   if (pam_get_data (pamh, module_data_key, (const void **) &module_data) == PAM_SUCCESS)
     return module_data;
 
+  // g_print ("THread default context %p\n", g_main_context_get_thread_default ());
   module_data = g_new0 (ModuleData, 1);
   module_data->pamh = pamh;
+
+  // if ((context = g_main_context_get_thread_default ()))
+  //   module_data->main_context = g_main_context_ref (context);
+  // else {
+    module_data->main_context = g_main_context_new ();
+  // }
+
   pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed);
 
   return module_data;
@@ -758,6 +772,8 @@ do_pam_action (pam_handle_t *pamh,
                const char  **argv)
 {
   g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
+  g_autoptr(GMainContext) main_context = NULL;
+  g_autoptr(GMainContextPusher) G_GNUC_UNUSED main_context_pusher = NULL;
   g_autoptr(ActionModuleData) module_data = NULL;
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
@@ -771,6 +787,18 @@ do_pam_action (pam_handle_t *pamh,
   static gsize logger_set = FALSE;
   gboolean interactive_mode;
   GPid child_pid;
+
+  main_context = g_main_context_ref_thread_default ();
+  if (main_context == g_main_context_default ())
+    {
+      g_clear_pointer (&main_context, g_main_context_unref);
+      main_context = g_main_context_new ();
+      // main_context_pusher = g_main_context_pusher_new (main_context);
+      g_main_context_push_thread_default (main_context);
+    }
+
+  // main_context_pusher = g_main_context_pusher_new (main_context);
+    // g_main_context_push_thread_default (g_main_context_new ());
 
   if (g_once_init_enter (&logger_set))
     {
@@ -858,6 +886,16 @@ do_pam_action (pam_handle_t *pamh,
   g_assert (module_data->cancellable == NULL);
   module_data->cancellable = g_cancellable_new ();
 
+  main_context = g_main_context_ref_thread_default ();
+
+  g_print ("Thread default context: %p\n", g_main_context_get_thread_default ());
+  // if ((main_context = g_main_context_get_thread_default ())) {
+  //   main_context = g_main_context_ref (main_context);
+  // } else {
+  //   main_context = g_main_context_ref (module_data->main_context);
+  //   main_context_pusher = g_main_context_pusher_new (main_context);
+  // }
+
   interactive_mode = isatty (STDIN_FILENO);
 
   envp = g_ptr_array_new_full (2, g_free);
@@ -918,6 +956,7 @@ do_pam_action (pam_handle_t *pamh,
   if (!g_spawn_async_with_fds (NULL,
                                (char **) args->pdata,
                                (GStrv) envp->pdata,
+                              //  G_SPAWN_LEAVE_DESCRIPTORS_OPEN ??
                                G_SPAWN_DO_NOT_REAP_CHILD,
                                NULL, NULL, /* Child setup */
                                &child_pid,
@@ -933,12 +972,20 @@ do_pam_action (pam_handle_t *pamh,
   g_debug ("Launched child %"G_PID_FORMAT, child_pid);
   module_data->child_pid = child_pid;
 
-  module_data->loop = g_main_loop_new (NULL, FALSE);
-  module_data->child_watch_id =
-    g_child_watch_add_full (G_PRIORITY_HIGH, child_pid,
-                            on_child_gone, module_data, NULL);
+  module_data->loop = g_main_loop_new (main_context, FALSE);
+  // module_data->child_watch_id =
+  //   g_child_watch_add_full (G_PRIORITY_HIGH, child_pid,
+  //                           on_child_gone, module_data, NULL);
+  g_autoptr (GSource) source = g_child_watch_source_new (child_pid);
+  g_source_set_callback (source, (GSourceFunc) on_child_gone, module_data, NULL);
+  g_source_set_priority (source, G_PRIORITY_HIGH);
+  module_data->child_watch_id = g_source_attach (source, main_context);
+
+  // g_clear_pointer (&main_context_pusher, g_main_context_pusher_free);
 
   g_main_loop_run (module_data->loop);
+  // while (module_data->child_watch_id)
+  //   g_main_context_iteration(main_context, TRUE);
 
   if (module_data->exit_status >= _PAM_RETURN_VALUES)
     return PAM_SYSTEM_ERR;
