@@ -57,15 +57,12 @@ session	optional	pam_session_module.so
 session	optional	pam_debug.so auth=incomplete cred=incomplete acct=incomplete prechauthtok=incomplete chauthtok=incomplete open_session=incomplete close_session=incomplete`,
 		},
 	}
-
 	for name, tc := range tests {
-		tc := tc
-		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
+
 			service, err := CreateService(t.TempDir(), name, tc.services)
 			require.NoError(t, err, "Can't create service file")
-
 			require.Equal(t, strings.ToLower(name), filepath.Base(service),
 				"Invalid service name %s", service)
 
