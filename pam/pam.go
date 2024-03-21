@@ -193,6 +193,17 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 // ChangeAuthTok is the method that is invoked during pam_sm_chauthtok request.
 func (h *pamModule) ChangeAuthTok(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
 	parsedArgs, logArgsIssues := parseArgs(args)
+	if flags&pam.PrelimCheck != 0 {
+		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
+		_, closeConn, err := newClient(parsedArgs)
+		if err != nil {
+			log.Debugf(context.TODO(), "%s", err)
+			return pam.ErrTryAgain
+		}
+		closeConn()
+		return nil
+	}
+	log.Debugf(context.TODO(), "ChangeAuthTok, password update phase: %d", flags&pam.UpdateAuthtok)
 	return h.handleAuthRequest(authd.SessionMode_PASSWD, mTx, flags, parsedArgs, logArgsIssues)
 }
 
