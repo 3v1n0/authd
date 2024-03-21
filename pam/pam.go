@@ -312,6 +312,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	logArgsIssues()
 
 	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
+	// fmt.Println("Brokerdata is", brokerData, err)
 	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
 		return pam.ErrIgnore
 	}
