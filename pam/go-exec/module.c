@@ -943,11 +943,11 @@ do_pam_action (pam_handle_t *pamh,
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
-  PAM_EXTERN int \
-    (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
-  { \
-    return do_pam_action (pamh, #name, flags, argc, argv); \
-  }
+        PAM_EXTERN int \
+          (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
+        { \
+          return do_pam_action (pamh, #name, flags, argc, argv); \
+        }
 
 DEFINE_PAM_WRAPPER (acct_mgmt)
 DEFINE_PAM_WRAPPER (authenticate)
