@@ -751,7 +751,6 @@ func TestExecModule(t *testing.T) {
 			wantError: pam.ErrConv,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
