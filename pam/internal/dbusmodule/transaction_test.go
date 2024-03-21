@@ -451,7 +451,6 @@ func TestStartStringConv(t *testing.T) {
 			convStyle: pam.ErrorMsg,
 			want:      "I'm handling it fine though",
 		},
-
 		"Conversation prompt can be formatted": {
 			promptFormat:     "Sending some %s, right? %v",
 			promptFormatArgs: []interface{}{"info", true},
@@ -464,14 +463,12 @@ func TestStartStringConv(t *testing.T) {
 			wantError:             pam.ErrSystem,
 			convShouldNotBeCalled: true,
 		},
-
 		"Error if the conversation handler fails": {
 			prompt:    "Tell me your secret!",
 			convStyle: pam.PromptEchoOff,
 			convError: pam.ErrBuf,
 			wantError: pam.ErrBuf,
 		},
-
 		"Error when conversation uses binary content style": {
 			prompt:                "I am a binary content\xff!",
 			convStyle:             pam.BinaryPrompt,
@@ -495,9 +492,9 @@ func TestStartStringConv(t *testing.T) {
 			}
 
 			tx, ts := prepareTransaction(t, mce.methodReturns)
+
 			var reply pam.StringConvResponse
 			var err error
-
 			if tc.promptFormat != "" {
 				reply, err = tx.StartStringConvf(tc.convStyle, tc.promptFormat,
 					tc.promptFormatArgs...)
