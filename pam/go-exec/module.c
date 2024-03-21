@@ -35,6 +35,8 @@ G_STATIC_ASSERT (_PAM_RETURN_VALUES < 255);
 
 G_LOCK_DEFINE_STATIC (exec_module);
 
+static int logger_set = FALSE;
+
 /* This struct contains the data of the module, note that it can be shared
  * between different actions when the module has been loaded.
  */
@@ -225,7 +227,10 @@ on_exec_module_removed (pam_handle_t *pamh,
                         void         *data,
                         int           error_status)
 {
+  g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
   ModuleData *module_data = data;
+
+  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
 
   action_module_data_cleanup (module_data);
 
@@ -789,6 +794,7 @@ do_pam_action (pam_handle_t *pamh,
       g_debug ("Called with arguments: %s", str_args->str);
     }
 
+  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
   module_data = setup_shared_module_data (pamh);
   if (module_data == NULL)
     {
@@ -837,7 +843,6 @@ do_pam_action (pam_handle_t *pamh,
       g_main_loop_run (loop);
     }
 
-  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
   g_assert (module_data->child_pid == 0);
 
   g_assert (module_data->current_action == NULL);
