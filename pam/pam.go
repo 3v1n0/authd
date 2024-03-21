@@ -204,7 +204,12 @@ func (h *pamModule) ChangeAuthTok(mTx pam.ModuleTransaction, flags pam.Flags, ar
 		return nil
 	}
 	log.Debugf(context.TODO(), "ChangeAuthTok, password update phase: %d", flags&pam.UpdateAuthtok)
-	return h.handleAuthRequest(authd.SessionMode_PASSWD, mTx, flags, parsedArgs, logArgsIssues)
+	err := h.handleAuthRequest(authd.SessionMode_PASSWD, mTx, flags, parsedArgs, logArgsIssues)
+
+	if errors.Is(err, pam.ErrPermDenied) {
+		return pam.ErrAuthtokRecovery
+	}
+	return err
 }
 
 func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTransaction, flags pam.Flags, parsedArgs map[string]string, logArgsIssues func()) error {
