@@ -277,7 +277,7 @@ func testGdmModule(t *testing.T, libPath string, args []string) {
 				<-stopped
 			})
 			serviceFile := createServiceFile(t, "module-loader", libPath,
-				append(slices.Clone(args), "socket="+socketPath))
+				append(slices.Clone(args), "socket="+socketPath, "debug=true"))
 
 			gh := newGdmTestModuleHandler(t, serviceFile, tc.pamUser)
 			t.Cleanup(func() { require.NoError(t, gh.tx.End(), "PAM: can't end transaction") })
@@ -304,7 +304,7 @@ func testGdmModule(t *testing.T, libPath string, args []string) {
 
 			authResult := make(chan error)
 			go func() {
-				authResult <- gh.tx.Authenticate(pam.Flags(0))
+				authResult <- gh.tx.Authenticate(pam.Silent)
 			}()
 
 			var err error
@@ -320,7 +320,7 @@ func testGdmModule(t *testing.T, libPath string, args []string) {
 			require.Equal(t, tc.wantPamInfoMessages, gh.pamInfoMessages,
 				"PAM Info messages do not match")
 
-			require.ErrorIs(t, gh.tx.AcctMgmt(pam.Flags(0)), tc.wantAcctMgmtErr,
+			require.ErrorIs(t, gh.tx.AcctMgmt(pam.Silent), tc.wantAcctMgmtErr,
 				"Account Management PAM Error messages do not match")
 
 			if tc.wantError != nil {
