@@ -152,6 +152,7 @@ jobs:
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
           while go test -C ./pam/integration-tests -cover -covermode=set -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" ./...; do
             echo "Let's try again..."
+            rm -rf "${raw_cov_dir}"
           done
 
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
