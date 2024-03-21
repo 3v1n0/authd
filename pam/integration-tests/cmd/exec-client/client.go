@@ -133,8 +133,7 @@ func handleArg(mTx pam.ModuleTransaction, arg string) error {
 		return fmt.Errorf("can't parse %s as variant: %w, %w", arg, err, pam_test.ErrInvalidArguments)
 	}
 
-	err = variant.Store(&parsedArg)
-	if err != nil {
+	if err := variant.Store(&parsedArg); err != nil {
 		return fmt.Errorf("can't store %s as variant map: %w, %w", arg, err, pam_test.ErrInvalidArguments)
 	}
 
