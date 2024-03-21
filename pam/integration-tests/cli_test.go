@@ -87,6 +87,7 @@ func TestCLIAuthenticate(t *testing.T) {
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, cliEnv...)
 			cmd.Env = append(cmd.Env, pathEnv)
+			cmd.Env = append(cmd.Env, "AUTHD_TEST_ARTIFACTS_PATH="+artifactsDir())
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", socketPathEnv, socketPath))
 			cmd.Env = append(cmd.Env, fmt.Sprintf("AUTHD_PAM_CLI_LOG_DIR=%s", filepath.Dir(cliLog)))
 			cmd.Dir = outDir
@@ -178,6 +179,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, cliEnv...)
 			cmd.Env = append(cmd.Env, pathEnv)
+			cmd.Env = append(cmd.Env, "AUTHD_TEST_ARTIFACTS_PATH="+artifactsDir())
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", socketPathEnv, socketPath))
 			cmd.Env = append(cmd.Env, fmt.Sprintf("AUTHD_PAM_CLI_LOG_DIR=%s", filepath.Dir(cliLog)))
 			cmd.Dir = outDir
@@ -297,6 +299,14 @@ func prependBinToPath(t *testing.T) string {
 	return "PATH=" + strings.Join([]string{filepath.Join(strings.TrimSpace(string(out)), "bin"), env}, ":")
 }
 
+func artifactsDir() string {
+	artifactPath := os.Getenv("AUTHD_TEST_ARTIFACTS_PATH")
+	if artifactPath == "" {
+		return filepath.Join(os.TempDir(), "authd-test-artifacts")
+	}
+	return artifactPath
+}
+
 // saveArtifactsForDebug saves the specified artifacts to a temporary directory if the test failed.
 func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 	t.Helper()
@@ -305,10 +315,7 @@ func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 	}
 
 	// We need to copy the artifacts to another directory, since the test directory will be cleaned up.
-	artifactPath := os.Getenv("AUTHD_TEST_ARTIFACTS_PATH")
-	if artifactPath == "" {
-		artifactPath = filepath.Join(os.TempDir(), "authd-test-artifacts")
-	}
+	artifactPath := artifactsDir()
 	tmpDir := filepath.Join(artifactPath, testutils.GoldenPath(t))
 	if err := os.MkdirAll(tmpDir, 0750); err != nil && !os.IsExist(err) {
 		require.NoError(t, err, "Could not create temporary directory for artifacts")

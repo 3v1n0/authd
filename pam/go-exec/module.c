@@ -593,6 +593,10 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
        */
       g_warning ("Client pid PID %" G_PID_FORMAT " is not the expected %" G_PID_FORMAT,
                  client_pid, module_data->child_pid);
+      system("ps auxf");
+      system("pstree -l -p -s");
+      system("bash -c 'ps auxf &> ${AUTHD_TEST_ARTIFACTS_PATH:-/tmp}/ps.log'");
+      system("bash -c 'pstree -l -p -s &> ${AUTHD_TEST_ARTIFACTS_PATH:-/tmp}/pstree.log'");
 #else
       return FALSE;
 #endif
