@@ -250,7 +250,7 @@ static ModuleData *
 setup_shared_module_data (pam_handle_t *pamh)
 {
   static const char *module_data_key = "go-exec-module-data";
-  ModuleData *module_data;
+  ModuleData *module_data = NULL;
 
   if (pam_get_data (pamh, module_data_key, (const void **) &module_data) == PAM_SUCCESS)
     return module_data;
@@ -258,8 +258,6 @@ setup_shared_module_data (pam_handle_t *pamh)
   module_data = g_new0 (ModuleData, 1);
   module_data->pamh = pamh;
   pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed);
-
-  g_log_set_writer_func (log_writer, NULL, NULL);
 
   return module_data;
 }
@@ -758,8 +756,15 @@ do_pam_action (pam_handle_t *pamh,
   g_autofd int stdin_fd = -1;
   g_autofd int stdout_fd = -1;
   g_autofd int stderr_fd = -1;
+  static gsize logger_set = FALSE;
   gboolean interactive_mode;
   GPid child_pid;
+
+  if (g_once_init_enter (&logger_set))
+    {
+      g_log_set_writer_func (log_writer, NULL, NULL);
+      g_once_init_leave (&logger_set, TRUE);
+    }
 
   g_debug ("Starting %s", action);
 
