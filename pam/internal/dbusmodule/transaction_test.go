@@ -480,7 +480,6 @@ func TestStartStringConv(t *testing.T) {
 			convShouldNotBeCalled: true,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -561,7 +560,6 @@ func TestTransactionGetUser(t *testing.T) {
 			wantError: pam.ErrConv,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -597,7 +595,6 @@ func TestStartBinaryConv(t *testing.T) {
 			wantError: pam.ErrConv,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
