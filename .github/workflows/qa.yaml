@@ -150,7 +150,7 @@ jobs:
           # Overriding the default coverage directory is not an exported flag of go test (yet), so
           # we need to override it using the test.gocoverdir flag instead.
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
-          go test -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}"
+          go test -C ./pam/integration-tests -cover -covermode=set -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" ./...
 
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
           go tool covdata textfmt -i="${raw_cov_dir}" -o="${cov_dir}/coverage.out"
@@ -166,7 +166,7 @@ jobs:
 
       - name: Run tests (with race detector)
         run: |
-          go test -race ./...
+          go test -C ./pam/integration-tests -race ./...
 
       - name: Run PAM tests (with Address Sanitizer)
         env:
