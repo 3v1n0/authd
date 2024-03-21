@@ -646,7 +646,12 @@ setup_dbus_server (ModuleData *module_data,
 
   tmpdir = g_dir_make_tmp ("authd-pam-server-XXXXXX", error);
   if (tmpdir == NULL)
-    return FALSE;
+    {
+      int errsv = errno;
+      g_set_error_literal (error, G_IO_ERROR, g_io_error_from_errno (errsv),
+                           g_strerror (errsv));
+      return FALSE;
+    }
 
   g_assert (module_data->server_tmpdir == NULL);
   module_data->server_tmpdir = g_steal_pointer (&tmpdir);
