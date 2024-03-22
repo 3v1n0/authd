@@ -40,22 +40,21 @@ G_LOCK_DEFINE_STATIC (exec_module);
  */
 typedef struct
 {
+  /* Per module-instance data */
   pam_handle_t    *pamh;
-  const char      *current_action;
-
-  GPid             child_pid;
-  guint            child_watch_id;
-  int              exit_status;
-
   GDBusServer     *server;
+  GPid             child_pid;
+  int              exit_status;
+  gulong           connection_closed_id;
+
+  /* Per-action data, protected by the mutex */
+  GMainLoop       *loop;
   GDBusConnection *connection;
   GCancellable    *cancellable;
-  guint            object_registered_id;
-  gulong           connection_closed_id;
+  const char      *current_action;
+  guint            child_watch_id;
   gulong           connection_new_id;
-  char            *server_tmpdir;
-
-  GMainLoop       *loop;
+  guint            object_registered_id;
 } ModuleData;
 
 const char *UBUNTU_AUTHD_PAM_OBJECT_NODE =
@@ -195,10 +194,11 @@ typedef ModuleData ActionModuleData;
 static void
 action_module_data_cleanup (ActionModuleData *module_data)
 {
-  module_data->current_action = NULL;
+  GDBusServer *server = NULL;
+  GPid pid;
 
-  if (module_data->server)
-    g_clear_signal_handler (&module_data->connection_new_id, module_data->server);
+  if ((server = g_atomic_pointer_get (&module_data->server)))
+    g_clear_signal_handler (&module_data->connection_new_id, server);
 
   if (module_data->connection)
     {
@@ -215,7 +215,16 @@ action_module_data_cleanup (ActionModuleData *module_data)
   g_clear_object (&module_data->connection);
   g_clear_pointer (&module_data->loop, g_main_loop_unref);
   g_clear_handle_id (&module_data->child_watch_id, g_source_remove);
-  g_clear_handle_id (&module_data->child_pid, g_spawn_close_pid);
+
+#if GLIB_CHECK_VERSION (2, 74, 0)
+  pid = g_atomic_int_exchange (&module_data->child_pid, 0);
+#else
+  pid = g_atomic_int_get (&module_data->child_pid);
+  g_atomic_int_set (&module_data->child_pid, 0);
+#endif
+  g_clear_handle_id (&pid, g_spawn_close_pid);
+
+  module_data->current_action = NULL;
 }
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (ActionModuleData, action_module_data_cleanup)
@@ -225,24 +234,30 @@ on_exec_module_removed (pam_handle_t *pamh,
                         void         *data,
                         int           error_status)
 {
+  g_autoptr(GDBusServer) server = NULL;
   ModuleData *module_data = data;
 
   action_module_data_cleanup (module_data);
 
-  if (module_data->server)
-    {
-      g_clear_signal_handler (&module_data->connection_new_id, module_data->server);
-      g_dbus_server_stop (module_data->server);
-    }
+#if GLIB_CHECK_VERSION (2, 74, 0)
+  server = g_atomic_pointer_exchange (&module_data->server, NULL);
+#else
+  server = g_atomic_pointer_get (&module_data->server);
+  g_atomic_pointer_set (&module_data->server, NULL);
+#endif
 
-  if (module_data->server_tmpdir)
+  if (server)
     {
-      g_rmdir (module_data->server_tmpdir);
-      g_free (module_data->server_tmpdir);
+      char *tmpdir;
+
+      g_clear_signal_handler (&module_data->connection_new_id, server);
+      g_dbus_server_stop (server);
+
+      tmpdir = g_object_get_data (G_OBJECT (server), "tmpdir");
+      g_clear_pointer (&tmpdir, g_rmdir);
     }
 
   g_clear_object (&module_data->connection);
-  g_clear_object (&module_data->server);
   g_free (module_data);
 }
 
@@ -587,18 +602,20 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
       return FALSE;
     }
 
-  if (client_pid != module_data->child_pid && client_pid != getpid ())
+  if (client_pid != g_atomic_int_get (&module_data->child_pid) && client_pid != getpid ())
     {
 #ifndef AUTHD_TEST_MODULE
       notify_error (module_data->pamh, module_data->current_action,
                     "Child PID is not matching the expected one");
       return FALSE;
 #else /*if defined (AUTHD_TEST_MODULE) */
-      /* When testing under go it may happen to have different pids, it's not
-       * big deal here, since we're already quite confident we're allowed.
+      /* When testing under go it may happen to receive the request from a child
+       * of the process we've started. We may do some deeper check here, but
+       * it's not big deal when testing, since we're already quite confident
+       * we're allowed.
        */
       g_debug ("Client pid PID %" G_PID_FORMAT " is not the expected %" G_PID_FORMAT,
-               client_pid, module_data->child_pid);
+               client_pid, g_atomic_int_get (&module_data->child_pid));
 #endif
     }
 
@@ -634,19 +651,22 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
   return TRUE;
 }
 
-static gboolean
+static GDBusServer *
 setup_dbus_server (ModuleData *module_data,
                    const char *action,
                    GError    **error)
 {
-  g_autoptr(GDBusServer) server = NULL;
+  GDBusServer *server = NULL;
   g_autofree char *escaped = NULL;
   g_autofree char *server_addr = NULL;
   g_autofree char *guid = NULL;
   g_autofree char *tmpdir = NULL;
 
-  if (module_data->server)
-    return TRUE;
+  /* This pointer is used as a semaphore, so accessing to server-related stuff
+   * does not need further atomic checks.
+   */
+  if ((server = g_atomic_pointer_get (&module_data->server)))
+    return server;
 
   tmpdir = g_dir_make_tmp ("authd-pam-server-XXXXXX", error);
   if (tmpdir == NULL)
@@ -654,13 +674,10 @@ setup_dbus_server (ModuleData *module_data,
       int errsv = errno;
       g_set_error_literal (error, G_IO_ERROR, g_io_error_from_errno (errsv),
                            g_strerror (errsv));
-      return FALSE;
+      return NULL;
     }
 
-  g_assert (module_data->server_tmpdir == NULL);
-  module_data->server_tmpdir = g_steal_pointer (&tmpdir);
-
-  escaped = g_dbus_address_escape_value (module_data->server_tmpdir);
+  escaped = g_dbus_address_escape_value (tmpdir);
   server_addr = g_strdup_printf ("unix:tmpdir=%s", escaped);
   guid = g_dbus_generate_guid ();
 
@@ -672,15 +689,16 @@ setup_dbus_server (ModuleData *module_data,
                                    module_data->cancellable,
                                    error);
   if (server == NULL)
-    return FALSE;
+    return NULL;
 
+  g_object_set_data_full (G_OBJECT (server), "tmpdir",
+                          g_steal_pointer (&tmpdir), g_free);
   g_dbus_server_start (server);
-  module_data->server = g_steal_pointer (&server);
 
   g_debug ("Server started, connectable address %s",
-           g_dbus_server_get_client_address (module_data->server));
+           g_dbus_server_get_client_address (server));
 
-  return TRUE;
+  return server;
 }
 
 static int
@@ -764,6 +782,7 @@ do_pam_action (pam_handle_t *pamh,
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
+  g_autoptr(GDBusServer) server = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *exe = NULL;
   g_autofd int stdin_fd = -1;
@@ -829,13 +848,6 @@ do_pam_action (pam_handle_t *pamh,
       return PAM_MODULE_UNKNOWN;
     }
 
-  if (!module_data->server &&
-      !setup_dbus_server (module_data, action, &error))
-    {
-      notify_error (pamh, action, "can't create DBus connection: %s", error->message);
-      return PAM_SYSTEM_ERR;
-    }
-
   child_pid = g_atomic_int_get (&module_data->child_pid);
   if (G_UNLIKELY (child_pid) != 0)
     {
@@ -850,8 +862,17 @@ do_pam_action (pam_handle_t *pamh,
       g_main_loop_run (loop);
     }
 
+  server = setup_dbus_server (module_data, action, &error);
+  if (!server)
+    {
+      notify_error (pamh, action, "can't create DBus connection: %s", error->message);
+      return PAM_SYSTEM_ERR;
+    }
+
+  g_atomic_pointer_set (&module_data->server, g_object_ref (server));
+
   locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
-  g_assert (module_data->child_pid == 0);
+  g_assert (g_atomic_int_get (&module_data->child_pid) == 0);
 
   g_assert (module_data->current_action == NULL);
   module_data->current_action = action;
@@ -886,10 +907,10 @@ do_pam_action (pam_handle_t *pamh,
     }
 
   module_data->connection_new_id =
-    g_signal_connect (module_data->server, "new-connection",
+    g_signal_connect (server, "new-connection",
                       G_CALLBACK (on_new_connection), module_data);
 
-  while (!g_dbus_server_is_active (module_data->server))
+  while (!g_dbus_server_is_active (server))
     g_thread_yield ();
 
   envp = g_ptr_array_new_full (2, g_free);
@@ -905,7 +926,7 @@ do_pam_action (pam_handle_t *pamh,
   g_ptr_array_insert (args, idx++, g_strdup ("-flags"));
   g_ptr_array_insert (args, idx++, g_strdup_printf ("%d", flags));
   g_ptr_array_insert (args, idx++, g_strdup ("-server-address"));
-  g_ptr_array_insert (args, idx++, g_strdup (g_dbus_server_get_client_address (module_data->server)));
+  g_ptr_array_insert (args, idx++, g_strdup (g_dbus_server_get_client_address (server)));
   g_ptr_array_insert (args, idx++, g_strdup (action));
   /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
   g_ptr_array_add (args, NULL);
@@ -933,7 +954,7 @@ do_pam_action (pam_handle_t *pamh,
     }
 
   g_debug ("Launched child %"G_PID_FORMAT, child_pid);
-  module_data->child_pid = child_pid;
+  g_atomic_int_set (&module_data->child_pid, child_pid);
 
   module_data->loop = g_main_loop_new (NULL, FALSE);
   module_data->child_watch_id =
