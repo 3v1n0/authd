@@ -16,7 +16,7 @@ Set Shell bash
 Hide
 Type "./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}"
 Enter
-Sleep 300ms
+Sleep 850ms
 Show
 
 Hide
@@ -52,7 +52,7 @@ Show
 Hide
 Type "./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}"
 Enter
-Sleep 300ms
+Sleep 850ms
 Show
 
 Hide
