@@ -41,11 +41,11 @@ G_LOCK_DEFINE_STATIC (exec_module);
 typedef struct
 {
   /* Per module-instance data */
-  pam_handle_t    *pamh;
-  GDBusServer     *server;
-  GPid             child_pid;
-  int              exit_status;
-  gulong           connection_closed_id;
+  pam_handle_t *pamh;
+  GDBusServer  *server;
+
+  /* Per-action data, atomic */
+  GPid          child_pid;
 
   /* Per-action data, protected by the mutex */
   GMainLoop       *loop;
@@ -54,7 +54,9 @@ typedef struct
   const char      *current_action;
   guint            child_watch_id;
   gulong           connection_new_id;
+  gulong           connection_closed_id;
   guint            object_registered_id;
+  int              exit_status;
 } ModuleData;
 
 const char *UBUNTU_AUTHD_PAM_OBJECT_NODE =
@@ -506,7 +508,7 @@ on_pam_method_call (GDBusConnection       *connection,
            * we return some fake "mv" value as string since go-side can't
            * properly handle maybe types.
            */
-          g_autoptr (GVariant) maybe_variant = NULL;
+          g_autoptr(GVariant) maybe_variant = NULL;
 
           maybe_variant = g_variant_new ("v", g_variant_new_maybe (G_VARIANT_TYPE_VARIANT, NULL));
           variant = g_variant_new_take_string (g_variant_print (maybe_variant, TRUE));
