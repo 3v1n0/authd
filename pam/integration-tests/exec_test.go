@@ -495,7 +495,6 @@ func TestExecModule(t *testing.T) {
 			data:       []string{"hey! That's", "true"},
 			wantData:   []string{"hey! That's", "true"},
 		},
-
 		"Set replaces data": {
 			presetData: map[string]any{"some-data": []string{"hey! That's", "true"}},
 			key:        "some-data",
@@ -515,7 +514,6 @@ func TestExecModule(t *testing.T) {
 			key:          "not set",
 			wantGetError: pam.ErrNoModuleData,
 		},
-
 		"Error when getting data that has been removed": {
 			presetData:   map[string]any{"some-data": []string{"hey! That's", "true"}},
 			key:          "some-data",
