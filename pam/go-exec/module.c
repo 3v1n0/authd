@@ -41,11 +41,11 @@ G_LOCK_DEFINE_STATIC (exec_module);
 typedef struct
 {
   /* Per module-instance data */
-  pam_handle_t    *pamh;
-  GDBusServer     *server;
-  GPid             child_pid;
-  int              exit_status;
-  gulong           connection_closed_id;
+  pam_handle_t *pamh;
+  GDBusServer  *server;
+  GPid          child_pid;
+  int           exit_status;
+  gulong        connection_closed_id;
 
   /* Per-action data, protected by the mutex */
   GMainLoop       *loop;
@@ -506,7 +506,7 @@ on_pam_method_call (GDBusConnection       *connection,
            * we return some fake "mv" value as string since go-side can't
            * properly handle maybe types.
            */
-          g_autoptr (GVariant) maybe_variant = NULL;
+          g_autoptr(GVariant) maybe_variant = NULL;
 
           maybe_variant = g_variant_new ("v", g_variant_new_maybe (G_VARIANT_TYPE_VARIANT, NULL));
           variant = g_variant_new_take_string (g_variant_print (maybe_variant, TRUE));
@@ -970,11 +970,11 @@ do_pam_action (pam_handle_t *pamh,
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
-  PAM_EXTERN int \
-    (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
-  { \
-    return do_pam_action (pamh, #name, flags, argc, argv); \
-  }
+        PAM_EXTERN int \
+          (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
+        { \
+          return do_pam_action (pamh, #name, flags, argc, argv); \
+        }
 
 DEFINE_PAM_WRAPPER (acct_mgmt)
 DEFINE_PAM_WRAPPER (authenticate)
