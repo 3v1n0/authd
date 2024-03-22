@@ -495,6 +495,12 @@ func TestExecModule(t *testing.T) {
 			data:       []string{"hey! That's", "true"},
 			wantData:   []string{"hey! That's", "true"},
 		},
+		"Gets previously set data": {
+			presetData: map[string]any{"some-old-data": []int{3, 2, 1}},
+			key:        "some-old-data",
+			skipSet:    true,
+			wantData:   []int{3, 2, 1},
+		},
 		"Set replaces data": {
 			presetData: map[string]any{"some-data": []string{"hey! That's", "true"}},
 			key:        "some-data",
@@ -530,7 +536,7 @@ func TestExecModule(t *testing.T) {
 			var methodCalls []cliMethodCall
 			var postMethodCalls []cliMethodCall
 
-			if tc.presetData != nil && !tc.skipSet {
+			if tc.presetData != nil {
 				for key, value := range tc.presetData {
 					presetMethodCalls = append(methodCalls, cliMethodCall{
 						m: "SetData", args: []any{key, value},
