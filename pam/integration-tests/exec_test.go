@@ -19,6 +19,8 @@ import (
 
 var execModuleSources = []string{"../go-exec/module.c"}
 
+const execServiceName = "exec-module"
+
 func TestExecModule(t *testing.T) {
 	t.Parallel()
 	t.Cleanup(pam_test.MaybeDoLeakCheck)
@@ -118,7 +120,7 @@ func TestExecModule(t *testing.T) {
 				{m: "GetData", args: []any{"FooData"}, r: []any{[]int{1, 2, 3}, nil}},
 
 				{m: "SetData", args: []any{"FooData", nil}},
-				{m: "GetData", args: []any{"FooData"}, r: []any{nil, pam.ErrNoModuleData}},
+				{m: "GetData", args: []any{"FooData"}, r: []any{nil, nil}},
 			},
 		},
 		"GetEnvList empty": {
@@ -294,6 +296,10 @@ func TestExecModule(t *testing.T) {
 			item:      pam.User,
 			value:     ptrValue("the-user"),
 			wantValue: ptrValue("the-user"),
+		},
+		"Getting the preset service name": {
+			item:      pam.Service,
+			wantValue: ptrValue(execServiceName),
 		},
 
 		// Error cases
@@ -489,7 +495,19 @@ func TestExecModule(t *testing.T) {
 			data:       []string{"hey! That's", "true"},
 			wantData:   []string{"hey! That's", "true"},
 		},
-
+		"Gets previously set data": {
+			presetData: map[string]any{"some-old-data": []int{3, 2, 1}},
+			key:        "some-old-data",
+			skipSet:    true,
+			wantData:   []int{3, 2, 1},
+		},
+		"Data can be nil": {
+			// This is actually a libpam issue, but we should respect that for now
+			// See: https://github.com/linux-pam/linux-pam/pull/780
+			data:     nil,
+			key:      "nil-data",
+			wantData: nil,
+		},
 		"Set replaces data": {
 			presetData: map[string]any{"some-data": []string{"hey! That's", "true"}},
 			key:        "some-data",
@@ -502,18 +520,17 @@ func TestExecModule(t *testing.T) {
 				{"foo": "bar"},
 			},
 		},
+		"No error when getting data that has been removed": {
+			presetData: map[string]any{"some-data": []string{"hey! That's", "true"}},
+			key:        "some-data",
+			data:       nil,
+			wantData:   nil,
+		},
 
 		// Error cases
 		"Error when getting data that has never been set": {
 			skipSet:      true,
 			key:          "not set",
-			wantGetError: pam.ErrNoModuleData,
-		},
-
-		"Error when getting data that has been removed": {
-			presetData:   map[string]any{"some-data": []string{"hey! That's", "true"}},
-			key:          "some-data",
-			data:         nil,
 			wantGetError: pam.ErrNoModuleData,
 		},
 	}
@@ -526,7 +543,7 @@ func TestExecModule(t *testing.T) {
 			var methodCalls []cliMethodCall
 			var postMethodCalls []cliMethodCall
 
-			if tc.presetData != nil && !tc.skipSet {
+			if tc.presetData != nil {
 				for key, value := range tc.presetData {
 					presetMethodCalls = append(methodCalls, cliMethodCall{
 						m: "SetData", args: []any{key, value},
@@ -721,7 +738,6 @@ func TestExecModule(t *testing.T) {
 			presetUser: "an-user",
 			want:       "an-user",
 		},
-
 		"Getting a previously set user does not use conversation handler": {
 			presetUser: "an-user",
 			want:       "an-user",
@@ -729,7 +745,6 @@ func TestExecModule(t *testing.T) {
 				return "another-user", pam.ErrConv
 			}),
 		},
-
 		"Getting the user uses conversation handler if none was set": {
 			want: "provided-user",
 			convHandler: pam.ConversationFunc(
@@ -789,7 +804,7 @@ func preparePamTransaction(t *testing.T, libPath string, clientPath string, args
 func preparePamTransactionWithConv(t *testing.T, libPath string, clientPath string, args []string, user string, conv pam.ConversationHandler) *pam.Transaction {
 	t.Helper()
 
-	serviceFile := createServiceFile(t, "exec-module", libPath, getModuleArgs(clientPath, args))
+	serviceFile := createServiceFile(t, execServiceName, libPath, getModuleArgs(clientPath, args))
 	return preparePamTransactionForServiceFile(t, serviceFile, user, conv)
 }
 
@@ -801,7 +816,7 @@ func preparePamTransactionWithActionArgs(t *testing.T, libPath string, clientPat
 		actionArgs[a] = getModuleArgs(clientPath, actionArgs[a])
 	}
 
-	serviceFile := createServiceFileWithActionArgs(t, "exec-module", libPath, actionArgs)
+	serviceFile := createServiceFileWithActionArgs(t, execServiceName, libPath, actionArgs)
 	return preparePamTransactionForServiceFile(t, serviceFile, user, nil)
 }
 

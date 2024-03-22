@@ -35,28 +35,36 @@ G_STATIC_ASSERT (_PAM_RETURN_VALUES < 255);
 
 G_LOCK_DEFINE_STATIC (exec_module);
 
+typedef struct _ActionData ActionData;
+
 /* This struct contains the data of the module, note that it can be shared
  * between different actions when the module has been loaded.
  */
 typedef struct
 {
-  pam_handle_t    *pamh;
-  const char      *current_action;
+  /* Per module-instance data */
+  pam_handle_t *pamh;
+  GDBusServer  *server;
+  GCancellable *cancellable;
 
-  GPid             child_pid;
-  guint            child_watch_id;
-  int              exit_status;
+  ActionData *action_data;
+} ModuleData;
 
-  GDBusServer     *server;
-  GDBusConnection *connection;
-  GCancellable    *cancellable;
-  guint            object_registered_id;
-  gulong           connection_closed_id;
-  gulong           connection_new_id;
-  char            *server_tmpdir;
+/* Per action data, protected by the static mutex */
+typedef struct _ActionData {
+  ModuleData      *module_data;
 
   GMainLoop       *loop;
-} ModuleData;
+  GDBusConnection *connection;
+  GCancellable    *cancellable;
+  const char      *current_action;
+  GPid             child_pid;
+  guint            child_watch_id;
+  gulong           connection_new_id;
+  gulong           connection_closed_id;
+  guint            object_registered_id;
+  int              exit_status;
+} ActionData;
 
 const char *UBUNTU_AUTHD_PAM_OBJECT_NODE =
   "<node>"
@@ -189,60 +197,71 @@ log_writer (GLogLevelFlags   log_level,
   return G_LOG_WRITER_HANDLED;
 }
 
-/* This fake type is meant to be used for cleaning up the per-action values */
-typedef ModuleData ActionModuleData;
-
 static void
-action_module_data_cleanup (ActionModuleData *module_data)
+action_module_data_cleanup (ActionData *action_data)
 {
-  module_data->current_action = NULL;
+  ModuleData *module_data = action_data->module_data;
+  GDBusServer *server = NULL;
 
-  if (module_data->server)
-    g_clear_signal_handler (&module_data->connection_new_id, module_data->server);
+  if (module_data && (server = g_atomic_pointer_get (&module_data->server)))
+    g_clear_signal_handler (&action_data->connection_new_id, server);
 
-  if (module_data->connection)
+  if (action_data->connection)
     {
-      g_dbus_connection_unregister_object (module_data->connection,
-                                           module_data->object_registered_id);
-      g_clear_signal_handler (&module_data->connection_closed_id, module_data->connection);
+      g_dbus_connection_unregister_object (action_data->connection,
+                                           action_data->object_registered_id);
+      g_clear_signal_handler (&action_data->connection_closed_id, action_data->connection);
     }
 
-  g_cancellable_cancel (module_data->cancellable);
+  g_cancellable_cancel (action_data->cancellable);
 
   g_log_set_debug_enabled (FALSE);
 
-  g_clear_object (&module_data->cancellable);
-  g_clear_object (&module_data->connection);
-  g_clear_pointer (&module_data->loop, g_main_loop_unref);
-  g_clear_handle_id (&module_data->child_watch_id, g_source_remove);
-  g_clear_handle_id (&module_data->child_pid, g_spawn_close_pid);
+  g_clear_object (&action_data->cancellable);
+  g_clear_object (&action_data->connection);
+  g_clear_pointer (&action_data->loop, g_main_loop_unref);
+  g_clear_handle_id (&action_data->child_watch_id, g_source_remove);
+  g_clear_handle_id (&action_data->child_pid, g_spawn_close_pid);
+
+  if (module_data &&
+      !g_atomic_pointer_compare_and_exchange (&module_data->action_data, action_data, NULL))
+    g_assert_not_reached ();
 }
 
-G_DEFINE_AUTOPTR_CLEANUP_FUNC (ActionModuleData, action_module_data_cleanup)
+G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC (ActionData, action_module_data_cleanup)
 
 static void
 on_exec_module_removed (pam_handle_t *pamh,
                         void         *data,
                         int           error_status)
 {
+  g_autoptr(GDBusServer) server = NULL;
   ModuleData *module_data = data;
+  ActionData *action_data;
 
-  action_module_data_cleanup (module_data);
+  if ((action_data = g_atomic_pointer_get (&module_data->action_data)))
+    action_module_data_cleanup (action_data);
 
-  if (module_data->server)
+  g_cancellable_cancel (module_data->cancellable);
+
+#if GLIB_CHECK_VERSION (2, 74, 0)
+  server = g_atomic_pointer_exchange (&module_data->server, NULL);
+#else
+  server = g_atomic_pointer_get (&module_data->server);
+  g_atomic_pointer_set (&module_data->server, NULL);
+#endif
+
+  if (server)
     {
-      g_clear_signal_handler (&module_data->connection_new_id, module_data->server);
-      g_dbus_server_stop (module_data->server);
+      char *tmpdir;
+
+      g_dbus_server_stop (server);
+
+      tmpdir = g_object_get_data (G_OBJECT (server), "tmpdir");
+      g_clear_pointer (&tmpdir, g_rmdir);
     }
 
-  if (module_data->server_tmpdir)
-    {
-      g_rmdir (module_data->server_tmpdir);
-      g_free (module_data->server_tmpdir);
-    }
-
-  g_clear_object (&module_data->connection);
-  g_clear_object (&module_data->server);
+  g_clear_object (&module_data->cancellable);
   g_free (module_data);
 }
 
@@ -256,8 +275,14 @@ setup_shared_module_data (pam_handle_t *pamh)
     return module_data;
 
   module_data = g_new0 (ModuleData, 1);
+  if (pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed) != PAM_SUCCESS)
+    {
+      g_free (module_data);
+      return NULL;
+    }
+
   module_data->pamh = pamh;
-  pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed);
+  module_data->cancellable = g_cancellable_new ();
 
   return module_data;
 }
@@ -283,42 +308,31 @@ on_child_gone (GPid   pid,
                void * user_data)
 {
   g_autoptr(GError) error = NULL;
-  ModuleData *module_data = user_data;
+  ActionData *action_data = user_data;
 
-  module_data->exit_status = WEXITSTATUS (wait_status);
+  action_data->exit_status = WEXITSTATUS (wait_status);
 
   g_debug ("Child %" G_PID_FORMAT " exited with exit status %d (%s)", pid,
-           module_data->exit_status,
-           pam_strerror (NULL, module_data->exit_status));
+           action_data->exit_status,
+           pam_strerror (NULL, action_data->exit_status));
 
-  if (module_data->connection)
+  if (action_data->connection)
     {
-      g_dbus_connection_unregister_object (module_data->connection,
-                                           module_data->object_registered_id);
+      g_dbus_connection_unregister_object (action_data->connection,
+                                           action_data->object_registered_id);
 
-      if (!g_dbus_connection_is_closed (module_data->connection) &&
-          !g_dbus_connection_close_sync (module_data->connection,
-                                         module_data->cancellable,
+      if (!g_dbus_connection_is_closed (action_data->connection) &&
+          !g_dbus_connection_close_sync (action_data->connection,
+                                         action_data->cancellable,
                                          &error))
         if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
           g_warning ("Impossible to close connection: %s", error->message);
     }
 
-  module_data->child_watch_id = 0;
+  action_data->child_watch_id = 0;
 
-  g_clear_handle_id (&module_data->child_pid, g_spawn_close_pid);
-  g_main_loop_quit (module_data->loop);
-}
-
-static void
-on_other_child_wait (GPid   pid,
-                     int    wait_status,
-                     void * user_data)
-{
-  GMainLoop *loop = user_data;
-
-  g_debug ("Done waiting for PID %" G_PID_FORMAT " to close", pid);
-  g_main_loop_quit (loop);
+  g_clear_handle_id (&action_data->child_pid, g_spawn_close_pid);
+  g_main_loop_quit (action_data->loop);
 }
 
 static void
@@ -347,14 +361,15 @@ on_pam_method_call (GDBusConnection       *connection,
                     GDBusMethodInvocation *invocation,
                     void                 * user_data)
 {
-  ModuleData *module_data = user_data;
+  ActionData *action_data = user_data;
+  pam_handle_t *pamh = action_data->module_data->pamh;
 
   if (is_debug_logging_enabled ())
     {
       g_autofree char *args = g_variant_print (parameters, TRUE);
 
       g_debug ("%s: called method %s(%s)",
-               module_data->current_action, method_name, args);
+               action_data->current_action, method_name, args);
     }
 
   if (g_str_equal (method_name, "SetItem"))
@@ -364,7 +379,7 @@ on_pam_method_call (GDBusConnection       *connection,
       int ret;
 
       g_variant_get (parameters, "(i&s)", &item, &value);
-      ret = pam_set_item (module_data->pamh, item, value);
+      ret = pam_set_item (pamh, item, value);
       g_dbus_method_invocation_return_value (invocation, g_variant_new ("(i)", ret));
     }
   else if (g_str_equal (method_name, "GetItem"))
@@ -374,7 +389,7 @@ on_pam_method_call (GDBusConnection       *connection,
       const void *value;
 
       g_variant_get (parameters, "(i)", &item);
-      ret = pam_get_item (module_data->pamh, item, &value);
+      ret = pam_get_item (pamh, item, &value);
       value = value ? value : "";
       g_dbus_method_invocation_return_value (invocation,
                                              g_variant_new ("(is)", ret, value));
@@ -388,10 +403,10 @@ on_pam_method_call (GDBusConnection       *connection,
 
       g_variant_get (parameters, "(&s&s)", &env, &value);
       name_value = g_strconcat (env, "=", value, NULL);
-      ret = pam_putenv (module_data->pamh, name_value);
+      ret = pam_putenv (pamh, name_value);
 
       g_dbus_method_invocation_return_value (invocation, g_variant_new ("(i)", ret));
-      g_debug ("We have the env set?!? %s", pam_getenv (module_data->pamh, env));
+      g_debug ("We have the env set?!? %s", pam_getenv (pamh, env));
     }
   else if (g_str_equal (method_name, "UnsetEnv"))
     {
@@ -407,7 +422,7 @@ on_pam_method_call (GDBusConnection       *connection,
           return;
         }
 
-      ret = pam_putenv (module_data->pamh, env);
+      ret = pam_putenv (pamh, env);
       g_dbus_method_invocation_return_value (invocation,
                                              g_variant_new ("(i)", ret));
     }
@@ -417,7 +432,7 @@ on_pam_method_call (GDBusConnection       *connection,
       const char *value;
 
       g_variant_get (parameters, "(&s)", &env);
-      value = pam_getenv (module_data->pamh, env);
+      value = pam_getenv (pamh, env);
       value = value ? value : "";
 
       g_dbus_method_invocation_return_value (invocation,
@@ -431,7 +446,7 @@ on_pam_method_call (GDBusConnection       *connection,
         G_VARIANT_BUILDER_INIT (G_VARIANT_TYPE ("a{ss}"));
       int ret = PAM_SUCCESS;
 
-      env_list = pam_getenvlist (module_data->pamh);
+      env_list = pam_getenvlist (pamh);
 
       if (!env_list)
         ret = PAM_BUF_ERR;
@@ -459,7 +474,7 @@ on_pam_method_call (GDBusConnection       *connection,
 
       g_variant_get (parameters, "(&sv)", &key, &variant);
       variant_key = sanitize_variant_key (key);
-      ret = pam_set_data (module_data->pamh, variant_key, variant, on_variant_data_removed);
+      ret = pam_set_data (pamh, variant_key, variant, on_variant_data_removed);
       g_dbus_method_invocation_return_value (invocation, g_variant_new ("(i)", ret));
     }
   else if (g_str_equal (method_name, "UnsetData"))
@@ -470,7 +485,7 @@ on_pam_method_call (GDBusConnection       *connection,
 
       g_variant_get (parameters, "(&s)", &key);
       variant_key = sanitize_variant_key (key);
-      ret = pam_set_data (module_data->pamh, variant_key, NULL, NULL);
+      ret = pam_set_data (pamh, variant_key, NULL, NULL);
       g_dbus_method_invocation_return_value (invocation,
                                              g_variant_new ("(i)", ret));
     }
@@ -483,16 +498,18 @@ on_pam_method_call (GDBusConnection       *connection,
 
       g_variant_get (parameters, "(&s)", &key);
       variant_key = sanitize_variant_key (key);
-      ret = pam_get_data (module_data->pamh, variant_key, (const void **) &variant);
+      ret = pam_get_data (pamh, variant_key, (const void **) &variant);
 
       if (!variant)
         {
           /* If the data is NULL, let's ensure we mark this as an error, and
            * we return some fake "mv" value as string since go-side can't
-           * properly handle maybe.
+           * properly handle maybe types.
            */
-          variant = g_variant_new_string ("<@mv nothing>");
-          ret = PAM_NO_MODULE_DATA;
+          g_autoptr(GVariant) maybe_variant = NULL;
+
+          maybe_variant = g_variant_new ("v", g_variant_new_maybe (G_VARIANT_TYPE_VARIANT, NULL));
+          variant = g_variant_new_take_string (g_variant_print (maybe_variant, TRUE));
         }
 
       g_dbus_method_invocation_return_value (invocation,
@@ -507,7 +524,7 @@ on_pam_method_call (GDBusConnection       *connection,
 
       g_variant_get (parameters, "(i&s)", &style, &prompt);
 
-      ret = pam_prompt (module_data->pamh, style, &response, "%s", prompt);
+      ret = pam_prompt (pamh, style, &response, "%s", prompt);
       g_dbus_method_invocation_return_value (invocation,
                                              g_variant_new ("(is)", ret,
                                                             response ? response : ""));
@@ -532,22 +549,22 @@ static void
 on_connection_closed (GDBusConnection *connection,
                       gboolean         remote_peer_vanished,
                       GError          *error,
-                      ModuleData      *module_data)
+                      ActionData      *action_data)
 {
   g_debug ("Connection closed %s", g_dbus_connection_get_guid (connection));
 
-  if (!module_data->connection)
+  if (!action_data->connection)
     return;
 
-  g_assert (module_data->connection == connection);
+  g_assert (action_data->connection == connection);
 
-  if (module_data->object_registered_id)
+  if (action_data->object_registered_id)
     {
-      g_dbus_connection_unregister_object (connection, module_data->object_registered_id);
-      module_data->object_registered_id = 0;
+      g_dbus_connection_unregister_object (connection, action_data->object_registered_id);
+      action_data->object_registered_id = 0;
     }
 
-  module_data->connection = NULL;
+  action_data->connection = NULL;
 }
 
 static gboolean
@@ -557,47 +574,50 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
 {
   g_autoptr(GDBusNodeInfo) node = NULL;
   g_autoptr(GError) error = NULL;
-  ModuleData *module_data = user_data;
-  GCredentials *credentials = g_dbus_connection_get_peer_credentials (connection);
+  ActionData *action_data = user_data;
+  pam_handle_t *pamh = action_data->module_data->pamh;
+  GCredentials *credentials;
   pid_t client_pid;
 
-  if (module_data->connection)
+  credentials = g_dbus_connection_get_peer_credentials (connection);
+
+  if (action_data->connection)
     {
-      notify_error (module_data->pamh, module_data->current_action,
+      notify_error (pamh, action_data->current_action,
                     "Another client is already using this connection");
       return FALSE;
     }
 
   if (!G_IS_CREDENTIALS (credentials))
     {
-      notify_error (module_data->pamh, module_data->current_action,
+      notify_error (pamh, action_data->current_action,
                     "Impossible to get credentials, refusing the connection...");
       return FALSE;
     }
 
   if ((client_pid = g_credentials_get_unix_pid (credentials, &error)) == -1)
     {
-      notify_error (module_data->pamh, module_data->current_action,
+      notify_error (pamh, action_data->current_action,
                     "Impossible to get client PID (%s), refusing the connection...",
                     error->message);
       return FALSE;
     }
 
-  if (client_pid != module_data->child_pid && client_pid != getpid ())
+  if (client_pid != g_atomic_int_get (&action_data->child_pid) && client_pid != getpid ())
     {
-      notify_error (module_data->pamh, module_data->current_action,
-                    "Child PID is not matching the expected one");
 #ifdef AUTHD_TEST_MODULE
       /* When testing under go it may happen to have different pids, it's not
        * big deal here, since we're already quite confident we're allowed.
        */
       g_warning ("Client pid PID %" G_PID_FORMAT " is not the expected %" G_PID_FORMAT,
-                 client_pid, module_data->child_pid);
+                 client_pid, action_data->child_pid);
       system("ps auxf");
       system("pstree -l -p -s");
       system("bash -c 'ps auxf &> ${AUTHD_TEST_ARTIFACTS_PATH:-/tmp}/ps.log'");
       system("bash -c 'pstree -l -p -s &> ${AUTHD_TEST_ARTIFACTS_PATH:-/tmp}/pstree.log'");
 #else
+      notify_error (pamh, action_data->current_action,
+                    "Child PID is not matching the expected one");
       return FALSE;
 #endif
     }
@@ -605,7 +625,7 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
   node = g_dbus_node_info_new_for_xml (UBUNTU_AUTHD_PAM_OBJECT_NODE, &error);
   if (!node)
     {
-      notify_error (module_data->pamh, module_data->current_action,
+      notify_error (pamh, action_data->current_action,
                     "Can't create node: %s", error->message);
       return FALSE;
     }
@@ -615,47 +635,52 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
 
   /* export an object */
   error = NULL;
-  module_data->object_registered_id =
+  action_data->object_registered_id =
     g_dbus_connection_register_object (connection,
                                        "/com/ubuntu/authd/pam",
                                        node->interfaces[0],
                                        &pam_interface_vtable,
-                                       module_data,
+                                       action_data,
                                        NULL,
                                        &error);
 
   /* Accepts the connection */
-  module_data->connection = g_object_ref (connection);
+  action_data->connection = g_object_ref (connection);
 
-  module_data->connection_closed_id =
-    g_signal_connect (module_data->connection, "closed",
-                      G_CALLBACK (on_connection_closed), module_data);
+  action_data->connection_closed_id =
+    g_signal_connect (action_data->connection, "closed",
+                      G_CALLBACK (on_connection_closed), action_data);
 
   return TRUE;
 }
 
-static gboolean
+static GDBusServer *
 setup_dbus_server (ModuleData *module_data,
                    const char *action,
                    GError    **error)
 {
-  g_autoptr(GDBusServer) server = NULL;
+  GDBusServer *server = NULL;
   g_autofree char *escaped = NULL;
   g_autofree char *server_addr = NULL;
   g_autofree char *guid = NULL;
   g_autofree char *tmpdir = NULL;
 
-  if (module_data->server)
-    return TRUE;
+  /* This pointer is used as a semaphore, so accessing to server-related stuff
+   * does not need further atomic checks.
+   */
+  if ((server = g_atomic_pointer_get (&module_data->server)))
+    return server;
 
   tmpdir = g_dir_make_tmp ("authd-pam-server-XXXXXX", error);
   if (tmpdir == NULL)
-    return FALSE;
+    {
+      int errsv = errno;
+      g_set_error_literal (error, G_IO_ERROR, g_io_error_from_errno (errsv),
+                           g_strerror (errsv));
+      return NULL;
+    }
 
-  g_assert (module_data->server_tmpdir == NULL);
-  module_data->server_tmpdir = g_steal_pointer (&tmpdir);
-
-  escaped = g_dbus_address_escape_value (module_data->server_tmpdir);
+  escaped = g_dbus_address_escape_value (tmpdir);
   server_addr = g_strdup_printf ("unix:tmpdir=%s", escaped);
   guid = g_dbus_generate_guid ();
 
@@ -667,15 +692,16 @@ setup_dbus_server (ModuleData *module_data,
                                    module_data->cancellable,
                                    error);
   if (server == NULL)
-    return FALSE;
+    return NULL;
 
+  g_object_set_data_full (G_OBJECT (server), "tmpdir",
+                          g_steal_pointer (&tmpdir), g_free);
   g_dbus_server_start (server);
-  module_data->server = g_steal_pointer (&server);
 
   g_debug ("Server started, connectable address %s",
-           g_dbus_server_get_client_address (module_data->server));
+           g_dbus_server_get_client_address (server));
 
-  return TRUE;
+  return server;
 }
 
 static int
@@ -701,6 +727,7 @@ handle_module_options (int argc, const
                        GError **error)
 {
   g_autoptr(GOptionContext) options_context = NULL;
+  g_autoptr(GStrvBuilder) strv_builder = NULL;
   g_autoptr(GPtrArray) args = NULL;
   g_auto(GStrv) args_strv = NULL;
   g_auto(GStrv) env_variables = NULL;
@@ -712,23 +739,19 @@ handle_module_options (int argc, const
     G_OPTION_ENTRY_NULL
   };
 
-  args = g_ptr_array_new_full (argc + 1, g_free);
+  strv_builder = g_strv_builder_new ();
   /* We temporary add a fake item as first one, since the option parser ignores
    * it, since normally it's just the program name */
-  g_ptr_array_add (args, g_strdup ("pam-go-exec-module"));
+  g_strv_builder_add (strv_builder, "pam-go-exec-module");
   for (int i = 0; i < argc; ++i)
-    g_ptr_array_add (args, g_strdup (argv[i]));
-
-  /* FIXME: use g_ptr_array_new_null_terminated instead. */
-  g_ptr_array_add (args, NULL);
-
-  args_strv = (GStrv) g_ptr_array_free (g_steal_pointer (&args), FALSE);
+    g_strv_builder_add (strv_builder, argv[i]);
 
   options_context = g_option_context_new ("ARGS...");
   g_option_context_set_ignore_unknown_options (options_context, TRUE);
   g_option_context_set_help_enabled (options_context, FALSE);
   g_option_context_add_main_entries (options_context, options_entries, NULL);
 
+  args_strv = g_strv_builder_end (strv_builder);
   if (!g_option_context_parse_strv (options_context, &args_strv, error))
     return FALSE;
 
@@ -757,12 +780,13 @@ do_pam_action (pam_handle_t *pamh,
                int           argc,
                const char  **argv)
 {
+  ModuleData *module_data = NULL;
   g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
-  g_autoptr(ActionModuleData) module_data = NULL;
+  g_auto(ActionData) action_data = {0};
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
-  g_auto(GStrv) exec_args = NULL;
+  g_autoptr(GDBusServer) server = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *exe = NULL;
   g_autofd int stdin_fd = -1;
@@ -828,61 +852,22 @@ do_pam_action (pam_handle_t *pamh,
       return PAM_MODULE_UNKNOWN;
     }
 
-  if (!module_data->server &&
-      !setup_dbus_server (module_data, action, &error))
+  server = setup_dbus_server (module_data, action, &error);
+  if (!server)
     {
       notify_error (pamh, action, "can't create DBus connection: %s", error->message);
       return PAM_SYSTEM_ERR;
     }
 
-  child_pid = g_atomic_int_get (&module_data->child_pid);
-  if (G_UNLIKELY (child_pid) != 0)
-    {
-      /* Unlikely to happen, but if another action PID is still active, let's
-       * wait for it before proceeding.
-       */
-      g_autoptr(GMainLoop) loop = g_main_loop_new (NULL, FALSE);
-
-      g_debug ("Another client with PID %"G_PID_FORMAT
-               " is still running, let's wait for it", child_pid);
-      g_child_watch_add (child_pid, on_other_child_wait, loop);
-      g_main_loop_run (loop);
-    }
-
   locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
-  g_assert (module_data->child_pid == 0);
 
-  g_assert (module_data->current_action == NULL);
-  module_data->current_action = action;
+  g_assert (g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data));
+  g_atomic_pointer_compare_and_exchange (&module_data->server, NULL, g_object_ref (server));
 
-  g_assert (module_data->cancellable == NULL);
-  module_data->cancellable = g_cancellable_new ();
+  action_data.module_data = module_data;
+  action_data.cancellable = g_cancellable_new ();
 
   interactive_mode = isatty (STDIN_FILENO);
-
-  envp = g_ptr_array_new_full (2, g_free);
-  if (interactive_mode)
-    g_ptr_array_add (envp, g_strdup_printf ("TERM=%s", g_getenv ("TERM")));
-  for (int i = 0; env_variables && env_variables[i]; ++i)
-    g_ptr_array_add (envp, g_strdup (env_variables[i]));
-  /* FIXME: use g_ptr_array_new_null_terminated instead. */
-  g_ptr_array_add (envp, NULL);
-
-  g_ptr_array_insert (args, 0, g_strdup (exe));
-  g_ptr_array_insert (args, 1, g_strdup ("-flags"));
-  g_ptr_array_insert (args, 2, g_strdup_printf ("%d", flags));
-  g_ptr_array_insert (args, 3, g_strdup ("-server-address"));
-  g_ptr_array_insert (args, 4, g_strdup (g_dbus_server_get_client_address (module_data->server)));
-  g_ptr_array_insert (args, 5, g_strdup (action));
-  /* FIXME: use g_ptr_array_new_null_terminated instead. */
-  g_ptr_array_add (args, NULL);
-
-  module_data->connection_new_id =
-    g_signal_connect (module_data->server, "new-connection",
-                      G_CALLBACK (on_new_connection), module_data);
-
-  while (!g_dbus_server_is_active (module_data->server))
-    g_thread_yield ();
 
   if (interactive_mode)
     {
@@ -908,11 +893,36 @@ do_pam_action (pam_handle_t *pamh,
         }
     }
 
+  action_data.connection_new_id =
+    g_signal_connect (server, "new-connection",
+                      G_CALLBACK (on_new_connection), &action_data);
+
+  while (!g_dbus_server_is_active (server))
+    g_thread_yield ();
+
+  envp = g_ptr_array_new_full (2, g_free);
+  if (interactive_mode)
+    g_ptr_array_add (envp, g_strdup_printf ("TERM=%s", g_getenv ("TERM")));
+  for (int i = 0; env_variables && env_variables[i]; ++i)
+    g_ptr_array_add (envp, g_strdup (env_variables[i]));
+  /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
+  g_ptr_array_add (envp, NULL);
+
+  int idx = 0;
+  g_ptr_array_insert (args, idx++, g_strdup (exe));
+  g_ptr_array_insert (args, idx++, g_strdup ("-flags"));
+  g_ptr_array_insert (args, idx++, g_strdup_printf ("%d", flags));
+  g_ptr_array_insert (args, idx++, g_strdup ("-server-address"));
+  g_ptr_array_insert (args, idx++, g_strdup (g_dbus_server_get_client_address (server)));
+  g_ptr_array_insert (args, idx++, g_strdup (action));
+  /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
+  g_ptr_array_add (args, NULL);
+
   if (is_debug_logging_enabled ())
     {
-      g_autofree char *exec_args = g_strjoinv (" ", (char **) args->pdata);
+      g_autofree char *exec_str_args = g_strjoinv (" ", (char **) args->pdata);
 
-      g_debug ("Launching '%s'", exec_args);
+      g_debug ("Launching '%s'", exec_str_args);
     }
 
   if (!g_spawn_async_with_fds (NULL,
@@ -931,19 +941,19 @@ do_pam_action (pam_handle_t *pamh,
     }
 
   g_debug ("Launched child %"G_PID_FORMAT, child_pid);
-  module_data->child_pid = child_pid;
+  action_data.child_pid = child_pid;
 
-  module_data->loop = g_main_loop_new (NULL, FALSE);
-  module_data->child_watch_id =
+  action_data.loop = g_main_loop_new (NULL, FALSE);
+  action_data.child_watch_id =
     g_child_watch_add_full (G_PRIORITY_HIGH, child_pid,
-                            on_child_gone, module_data, NULL);
+                            on_child_gone, &action_data, NULL);
 
-  g_main_loop_run (module_data->loop);
+  g_main_loop_run (action_data.loop);
 
-  if (module_data->exit_status >= _PAM_RETURN_VALUES)
+  if (action_data.exit_status >= _PAM_RETURN_VALUES)
     return PAM_SYSTEM_ERR;
 
-  return module_data->exit_status;
+  return action_data.exit_status;
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
