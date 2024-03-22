@@ -706,6 +706,7 @@ handle_module_options (int argc, const
                        GError **error)
 {
   g_autoptr(GOptionContext) options_context = NULL;
+  g_autoptr(GStrvBuilder) strv_builder = NULL;
   g_autoptr(GPtrArray) args = NULL;
   g_auto(GStrv) args_strv = NULL;
   g_auto(GStrv) env_variables = NULL;
@@ -717,23 +718,19 @@ handle_module_options (int argc, const
     G_OPTION_ENTRY_NULL
   };
 
-  args = g_ptr_array_new_full (argc + 1, g_free);
+  strv_builder = g_strv_builder_new ();
   /* We temporary add a fake item as first one, since the option parser ignores
    * it, since normally it's just the program name */
-  g_ptr_array_add (args, g_strdup ("pam-go-exec-module"));
+  g_strv_builder_add (strv_builder, "pam-go-exec-module");
   for (int i = 0; i < argc; ++i)
-    g_ptr_array_add (args, g_strdup (argv[i]));
-
-  /* FIXME: use g_ptr_array_new_null_terminated instead. */
-  g_ptr_array_add (args, NULL);
-
-  args_strv = (GStrv) g_ptr_array_free (g_steal_pointer (&args), FALSE);
+    g_strv_builder_add (strv_builder, argv[i]);
 
   options_context = g_option_context_new ("ARGS...");
   g_option_context_set_ignore_unknown_options (options_context, TRUE);
   g_option_context_set_help_enabled (options_context, FALSE);
   g_option_context_add_main_entries (options_context, options_entries, NULL);
 
+  args_strv = g_strv_builder_end (strv_builder);
   if (!g_option_context_parse_strv (options_context, &args_strv, error))
     return FALSE;
 
@@ -767,7 +764,6 @@ do_pam_action (pam_handle_t *pamh,
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
-  g_auto(GStrv) exec_args = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *exe = NULL;
   g_autofd int stdin_fd = -1;
@@ -865,30 +861,6 @@ do_pam_action (pam_handle_t *pamh,
 
   interactive_mode = isatty (STDIN_FILENO);
 
-  envp = g_ptr_array_new_full (2, g_free);
-  if (interactive_mode)
-    g_ptr_array_add (envp, g_strdup_printf ("TERM=%s", g_getenv ("TERM")));
-  for (int i = 0; env_variables && env_variables[i]; ++i)
-    g_ptr_array_add (envp, g_strdup (env_variables[i]));
-  /* FIXME: use g_ptr_array_new_null_terminated instead. */
-  g_ptr_array_add (envp, NULL);
-
-  g_ptr_array_insert (args, 0, g_strdup (exe));
-  g_ptr_array_insert (args, 1, g_strdup ("-flags"));
-  g_ptr_array_insert (args, 2, g_strdup_printf ("%d", flags));
-  g_ptr_array_insert (args, 3, g_strdup ("-server-address"));
-  g_ptr_array_insert (args, 4, g_strdup (g_dbus_server_get_client_address (module_data->server)));
-  g_ptr_array_insert (args, 5, g_strdup (action));
-  /* FIXME: use g_ptr_array_new_null_terminated instead. */
-  g_ptr_array_add (args, NULL);
-
-  module_data->connection_new_id =
-    g_signal_connect (module_data->server, "new-connection",
-                      G_CALLBACK (on_new_connection), module_data);
-
-  while (!g_dbus_server_is_active (module_data->server))
-    g_thread_yield ();
-
   if (interactive_mode)
     {
       if ((stdin_fd = dup_fd_checked (STDIN_FILENO, &error)) < 0)
@@ -913,11 +885,36 @@ do_pam_action (pam_handle_t *pamh,
         }
     }
 
+  module_data->connection_new_id =
+    g_signal_connect (module_data->server, "new-connection",
+                      G_CALLBACK (on_new_connection), module_data);
+
+  while (!g_dbus_server_is_active (module_data->server))
+    g_thread_yield ();
+
+  envp = g_ptr_array_new_full (2, g_free);
+  if (interactive_mode)
+    g_ptr_array_add (envp, g_strdup_printf ("TERM=%s", g_getenv ("TERM")));
+  for (int i = 0; env_variables && env_variables[i]; ++i)
+    g_ptr_array_add (envp, g_strdup (env_variables[i]));
+  /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
+  g_ptr_array_add (envp, NULL);
+
+  int idx = 0;
+  g_ptr_array_insert (args, idx++, g_strdup (exe));
+  g_ptr_array_insert (args, idx++, g_strdup ("-flags"));
+  g_ptr_array_insert (args, idx++, g_strdup_printf ("%d", flags));
+  g_ptr_array_insert (args, idx++, g_strdup ("-server-address"));
+  g_ptr_array_insert (args, idx++, g_strdup (g_dbus_server_get_client_address (module_data->server)));
+  g_ptr_array_insert (args, idx++, g_strdup (action));
+  /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
+  g_ptr_array_add (args, NULL);
+
   if (is_debug_logging_enabled ())
     {
-      g_autofree char *exec_args = g_strjoinv (" ", (char **) args->pdata);
+      g_autofree char *exec_str_args = g_strjoinv (" ", (char **) args->pdata);
 
-      g_debug ("Launching '%s'", exec_args);
+      g_debug ("Launching '%s'", exec_str_args);
     }
 
   if (!g_spawn_async_with_fds (NULL,
