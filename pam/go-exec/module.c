@@ -35,6 +35,8 @@ G_STATIC_ASSERT (_PAM_RETURN_VALUES < 255);
 
 G_LOCK_DEFINE_STATIC (exec_module);
 
+typedef struct _ActionData ActionData;
+
 /* This struct contains the data of the module, note that it can be shared
  * between different actions when the module has been loaded.
  */
@@ -43,19 +45,25 @@ typedef struct
   /* Per module-instance data */
   pam_handle_t *pamh;
   GDBusServer  *server;
-  GPid          child_pid;
   int           exit_status;
-  gulong        connection_closed_id;
 
-  /* Per-action data, protected by the mutex */
+  ActionData *action_data;
+} ModuleData;
+
+/* Per action data, protected by the static mutex */
+typedef struct _ActionData {
+  ModuleData      *module_data;
+
   GMainLoop       *loop;
   GDBusConnection *connection;
   GCancellable    *cancellable;
   const char      *current_action;
+  GPid             child_pid;
   guint            child_watch_id;
   gulong           connection_new_id;
+  gulong           connection_closed_id;
   guint            object_registered_id;
-} ModuleData;
+} ActionData;
 
 const char *UBUNTU_AUTHD_PAM_OBJECT_NODE =
   "<node>"
@@ -188,46 +196,44 @@ log_writer (GLogLevelFlags   log_level,
   return G_LOG_WRITER_HANDLED;
 }
 
-/* This fake type is meant to be used for cleaning up the per-action values */
-typedef ModuleData ActionModuleData;
-
 static void
-action_module_data_cleanup (ActionModuleData *module_data)
+action_module_data_cleanup (ActionData *action_data)
 {
+  ModuleData *module_data = action_data->module_data;
   GDBusServer *server = NULL;
   GPid pid;
 
   if ((server = g_atomic_pointer_get (&module_data->server)))
-    g_clear_signal_handler (&module_data->connection_new_id, server);
+    g_clear_signal_handler (&action_data->connection_new_id, server);
 
-  if (module_data->connection)
+  if (action_data->connection)
     {
-      g_dbus_connection_unregister_object (module_data->connection,
-                                           module_data->object_registered_id);
-      g_clear_signal_handler (&module_data->connection_closed_id, module_data->connection);
+      g_dbus_connection_unregister_object (action_data->connection,
+                                           action_data->object_registered_id);
+      g_clear_signal_handler (&action_data->connection_closed_id, action_data->connection);
     }
 
-  g_cancellable_cancel (module_data->cancellable);
+  g_cancellable_cancel (action_data->cancellable);
 
   g_log_set_debug_enabled (FALSE);
 
-  g_clear_object (&module_data->cancellable);
-  g_clear_object (&module_data->connection);
-  g_clear_pointer (&module_data->loop, g_main_loop_unref);
-  g_clear_handle_id (&module_data->child_watch_id, g_source_remove);
+  g_clear_object (&action_data->cancellable);
+  g_clear_object (&action_data->connection);
+  g_clear_pointer (&action_data->loop, g_main_loop_unref);
+  g_clear_handle_id (&action_data->child_watch_id, g_source_remove);
 
 #if GLIB_CHECK_VERSION (2, 74, 0)
-  pid = g_atomic_int_exchange (&module_data->child_pid, 0);
+  pid = g_atomic_int_exchange (&action_data->child_pid, 0);
 #else
   pid = g_atomic_int_get (&module_data->child_pid);
   g_atomic_int_set (&module_data->child_pid, 0);
 #endif
   g_clear_handle_id (&pid, g_spawn_close_pid);
 
-  module_data->current_action = NULL;
+  action_data->current_action = NULL;
 }
 
-G_DEFINE_AUTOPTR_CLEANUP_FUNC (ActionModuleData, action_module_data_cleanup)
+G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC (ActionData, action_module_data_cleanup)
 
 static void
 on_exec_module_removed (pam_handle_t *pamh,
