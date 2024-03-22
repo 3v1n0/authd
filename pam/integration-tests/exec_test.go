@@ -725,7 +725,6 @@ func TestExecModule(t *testing.T) {
 			presetUser: "an-user",
 			want:       "an-user",
 		},
-
 		"Getting a previously set user does not use conversation handler": {
 			presetUser: "an-user",
 			want:       "an-user",
@@ -733,7 +732,6 @@ func TestExecModule(t *testing.T) {
 				return "another-user", pam.ErrConv
 			}),
 		},
-
 		"Getting the user uses conversation handler if none was set": {
 			want: "provided-user",
 			convHandler: pam.ConversationFunc(
