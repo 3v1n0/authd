@@ -489,9 +489,13 @@ on_pam_method_call (GDBusConnection       *connection,
         {
           /* If the data is NULL, let's ensure we mark this as an error, and
            * we return some fake "mv" value as string since go-side can't
-           * properly handle maybe.
+           * properly handle maybe types.
            */
-          variant = g_variant_new_string ("<@mv nothing>");
+          g_autoptr (GVariant) maybe_variant = NULL;
+
+          maybe_variant = g_variant_new ("v", g_variant_new_maybe (G_VARIANT_TYPE_VARIANT, NULL));
+          variant = g_variant_new_take_string (g_variant_print (maybe_variant, TRUE));
+
           ret = PAM_NO_MODULE_DATA;
         }
 
