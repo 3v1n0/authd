@@ -154,7 +154,7 @@ jobs:
           # Overriding the default coverage directory is not an exported flag of go test (yet), so
           # we need to override it using the test.gocoverdir flag instead.
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
-          while go test -C ./pam/integration-tests -cover -covermode=set -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" ./...; do
+          while go test -C ./pam/integration-tests -race ./...; do
             echo "Let's try again..."
             rm -rf "${raw_cov_dir}"
           done
