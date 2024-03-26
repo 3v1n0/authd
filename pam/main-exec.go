@@ -54,6 +54,11 @@ func mainFunc() error {
 		flags = pam.Flags(*pamFlags)
 	}
 
+	err = mTx.PutEnv(fmt.Sprintf("AUTHD_PAM_CLI_PID=%d", os.Getpid()))
+	if err != nil {
+		return fmt.Errorf("%w: failed to save client pid: %w", pam.ErrSystem, err)
+	}
+
 	switch action {
 	case "authenticate":
 		return module.Authenticate(mTx, flags, args)
