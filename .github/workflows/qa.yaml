@@ -45,6 +45,10 @@ jobs:
         run: |
           set -eu
           go build -tags withexamplebroker ./cmd/authd
+      - name: Run PAM client for interactive testing purposes
+        run: |
+          set -eu
+          go run -tags pam_binary_cli ./pam login --debug
       - name: Generate PAM module
         run: |
           set -eu
@@ -155,6 +159,9 @@ jobs:
             rm -rf "${raw_cov_dir}"
           done
 
+          # Simulate running the PAM client as user, checking that it can compiler the 
+          # env GOCOVERDIR="${raw_cov_dir}" go run -cover -tags pam_binary_cli ./pam login --debug
+
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
           go tool covdata textfmt -i="${raw_cov_dir}" -o="${cov_dir}/coverage.out"
 
@@ -182,7 +189,13 @@ jobs:
           go test -C ./pam/internal -asan -gcflags="-dwarflocationlists=true" ./...
           # FIXME: Suppression may be removed with newer libpam, as the one we ship in ubuntu as some leaks
           env LSAN_OPTIONS=suppressions=$(pwd)/pam/integration-tests/lsan.supp \
-            go test -C ./pam/integration-tests -asan -gcflags="-dwarflocationlists=true" -run TestGdmModule
+            go test -C ./pam/integration-tests -asan -gcflags="-dwarflocationlists=true" \
+            || exit_code=$?
+
+          # We're logging to a file, and this is useful for having artifacts, but we still may want to see it in logs:
+          cat "${AUTHD_TEST_ARTIFACTS_PATH}"/asan.log* || true
+
+          exit ${exit_code}
 
           # We're logging to a file, and this is useful for having artifacts, but we still may want to see it in logs:
           cat "${AUTHD_TEST_ARTIFACTS_PATH}"/asan.log* || true

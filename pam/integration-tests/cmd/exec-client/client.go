@@ -1,4 +1,4 @@
-//go:build pam_tests
+//go:build pam_tests_exec_client
 
 // Package main is the package for the exec test client.
 package main
@@ -53,7 +53,7 @@ func mainFunc() error {
 		return fmt.Errorf("%w: no connection provided", pam_test.ErrInvalid)
 	}
 
-	mTx, closeFunc, err := dbusmodule.NewTransaction(context.TODO(), *serverAddress)
+	mTx, closeFunc, err := newModuleWrapper(*serverAddress)
 	if err != nil {
 		return fmt.Errorf("%w: can't connect to server: %w", pam_test.ErrInvalid, err)
 	}

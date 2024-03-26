@@ -35,12 +35,10 @@ func TestSetGetItem(t *testing.T) {
 			item:  pam.User,
 			value: ptrValue("an user"),
 		},
-
 		"Returns empty when getting an unset user": {
 			item:      pam.User,
 			wantValue: ptrValue(""),
 		},
-
 		"Setting and getting an user": {
 			item:      pam.User,
 			value:     ptrValue("the-user"),
@@ -53,14 +51,12 @@ func TestSetGetItem(t *testing.T) {
 			value:        ptrValue("some value"),
 			wantSetError: pam.ErrBadItem,
 		},
-
 		"Error when getting invalid item": {
 			item:         pam.Item(-1),
 			wantGetError: pam.ErrBadItem,
 			wantValue:    ptrValue(""),
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -99,32 +95,27 @@ func TestSetPutEnv(t *testing.T) {
 			env:   "AN_ENV",
 			value: ptrValue("value"),
 		},
-
 		"Unset a not-previously set value": {
 			env:          "NEVER_SET_ENV",
 			wantPutError: pam.ErrBadItem,
 			wantValue:    ptrValue(""),
 		},
-
 		"Unset a preset value": {
 			presetValues: map[string]string{"PRESET_ENV": "hey!"},
 			env:          "PRESET_ENV",
 			wantValue:    ptrValue(""),
 		},
-
 		"Changes a preset var": {
 			presetValues: map[string]string{"PRESET_ENV": "hey!"},
 			env:          "PRESET_ENV",
 			value:        ptrValue("hello!"),
 			wantValue:    ptrValue("hello!"),
 		},
-
 		"Get an unset env": {
 			skipPut:   true,
 			env:       "AN_UNSET_ENV",
 			wantValue: ptrValue(""),
 		},
-
 		"Gets an invalid env name": {
 			env:       "",
 			value:     ptrValue("Invalid Value"),
@@ -139,7 +130,6 @@ func TestSetPutEnv(t *testing.T) {
 			wantPutError: pam.ErrBadItem,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -213,7 +203,6 @@ func TestSetGetData(t *testing.T) {
 			data:       []any{"hey! That's", true},
 			wantData:   []any{"hey! That's", true},
 		},
-
 		"Set replaces data": {
 			presetData: map[string]any{"some-data": []any{"hey! That's", true}},
 			key:        "some-data",
@@ -233,7 +222,6 @@ func TestSetGetData(t *testing.T) {
 			key:          "not set",
 			wantGetError: pam.ErrNoModuleData,
 		},
-
 		"Error when getting data that has been removed": {
 			presetData:   map[string]any{"some-data": []any{"hey! That's", true}},
 			key:          "some-data",
@@ -241,7 +229,6 @@ func TestSetGetData(t *testing.T) {
 			wantGetError: pam.ErrNoModuleData,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -285,7 +272,6 @@ func TestGetUser(t *testing.T) {
 			presetUser: "an-user",
 			want:       "an-user",
 		},
-
 		"Getting a previously set user does not use conversation handler": {
 			presetUser: "an-user",
 			want:       "an-user",
@@ -293,7 +279,6 @@ func TestGetUser(t *testing.T) {
 				return "another-user", pam.ErrConv
 			}),
 		},
-
 		"Getting the user uses conversation handler if none was set": {
 			want: "provided-user",
 			convHandler: pam.ConversationFunc(
@@ -315,7 +300,6 @@ func TestGetUser(t *testing.T) {
 			wantError: pam.ErrConv,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -357,7 +341,6 @@ func TestStartStringConv(t *testing.T) {
 			convStyle: pam.ErrorMsg,
 			want:      "I'm handling it fine though",
 		},
-
 		"Conversation prompt can be formatted": {
 			promptFormat:     "Sending some %s, right? %v",
 			promptFormatArgs: []interface{}{"info", true},
@@ -370,14 +353,12 @@ func TestStartStringConv(t *testing.T) {
 			convHandler: ptrValue(pam.ConversationFunc(nil)),
 			wantError:   pam.ErrConv,
 		},
-
 		"Error if the conversation handler fails": {
 			prompt:    "Tell me your secret!",
 			convStyle: pam.PromptEchoOff,
 			convError: pam.ErrBuf,
 			wantError: pam.ErrBuf,
 		},
-
 		"Error when conversation uses binary content style": {
 			prompt:                "I am a binary content\xff!",
 			convStyle:             pam.BinaryPrompt,
@@ -386,7 +367,6 @@ func TestStartStringConv(t *testing.T) {
 			convShouldNotBeCalled: true,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -458,7 +438,6 @@ func TestStartBinaryConv(t *testing.T) {
 			convHandler: ptrValue(pam.ConversationHandler(nil)),
 			wantError:   pam.ErrConv,
 		},
-
 		"Error if no binary conversation handler is set": {
 			convHandler: ptrValue(pam.ConversationHandler(pam.ConversationFunc(
 				func(s pam.Style, msg string) (string, error) {
@@ -466,14 +445,12 @@ func TestStartBinaryConv(t *testing.T) {
 				}))),
 			wantError: pam.ErrConv,
 		},
-
 		"Error if the conversation handler fails": {
 			request:   []byte{0x03, 0x02, 0x01},
 			convError: pam.ErrBuf,
 			wantError: pam.ErrBuf,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -535,12 +512,10 @@ func TestStartBinaryPointerConv(t *testing.T) {
 			request: nil,
 			want:    nil,
 		},
-
 		"With empty argument": {
 			request: []byte{},
 			want:    []byte{},
 		},
-
 		"With simple argument": {
 			request: []byte{0x01, 0x02, 0x03},
 			want:    []byte{0x00, 0x01, 0x02, 0x03, 0x4},
@@ -551,7 +526,6 @@ func TestStartBinaryPointerConv(t *testing.T) {
 			convHandler: ptrValue(pam.ConversationHandler(nil)),
 			wantError:   pam.ErrConv,
 		},
-
 		"Error if no binary conversation handler is set": {
 			convHandler: ptrValue(pam.ConversationHandler(pam.ConversationFunc(
 				func(s pam.Style, msg string) (string, error) {
@@ -559,20 +533,17 @@ func TestStartBinaryPointerConv(t *testing.T) {
 				}))),
 			wantError: pam.ErrConv,
 		},
-
 		"Error if the conversation handler fails": {
 			request:   []byte{0xde, 0xad, 0xbe, 0xef, 0xf},
 			convError: pam.ErrBuf,
 			wantError: pam.ErrBuf,
 		},
-
 		"Error if no conversation handler is set handles allocated data": {
 			convError: pam.ErrSystem,
 			want:      []byte{0xde, 0xad, 0xbe, 0xef, 0xf},
 			wantError: pam.ErrSystem,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -697,7 +668,6 @@ func TestStartConvMulti(t *testing.T) {
 				StringResponseDummy{pam.TextInfo, "answer to TextInfo"},
 			},
 		},
-
 		"Can address multiple binary requests": {
 			requests: []pam.ConvRequest{
 				NewBinaryRequestDummy(nil),
@@ -712,7 +682,6 @@ func TestStartConvMulti(t *testing.T) {
 				&BinaryResponseDummy{pam.BinaryPointer(&[]byte{0xAF, 0x00, 0xBA, 0xAC})},
 			},
 		},
-
 		"Can address multiple mixed binary and string requests ": {
 			requests: []pam.ConvRequest{
 				NewBinaryRequestDummy(nil),
@@ -740,7 +709,6 @@ func TestStartConvMulti(t *testing.T) {
 		"Error if no request is provided": {
 			wantError: pam.ErrConv,
 		},
-
 		"Error if one of the multiple request fails": {
 			requests: []pam.ConvRequest{
 				NewBinaryRequestDummy(nil),
@@ -769,7 +737,6 @@ func TestStartConvMulti(t *testing.T) {
 			wantError:     pam.ErrConv,
 		},
 	}
-
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

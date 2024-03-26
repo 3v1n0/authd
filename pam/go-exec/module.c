@@ -47,11 +47,12 @@ typedef struct
   GDBusServer  *server;
   GCancellable *cancellable;
 
-  ActionData *action_data;
+  ActionData   *action_data;
 } ModuleData;
 
 /* Per action data, protected by the static mutex */
-typedef struct _ActionData {
+typedef struct _ActionData
+{
   ModuleData      *module_data;
 
   GMainLoop       *loop;
@@ -170,7 +171,7 @@ notify_error (pam_handle_t *pamh,
   message = g_strdup_vprintf (format, args);
   va_end (args);
 
-  if (isatty (STDIN_FILENO)) \
+  if (isatty (STDERR_FILENO)) \
     g_debug ("%s: %s", action, message);
   else
     g_warning ("%s: %s", action, message);
@@ -406,7 +407,6 @@ on_pam_method_call (GDBusConnection       *connection,
       ret = pam_putenv (pamh, name_value);
 
       g_dbus_method_invocation_return_value (invocation, g_variant_new ("(i)", ret));
-      g_debug ("We have the env set?!? %s", pam_getenv (pamh, env));
     }
   else if (g_str_equal (method_name, "UnsetEnv"))
     {
@@ -603,7 +603,7 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
       return FALSE;
     }
 
-  if (client_pid != g_atomic_int_get (&action_data->child_pid) && client_pid != getpid ())
+  if (client_pid != action_data->child_pid && client_pid != getpid ())
     {
 #ifdef AUTHD_TEST_MODULE
       /* When testing under go it may happen to have different pids, it's not
@@ -782,7 +782,7 @@ do_pam_action (pam_handle_t *pamh,
 {
   ModuleData *module_data = NULL;
   g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
-  g_auto(ActionData) action_data = {0};
+  g_auto(ActionData) action_data = {.current_action = action, 0};
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
@@ -947,6 +947,24 @@ do_pam_action (pam_handle_t *pamh,
   action_data.child_watch_id =
     g_child_watch_add_full (G_PRIORITY_HIGH, child_pid,
                             on_child_gone, &action_data, NULL);
+
+#ifdef AUTHD_TEST_MODULE
+  /* The previous code implicitly just added a SIGCHLD signal handler.
+   * This is perfectly fine for the purpose of this module, however in
+   * case we're running as part of a Go application (as during authd tests)
+   * we should make sure that the signal handler is called with the go provided
+   * alternate stack. See:
+   *  - https://pkg.go.dev/os/signal#hdr-Go_programs_that_use_cgo_or_SWIG
+   *
+   * This can be removed when/if this GLib change will be part of the release
+   * we're targeting:
+   *  - https://gitlab.gnome.org/GNOME/glib/-/merge_requests/3983
+   */
+  struct sigaction sigchild_handler;
+  sigaction (SIGCHLD, NULL, &sigchild_handler);
+  sigchild_handler.sa_flags |= SA_ONSTACK;
+  sigaction (SIGCHLD, &sigchild_handler, NULL);
+#endif
 
   g_main_loop_run (action_data.loop);
 

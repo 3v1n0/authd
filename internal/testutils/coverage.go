@@ -61,10 +61,11 @@ func CoverDirEnv() string {
 
 // AppendCovEnv returns the env needed to enable coverage when running a go binary.
 func AppendCovEnv(env []string) []string {
-	if CoverDir() == "" {
+	envVar := CoverDirEnv()
+	if envVar == "" {
 		return env
 	}
-	return append(env, CoverDirEnv())
+	return append(env, envVar)
 }
 
 // CoverDir parses the arguments to find the cover profile file.

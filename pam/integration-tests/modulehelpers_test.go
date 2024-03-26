@@ -31,6 +31,7 @@ func buildCPAMModule(t *testing.T, sources []string, pkgConfigDeps []string, son
 
 	//nolint:gosec // G204 it's a test so we should allow using any compiler safely.
 	cmd := exec.Command(compiler)
+	cmd.Dir = testutils.ProjectRoot()
 	libPath := filepath.Join(t.TempDir(), soname+".so")
 
 	require.NoError(t, os.MkdirAll(filepath.Dir(libPath), 0700),

@@ -193,26 +193,15 @@ func (h *pamModule) Authenticate(mTx pam.ModuleTransaction, flags pam.Flags, arg
 // ChangeAuthTok is the method that is invoked during pam_sm_chauthtok request.
 func (h *pamModule) ChangeAuthTok(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
 	parsedArgs, logArgsIssues := parseArgs(args)
-	if flags&pam.PrelimCheck != 0 {
-		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
-		_, closeConn, err := newClient(parsedArgs)
-		if err != nil {
-			log.Debugf(context.TODO(), "%s", err)
-			return pam.ErrTryAgain
-		}
-		closeConn()
-		return nil
-	}
-	log.Debugf(context.TODO(), "ChangeAuthTok, password update phase: %d", flags&pam.UpdateAuthtok)
-	err := h.handleAuthRequest(authd.SessionMode_PASSWD, mTx, flags, parsedArgs, logArgsIssues)
 
+	err := h.handleAuthRequest(authd.SessionMode_PASSWD, mTx, flags, parsedArgs, logArgsIssues)
 	if errors.Is(err, pam.ErrPermDenied) {
 		return pam.ErrAuthtokRecovery
 	}
 	return err
 }
 
-func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTransaction, flags pam.Flags, parsedArgs map[string]string, logArgsIssues func()) error {
+func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTransaction, flags pam.Flags, parsedArgs map[string]string, logArgsIssues func()) (err error) {
 	// Initialize localization
 	// TODO
 
@@ -221,10 +210,29 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 	closeLogging, err := initLogging(parsedArgs)
 	defer closeLogging()
+	defer func() {
+		log.Debugf(context.TODO(), "%s: exiting with error %v", mode, err)
+	}()
 	if err != nil {
 		return err
 	}
 	logArgsIssues()
+
+	if mode == authd.SessionMode_PASSWD && flags&pam.PrelimCheck != 0 {
+		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
+		_, closeConn, err := newClient(parsedArgs)
+		if err != nil {
+			log.Debugf(context.TODO(), "%s", err)
+			return fmt.Errorf("%w: %w", pam.ErrTryAgain, err)
+		}
+		closeConn()
+		return nil
+	}
+
+	if mode == authd.SessionMode_PASSWD {
+		log.Debugf(context.TODO(), "ChangeAuthTok, password update phase: %d",
+			flags&pam.UpdateAuthtok)
+	}
 
 	if gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		// Explicitly set the output to something so that the program
@@ -302,10 +310,13 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 }
 
 // AcctMgmt sets any used brokerID as default for the user.
-func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) error {
+func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) (err error) {
 	parsedArgs, logArgsIssues := parseArgs(args)
 	closeLogging, err := initLogging(parsedArgs)
 	defer closeLogging()
+	defer func() {
+		log.Debugf(context.TODO(), "AcctMgmt: exiting with error %v", err)
+	}()
 	if err != nil {
 		return err
 	}

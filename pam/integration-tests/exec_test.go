@@ -17,7 +17,7 @@ import (
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 )
 
-var execModuleSources = []string{"../go-exec/module.c"}
+var execModuleSources = []string{"./pam/go-exec/module.c"}
 
 const execServiceName = "exec-module"
 
@@ -222,6 +222,14 @@ func TestExecModule(t *testing.T) {
 		"Error when getting not-available user data": {
 			methodCalls: []cliMethodCall{{m: "GetData", args: []any{"NotAvailable"}}},
 			wantError:   pam.ErrNoModuleData,
+		},
+		"Error when client fails panicking": {
+			methodCalls: []cliMethodCall{{m: "SimulateClientPanic", args: []any{"Client panicked!"}}},
+			wantError:   pam.ErrSymbol,
+		},
+		"Error when client fails because an unhandled error": {
+			methodCalls: []cliMethodCall{{m: "SimulateClientError", args: []any{"Client error!"}}},
+			wantError:   pam.ErrSystem,
 		},
 	}
 	for name, tc := range cliTests {
@@ -864,16 +872,18 @@ func buildExecClient(t *testing.T) string {
 	t.Helper()
 
 	cmd := exec.Command("go", "build", "-C", "cmd/exec-client")
+	cmd.Dir = filepath.Join(testutils.CurrentDir())
 	if testutils.CoverDir() != "" {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
-	cmd.Args = append(cmd.Args, "-gcflags=-dwarflocationlists=true")
-	cmd.Args = append(cmd.Args, "-tags=pam_tests")
-	cmd.Env = append(os.Environ(), `CGO_CFLAGS=-O0 -g3`)
 	if pam_test.IsAddressSanitizerActive() {
+		// -asan is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-asan")
 	}
+	cmd.Args = append(cmd.Args, "-gcflags=-dwarflocationlists=true")
+	cmd.Args = append(cmd.Args, "-tags=pam_tests_exec_client")
+	cmd.Env = append(os.Environ(), `CGO_CFLAGS=-O0 -g3`)
 
 	execPath := filepath.Join(t.TempDir(), "exec-client")
 	t.Logf("Compiling Exec client at %s", execPath)

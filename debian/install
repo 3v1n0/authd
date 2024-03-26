@@ -4,7 +4,7 @@
 usr/bin/authd ${env:AUTHD_DAEMONS_PATH}
 
 # Install pam wrapper
-usr/bin/pam => ${env:AUTHD_DAEMONS_PATH}/authd_pam_cli
+usr/bin/pam => ${env:AUTHD_DAEMONS_PATH}/authd-pam
 
 # pam-auth-update files
 debian/pam-configs/* /usr/share/pam-configs

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/msteinert/pam/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/internal/testutils"
 	grouptests "github.com/ubuntu/authd/internal/users/localgroups/tests"
@@ -49,16 +50,16 @@ func TestCLIAuthenticate(t *testing.T) {
 	tests := map[string]struct {
 		tape string
 	}{
-		"Authenticate user successfully":               {tape: "simple_auth"},
-		"Authenticate user with mfa":                   {tape: "mfa_auth"},
-		"Authenticate user with form mode with button": {tape: "form_with_button"},
-		"Authenticate user with qr code":               {tape: "qr_code"},
-		"Authenticate user and reset password":         {tape: "mandatory_password_reset"},
-		"Authenticate user and offer password reset":   {tape: "optional_password_reset"},
-		"Authenticate user switching auth mode":        {tape: "switch_auth_mode"},
-		"Authenticate user switching username":         {tape: "switch_username"},
-		"Authenticate user switching broker":           {tape: "switch_broker"},
-		// "Authenticate user and add it to local group":         {tape: "local_group"},
+		"Authenticate user successfully":                      {tape: "simple_auth"},
+		"Authenticate user with mfa":                          {tape: "mfa_auth"},
+		"Authenticate user with form mode with button":        {tape: "form_with_button"},
+		"Authenticate user with qr code":                      {tape: "qr_code"},
+		"Authenticate user and reset password":                {tape: "mandatory_password_reset"},
+		"Authenticate user and offer password reset":          {tape: "optional_password_reset"},
+		"Authenticate user switching auth mode":               {tape: "switch_auth_mode"},
+		"Authenticate user switching username":                {tape: "switch_username"},
+		"Authenticate user switching broker":                  {tape: "switch_broker"},
+		"Authenticate user and add it to local group":         {tape: "local_group"},
 		"Authenticate with warnings on unsupported arguments": {tape: "simple_auth_with_unsupported_args"},
 
 		"Remember last successful broker and mode": {tape: "remember_broker_and_mode"},
@@ -87,7 +88,6 @@ func TestCLIAuthenticate(t *testing.T) {
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, cliEnv...)
 			cmd.Env = append(cmd.Env, pathEnv)
-			cmd.Env = append(cmd.Env, "AUTHD_TEST_ARTIFACTS_PATH="+artifactsDir())
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", socketPathEnv, socketPath))
 			cmd.Env = append(cmd.Env, fmt.Sprintf("AUTHD_PAM_CLI_LOG_DIR=%s", filepath.Dir(cliLog)))
 			cmd.Dir = outDir
@@ -179,7 +179,6 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			cmd.Env = testutils.AppendCovEnv(cmd.Env)
 			cmd.Env = append(cmd.Env, cliEnv...)
 			cmd.Env = append(cmd.Env, pathEnv)
-			cmd.Env = append(cmd.Env, "AUTHD_TEST_ARTIFACTS_PATH="+artifactsDir())
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", socketPathEnv, socketPath))
 			cmd.Env = append(cmd.Env, fmt.Sprintf("AUTHD_PAM_CLI_LOG_DIR=%s", filepath.Dir(cliLog)))
 			cmd.Dir = outDir
@@ -203,6 +202,35 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			require.Equal(t, want, got, "Output of tape %q does not match golden file", tc.tape)
 		})
 	}
+}
+
+func TestPamCLIRunStandalone(t *testing.T) {
+	t.Parallel()
+
+	clientPath := t.TempDir()
+	pamCleanup, err := buildPAMTestClient(clientPath)
+	require.NoError(t, err, "Setup: Failed to build PAM executable")
+	t.Cleanup(pamCleanup)
+
+	// #nosec:G204 - we control the command arguments in tests
+	cmd := exec.Command("go", "run")
+	if testutils.CoverDir() != "" {
+		// -cover is a "positional flag", so it needs to come right after the "build" command.
+		cmd.Args = append(cmd.Args, "-cover")
+		cmd.Env = testutils.AppendCovEnv(os.Environ())
+	}
+
+	cmd.Dir = testutils.ProjectRoot()
+	cmd.Args = append(cmd.Args, "-tags", "pam_binary_cli", "./pam", "login", "--debug")
+	cmd.Args = append(cmd.Args, "logfile="+os.Stdout.Name())
+
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "Could not run PAM client: %s", out)
+	outStr := string(out)
+	t.Log(outStr)
+
+	require.Contains(t, outStr, pam.ErrSystem.Error())
+	require.Contains(t, outStr, pam_test.ErrIgnore.Error())
 }
 
 func prepareCLITest(t *testing.T, clientPath string) []string {
@@ -247,12 +275,13 @@ func buildPAMTestClient(execPath string) (cleanup func(), err error) {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
+	if pam_test.IsAddressSanitizerActive() {
+		// -asan is a "positional flag", so it needs to come right after the "build" command.
+		cmd.Args = append(cmd.Args, "-asan")
+	}
 	cmd.Args = append(cmd.Args, "-tags=pam_binary_cli", "-o", filepath.Join(execPath, "pam_authd"), "../.")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return func() {}, fmt.Errorf("%v: %s", err, out)
-	}
-	if pam_test.IsAddressSanitizerActive() {
-		cmd.Args = append(cmd.Args, "-asan")
 	}
 
 	return func() { _ = os.Remove(filepath.Join(execPath, "pam_authd")) }, nil
@@ -261,16 +290,18 @@ func buildPAMTestClient(execPath string) (cleanup func(), err error) {
 func buildPAMClient(t *testing.T) string {
 	t.Helper()
 
-	cmd := exec.Command("go", "build", "-C", "..")
+	cmd := exec.Command("go", "build", "-C", "pam")
+	cmd.Dir = testutils.ProjectRoot()
 	if testutils.CoverDir() != "" {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
-	cmd.Args = append(cmd.Args, "-gcflags=-dwarflocationlists=true")
-	cmd.Env = append(os.Environ(), `CGO_CFLAGS=-O0 -g3`)
 	if pam_test.IsAddressSanitizerActive() {
+		// -asan is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-asan")
 	}
+	cmd.Args = append(cmd.Args, "-gcflags=-dwarflocationlists=true")
+	cmd.Env = append(os.Environ(), `CGO_CFLAGS=-O0 -g3`)
 
 	authdPam := filepath.Join(t.TempDir(), "authd-pam")
 	t.Logf("Compiling Exec client at %s", authdPam)
@@ -299,14 +330,6 @@ func prependBinToPath(t *testing.T) string {
 	return "PATH=" + strings.Join([]string{filepath.Join(strings.TrimSpace(string(out)), "bin"), env}, ":")
 }
 
-func artifactsDir() string {
-	artifactPath := os.Getenv("AUTHD_TEST_ARTIFACTS_PATH")
-	if artifactPath == "" {
-		return filepath.Join(os.TempDir(), "authd-test-artifacts")
-	}
-	return artifactPath
-}
-
 // saveArtifactsForDebug saves the specified artifacts to a temporary directory if the test failed.
 func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 	t.Helper()
@@ -315,7 +338,10 @@ func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 	}
 
 	// We need to copy the artifacts to another directory, since the test directory will be cleaned up.
-	artifactPath := artifactsDir()
+	artifactPath := os.Getenv("AUTHD_TEST_ARTIFACTS_PATH")
+	if artifactPath == "" {
+		artifactPath = filepath.Join(os.TempDir(), "authd-test-artifacts")
+	}
 	tmpDir := filepath.Join(artifactPath, testutils.GoldenPath(t))
 	if err := os.MkdirAll(tmpDir, 0750); err != nil && !os.IsExist(err) {
 		require.NoError(t, err, "Could not create temporary directory for artifacts")

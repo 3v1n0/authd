@@ -101,13 +101,14 @@ func main() {
 		panic("Unknown PAM operation: " + action)
 	}
 
-	pamRes := pamFunc(pam.Flags(0))
+	pamFlags := pam.Silent
+	pamRes := pamFunc(pamFlags)
 	user, _ := tx.GetItem(pam.User)
 
 	printPamResult(fmt.Sprintf(resultMsg, user), pamRes)
 
 	// Simulate setting auth broker as default.
-	printPamResult("PAM AcctMgmt()", tx.AcctMgmt(pam.Flags(0)))
+	printPamResult("PAM AcctMgmt()", tx.AcctMgmt(pamFlags))
 }
 
 func printPamResult(action string, result error) {

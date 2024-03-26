@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/internal/log"
@@ -18,6 +19,13 @@ var (
 	pamFlags      = flag.Int64("flags", 0, "pam flags")
 	serverAddress = flag.String("server-address", "", "the dbus connection to use to communicate with module")
 )
+
+func init() {
+	// We need to stay on the main thread all the time here, to make sure we're
+	// calling the dbus services from the process and so that the module PID
+	// check won't fail.
+	runtime.LockOSThread()
+}
 
 func mainFunc() error {
 	module := &pamModule{}
