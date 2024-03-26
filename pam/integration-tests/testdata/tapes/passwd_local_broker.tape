@@ -16,7 +16,7 @@ Set Shell bash
 Hide
 Type "./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK}"
 Enter
-Sleep 850ms
+Sleep 1200ms
 Show
 
 Hide
