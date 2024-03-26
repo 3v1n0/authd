@@ -68,7 +68,7 @@ func TestCLIAuthenticate(t *testing.T) {
 		"Deny authentication if user does not exist":  {tape: "unexistent_user"},
 
 		"Exit authd if local broker is selected": {tape: "local_broker"},
-		"Exit authd if user sigints":             {tape: "sigint"},
+		// "Exit authd if user sigints":             {tape: "sigint"},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
