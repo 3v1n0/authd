@@ -45,6 +45,10 @@ jobs:
         run: |
           set -eu
           go build -tags withexamplebroker ./cmd/authd
+      - name: Run PAM client for interactive testing purposes
+        run: |
+          set -eu
+          go run -tags pam_binary_cli ./pam login --debug
       - name: Generate PAM module
         run: |
           set -eu
@@ -149,6 +153,9 @@ jobs:
           # we need to override it using the test.gocoverdir flag instead.
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
           go test -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}"
+
+          # Simulate running the PAM client as user, checking that it can compiler the 
+          # env GOCOVERDIR="${raw_cov_dir}" go run -cover -tags pam_binary_cli ./pam login --debug
 
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
           go tool covdata textfmt -i="${raw_cov_dir}" -o="${cov_dir}/coverage.out"
