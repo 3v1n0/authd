@@ -121,16 +121,16 @@ jobs:
           chmod +x ttyd.x86_64
           sudo mv ttyd.x86_64 /usr/bin/ttyd
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly # We need nightly to enable instrumentation for coverage.
-          override: true
-          components: llvm-tools-preview
-      - name: Install grcov
-        run: |
-          set -eu
-          cargo install grcov
+      # - uses: actions-rs/toolchain@v1
+      #   with:
+      #     profile: minimal
+      #     toolchain: nightly # We need nightly to enable instrumentation for coverage.
+      #     override: true
+      #     components: llvm-tools-preview
+      # - name: Install grcov
+      #   run: |
+      #     set -eu
+      #     cargo install grcov
       - name: Prepare tests artifacts path
         run: |
           set -eu
