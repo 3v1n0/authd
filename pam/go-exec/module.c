@@ -22,6 +22,7 @@
 
 #define G_LOG_DOMAIN "authd-pam-exec"
 
+#include <fcntl.h>
 #include <gio/gio.h>
 #include <glib/gstdio.h>
 #include <security/pam_ext.h>
@@ -34,6 +35,8 @@
 G_STATIC_ASSERT (_PAM_RETURN_VALUES < 255);
 
 G_LOCK_DEFINE_STATIC (exec_module);
+
+static char *global_log_file = NULL;
 
 typedef struct _ActionData ActionData;
 
@@ -185,16 +188,39 @@ log_writer (GLogLevelFlags   log_level,
             gsize            n_fields,
             gpointer         user_data)
 {
-  g_autofree char *log = NULL;
+  g_autofree char *log_path = NULL;
+  g_autofree char *log_line = NULL;
+  g_autofd int log_file_fd = -1;
+  gboolean use_colors;
 
   if (g_log_writer_default_would_drop (log_level, G_LOG_DOMAIN))
     return G_LOG_WRITER_HANDLED;
 
-  log = g_log_writer_format_fields (log_level, fields, n_fields,
-                                    g_log_writer_supports_color (STDERR_FILENO));
+  log_path = g_strdup (g_atomic_pointer_get (&global_log_file));
+  if (log_path && *log_path != '\0')
+    log_file_fd = open (log_path, O_CREAT | O_WRONLY | O_APPEND, 0600);
+
+  use_colors = g_log_writer_supports_color (log_file_fd > 0 ?
+                                            log_file_fd : STDERR_FILENO);
+  log_line = g_log_writer_format_fields (log_level, fields, n_fields, use_colors);
+
+  if (!log_line)
+    return G_LOG_WRITER_UNHANDLED;
+
+  if (log_file_fd > 0)
+    {
+      size_t length;
+
+      length = strlen (log_line);
+      if (write (log_file_fd, log_line, length) == length &&
+          write (log_file_fd, "\n", 1) == 1)
+        return G_LOG_WRITER_HANDLED;
+
+      g_printerr ("Can't write log to file: %s", g_strerror (errno));
+    }
 
   /* We prefer writing to stderr because loaders such as SSHd may ignore stdout */
-  g_printerr ("%s\n", log);
+  g_printerr ("%s\n", log_line);
   return G_LOG_WRITER_HANDLED;
 }
 
@@ -217,6 +243,13 @@ action_module_data_cleanup (ActionData *action_data)
   g_cancellable_cancel (action_data->cancellable);
 
   g_log_set_debug_enabled (FALSE);
+
+#if GLIB_CHECK_VERSION (2, 74, 0)
+  g_free (g_atomic_pointer_exchange (&global_log_file, NULL));
+#else
+  g_autofree char *log_file = g_atomic_pointer_get (&global_log_file);
+  g_atomic_pointer_set (&global_log_file, NULL);
+#endif
 
   g_clear_object (&action_data->cancellable);
   g_clear_object (&action_data->connection);
@@ -730,6 +763,7 @@ handle_module_options (int argc, const
                        char **argv,
                        GPtrArray **out_args,
                        char ***out_env_variables,
+                       char **out_log_file,
                        GError **error)
 {
   g_autoptr(GOptionContext) options_context = NULL;
@@ -737,11 +771,13 @@ handle_module_options (int argc, const
   g_autoptr(GPtrArray) args = NULL;
   g_auto(GStrv) args_strv = NULL;
   g_auto(GStrv) env_variables = NULL;
+  g_autofree char *log_file = NULL;
   gboolean debug_enabled = FALSE;
 
   const GOptionEntry options_entries[] = {
-    { "exec-env", 'e', 0, G_OPTION_ARG_STRING_ARRAY, &env_variables, NULL, NULL },
-    { "exec-debug", 'd', 0, G_OPTION_ARG_NONE, &debug_enabled, NULL, NULL },
+    { "exec-env", 0, 0, G_OPTION_ARG_STRING_ARRAY, &env_variables, NULL, NULL },
+    { "exec-debug", 0, 0, G_OPTION_ARG_NONE, &debug_enabled, NULL, NULL },
+    { "exec-log", 0, 0, G_OPTION_ARG_FILENAME, &log_file, NULL, NULL },
     G_OPTION_ENTRY_NULL
   };
 
@@ -778,6 +814,9 @@ handle_module_options (int argc, const
   if (out_env_variables)
     *out_env_variables = g_steal_pointer (&env_variables);
 
+  if (out_log_file)
+    *out_log_file = g_steal_pointer (&log_file);
+
   g_log_set_debug_enabled (debug_enabled);
 
   return TRUE;
@@ -799,6 +838,7 @@ do_pam_action (pam_handle_t *pamh,
   g_autoptr(GDBusServer) server = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *exe = NULL;
+  g_autofree char *log_file = NULL;
   g_autofd int stdin_fd = -1;
   g_autofd int stdout_fd = -1;
   g_autofd int stderr_fd = -1;
@@ -814,13 +854,16 @@ do_pam_action (pam_handle_t *pamh,
       g_once_init_leave (&logger_set, TRUE);
     }
 
-  g_debug ("Starting %s", action);
-
-  if (!handle_module_options (argc, argv, &args, &env_variables, &error))
+  if (!handle_module_options (argc, argv, &args, &env_variables, &log_file, &error))
     {
       notify_error (pamh, action, "impossible to parse arguments: %s", error->message);
       return PAM_SYSTEM_ERR;
     }
+
+  if (g_atomic_pointer_compare_and_exchange (&global_log_file, NULL, log_file))
+    log_file = NULL;
+
+  g_debug ("Starting %s", action);
 
   if (is_debug_logging_enabled ())
     {
