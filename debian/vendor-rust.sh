@@ -15,4 +15,4 @@ trap 'rm -rf "$CARGO_HOME"' EXIT INT HUP
 # Some crates are shipped with .a files, which get removed by the helpers during the package build as a safety measure.
 # This results in cargo failing to compile, since the files (which are listed in the checksums) are not there anymore.
 # For those crates, we need to replace their checksum with a more general one that only lists the crate checksum, instead of each file.
-${CARGO_PATH} vendor-filterer "${CARGO_VENDOR_DIR}"
+/tmp/cargo-home/bin/cargo-vendor-filterer "${CARGO_VENDOR_DIR}"
