@@ -36,6 +36,7 @@
 G_STATIC_ASSERT (_PAM_RETURN_VALUES < 255);
 
 G_LOCK_DEFINE_STATIC (exec_module);
+G_LOCK_DEFINE_STATIC (logger);
 
 static char *global_log_file = NULL;
 
@@ -189,7 +190,7 @@ log_writer (GLogLevelFlags   log_level,
             gsize            n_fields,
             gpointer         user_data)
 {
-  g_autofree char *log_path = NULL;
+  g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
   g_autofree char *log_line = NULL;
   g_autofd int log_file_fd = -1;
   gboolean use_colors;
@@ -198,9 +199,10 @@ log_writer (GLogLevelFlags   log_level,
   if (g_log_writer_default_would_drop (log_level, G_LOG_DOMAIN))
     return G_LOG_WRITER_HANDLED;
 
-  log_path = g_strdup (g_atomic_pointer_get (&global_log_file));
-  if (log_path && *log_path != '\0')
-    log_file_fd = open (log_path, O_CREAT | O_WRONLY | O_APPEND, 0600);
+  locker = g_mutex_locker_new (&G_LOCK_NAME (logger));
+
+  if (global_log_file && *global_log_file != '\0')
+    log_file_fd = open (global_log_file, O_CREAT | O_WRONLY | O_APPEND, 0600);
   else
     log_file_fd = dup (STDERR_FILENO);
 
@@ -242,12 +244,9 @@ action_module_data_cleanup (ActionData *action_data)
 
   g_log_set_debug_enabled (FALSE);
 
-#if GLIB_CHECK_VERSION (2, 74, 0)
-  g_free (g_atomic_pointer_exchange (&global_log_file, NULL));
-#else
-  g_autofree char *log_file = g_atomic_pointer_get (&global_log_file);
-  g_atomic_pointer_set (&global_log_file, NULL);
-#endif
+  G_LOCK (logger);
+  g_clear_pointer (&global_log_file, g_free);
+  G_UNLOCK (logger);
 
   g_clear_object (&action_data->cancellable);
   g_clear_object (&action_data->connection);
@@ -856,8 +855,12 @@ do_pam_action (pam_handle_t *pamh,
       return PAM_SYSTEM_ERR;
     }
 
-  if (g_atomic_pointer_compare_and_exchange (&global_log_file, NULL, log_file))
-    log_file = NULL;
+  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
+
+  G_LOCK (logger);
+  g_assert (global_log_file == NULL);
+  global_log_file = g_steal_pointer (&log_file);
+  G_UNLOCK (logger);
 
   g_debug ("Starting %s", action);
 
@@ -909,8 +912,6 @@ do_pam_action (pam_handle_t *pamh,
       notify_error (pamh, action, "can't create DBus connection: %s", error->message);
       return PAM_SYSTEM_ERR;
     }
-
-  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
 
   g_assert (g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data));
   g_atomic_pointer_compare_and_exchange (&module_data->server, NULL, g_object_ref (server));
