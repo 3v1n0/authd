@@ -218,7 +218,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, sendEvent(GetAuthenticationModesRequested{})
 
 	case ChangeStage:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 		return m, m.changeStage(msg.Stage)
 
 	case GetAuthenticationModesRequested:
@@ -354,6 +354,8 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 		if m.ClientType == Gdm {
 			commands = append(commands, m.gdmModel.changeStage(s))
 		}
+	} else {
+		fmt.Println("Stage has not changed!", s)
 	}
 
 	switch s {

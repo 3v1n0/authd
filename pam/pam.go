@@ -221,7 +221,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	closeLogging, err := initLogging(parsedArgs, flags)
 	defer closeLogging()
 	defer func() {
-		log.Debugf(context.TODO(), "%s: exiting with error %v", mode, err)
+		log.Infof(context.TODO(), "%s: exiting with error %v", mode, err)
 	}()
 	if err != nil {
 		return err
@@ -232,7 +232,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
 		_, closeConn, err := newClient(parsedArgs)
 		if err != nil {
-			log.Debugf(context.TODO(), "%s", err)
+			log.Infof(context.TODO(), "%s", err)
 			return fmt.Errorf("%w: %w", pam.ErrTryAgain, err)
 		}
 		closeConn()
@@ -240,7 +240,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	}
 
 	if mode == authd.SessionMode_PASSWD {
-		log.Debugf(context.TODO(), "ChangeAuthTok, password update phase: %d",
+		log.Infof(context.TODO(), "ChangeAuthTok, password update phase: %d",
 			flags&pam.UpdateAuthtok)
 	}
 
@@ -325,7 +325,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	closeLogging, err := initLogging(parsedArgs, flags)
 	defer closeLogging()
 	defer func() {
-		log.Debugf(context.TODO(), "AcctMgmt: exiting with error %v", err)
+		log.Infof(context.TODO(), "AcctMgmt: exiting with error %v", err)
 	}()
 	if err != nil {
 		return err
@@ -333,9 +333,11 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	logArgsIssues()
 
 	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
+	fmt.Println("Broker data error", brokerData, "err", err)
 	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
 		return pam.ErrIgnore
 	}
+	fmt.Println("Broker data", brokerData)
 	if brokerData == nil {
 		// PAM can return no data without an error after that has been unset:
 		// See: https://github.com/linux-pam/linux-pam/pull/780
@@ -343,6 +345,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	}
 
 	brokerIDUsedToAuthenticate, ok := brokerData.(string)
+	fmt.Println("Broker ID for user", brokerIDUsedToAuthenticate)
 	if !ok {
 		msg := fmt.Sprintf("broker data as an invalid type %#v", brokerData)
 		log.Errorf(context.TODO(), msg)
