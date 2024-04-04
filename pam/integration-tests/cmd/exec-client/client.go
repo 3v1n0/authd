@@ -26,6 +26,7 @@ var (
 )
 
 func main() {
+	log.Info(context.TODO(), "Client started")
 	err := mainFunc()
 	if err == nil {
 		log.Info(context.TODO(), "Exiting with success")
@@ -52,11 +53,13 @@ func mainFunc() error {
 		return fmt.Errorf("%w: no connection provided", pam_test.ErrInvalid)
 	}
 
+	log.Info(context.TODO(), "Starting wrapper for", *serverAddress)
 	mTx, closeFunc, err := newModuleWrapper(*serverAddress)
 	if err != nil {
 		return fmt.Errorf("%w: can't connect to server: %w", pam_test.ErrInvalid, err)
 	}
 	defer closeFunc()
+	log.Info(context.TODO(), "Ok done with server..")
 
 	action, args := args[0], args[1:]
 
@@ -137,7 +140,7 @@ func handleArg(mTx pam.ModuleTransaction, arg string) error {
 	// or:
 	//   {"act": <"SetItem">, "args": <[<-1>, <"foo">]>, "exp": <[<29>]>}
 
-	log.Debugf(context.TODO(), "Parsing argument '%v'", arg)
+	log.Infof(context.TODO(), "Parsing argument '%v'", arg)
 
 	var parsedArg map[string]dbus.Variant
 	variant, err := dbus.ParseVariant(arg, dbus.SignatureOf(parsedArg))
@@ -180,6 +183,7 @@ func handleArg(mTx pam.ModuleTransaction, arg string) error {
 		return err
 	}
 
+	log.Info(context.TODO(), "About to call", callArgs)
 	retValues := method.Call(callArgs)
 	if expectedRet == nil {
 		// If return value is not explicitly handled, we just return the error if we got one
@@ -192,7 +196,7 @@ func handleArg(mTx pam.ModuleTransaction, arg string) error {
 			case error:
 				return value
 			default:
-				log.Debugf(context.TODO(), "Ignoring %s returned value %#v", action, ret)
+				log.Infof(context.TODO(), "Ignoring %s returned value %#v", action, ret)
 			}
 		}
 		return nil
@@ -319,7 +323,7 @@ func checkReturnedValues(action string, method reflect.Value, wantArgs []dbus.Va
 
 	for idx, wantArg := range wantArgs {
 		retValue := retValues[idx]
-		log.Debugf(context.TODO(), "Checking %s returned value %#v", action, retValue.Interface())
+		log.Infof(context.TODO(), "Checking %s returned value %#v", action, retValue.Interface())
 
 		wantValue, err := tryConvertVariant(wantArg, methodType.Out(idx))
 		if err != nil {
