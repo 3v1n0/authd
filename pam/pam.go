@@ -285,7 +285,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 		SessionMode: mode,
 	}
 
-	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {
+	if err := mTx.PutEnv(authenticationBrokerIDKey + "="); err != nil {
 		return err
 	}
 
@@ -300,14 +300,14 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 	switch exitStatus := appState.ExitStatus().(type) {
 	case adapter.PamSuccess:
-		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.BrokerID); err != nil {
+		if err := mTx.PutEnv(authenticationBrokerIDKey + "=" + exitStatus.BrokerID); err != nil {
 			return err
 		}
 		return nil
 
 	case adapter.PamIgnore:
 		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
-		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.LocalBrokerID); err != nil {
+		if err := mTx.PutEnv(authenticationBrokerIDKey + "=" + exitStatus.LocalBrokerID); err != nil {
 			return err
 		}
 		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
@@ -332,26 +332,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	}
 	logArgsIssues()
 
-	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
-	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
-		return pam.ErrIgnore
-	}
-	if brokerData == nil {
-		// PAM can return no data without an error after that has been unset:
-		// See: https://github.com/linux-pam/linux-pam/pull/780
-		return pam.ErrIgnore
-	}
-
-	brokerIDUsedToAuthenticate, ok := brokerData.(string)
-	if !ok {
-		msg := fmt.Sprintf("broker data as an invalid type %#v", brokerData)
-		log.Errorf(context.TODO(), msg)
-		if err := showPamMessage(mTx, pam.ErrorMsg, msg); err != nil {
-			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", err)
-		}
-
-		return pam.ErrIgnore
-	}
+	brokerIDUsedToAuthenticate := mTx.GetEnv(authenticationBrokerIDKey)
 
 	// Only set the brokerID as default if we stored one after authentication.
 	if brokerIDUsedToAuthenticate == "" {

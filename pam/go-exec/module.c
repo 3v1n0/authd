@@ -377,7 +377,8 @@ on_variant_data_removed (pam_handle_t *pamh,
 static char *
 sanitize_variant_key (const char *key)
 {
-  return g_strdup_printf ("exec-module-variant-%s", key);
+  return g_strdup (key);
+  // return g_strdup_printf ("exec-module-variant-%s", key);
 }
 
 static void
