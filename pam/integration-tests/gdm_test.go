@@ -365,9 +365,14 @@ func TestGdmModuleWithCWrapper(t *testing.T) {
 	t.Parallel()
 	t.Cleanup(pam_test.MaybeDoLeakCheck)
 
-	wrapperLibPath := buildPAMWrapperModule(t)
-	libPath := buildPAMModule(t)
-	testGdmModule(t, wrapperLibPath, []string{libPath})
+	execLib := buildExecModule(t)
+	cliPath := buildPAMClient(t)
+	logFile := os.Stderr.Name()
+	if !testutils.IsVerbose() {
+		logFile = prepareFileLogging(t, "exec-module.log")
+		saveArtifactsForDebug(t, []string{logFile})
+	}
+	testGdmModule(t, execLib, []string{"--exec-debug", "--exec-log", logFile, "--", cliPath})
 }
 
 func buildPAMModule(t *testing.T) string {
