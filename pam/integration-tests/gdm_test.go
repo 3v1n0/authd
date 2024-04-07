@@ -373,6 +373,10 @@ func TestGdmModuleWithCWrapper(t *testing.T) {
 		saveArtifactsForDebug(t, []string{logFile})
 	}
 	testGdmModule(t, execLib, []string{"--exec-debug", "--exec-log", logFile, "--", cliPath})
+
+	// wrapperLibPath := buildPAMWrapperModule(t)
+	// libPath := buildPAMModule(t)
+	// testGdmModule(t, wrapperLibPath, []string{libPath})
 }
 
 func buildPAMModule(t *testing.T) string {
