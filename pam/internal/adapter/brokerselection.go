@@ -183,6 +183,7 @@ func AutoSelectForUser(client authd.PAMClient, username string) tea.Cmd {
 			return nil
 		}
 		brokerID := r.GetPreviousBroker()
+		log.Debugf(context.TODO(), "Previous broker was %s", brokerID)
 		if brokerID == "" {
 			return nil
 		}
