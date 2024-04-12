@@ -46,6 +46,10 @@ const (
 	// gdmServiceName is the name of the service that is loaded by GDM.
 	// Keep this in sync with the service file installed by the package.
 	gdmServiceName = "gdm-authd"
+
+	// polkitServiceName is the name of the service that is loaded by PolicyKit.
+	// Keep this in sync with the service file installed by the package.
+	polkitServiceName = "polkit-1"
 )
 
 var supportedArgs = []string{
@@ -231,6 +235,15 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 		return err
 	}
 	logArgsIssues()
+
+	serviceName, err := mTx.GetItem(pam.Service)
+	if err != nil {
+		log.Warningf(context.TODO(), "Impossible to get PAM service name: %v", err)
+	}
+	if serviceName == polkitServiceName {
+		// TODO: Polkit requires a PAM-conversation based UI.
+		return pam.ErrIgnore
+	}
 
 	if mode == authd.SessionMode_PASSWD && flags&pam.PrelimCheck != 0 {
 		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
