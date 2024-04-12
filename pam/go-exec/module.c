@@ -788,13 +788,39 @@ dup_fd_checked (int fd, GError **error)
   return new_fd;
 }
 
+static char *
+get_program_name (pam_handle_t *pamh)
+{
+  g_autofree char *cmdline = NULL;
+  g_autofree char *proc_name = NULL;
+  const char *service_name = NULL;
+  gsize len;
+
+  if (g_file_get_contents ("/proc/self/cmdline", &cmdline, &len, NULL))
+    proc_name = g_path_get_basename (cmdline);
+
+  pam_get_item (pamh, PAM_SERVICE, (const void **) &service_name);
+
+  if (proc_name && *proc_name && service_name && *service_name)
+    return g_strconcat (proc_name, "-", service_name, NULL);
+
+  if (proc_name && *proc_name)
+    return g_steal_pointer (&proc_name);
+
+  if (service_name && *service_name)
+    return g_strdup (service_name);
+
+  return g_strdup (G_LOG_DOMAIN);
+}
+
 static gboolean
-handle_module_options (int argc, const
-                       char **argv,
-                       GPtrArray **out_args,
-                       char ***out_env_variables,
-                       char **out_log_file,
-                       GError **error)
+handle_module_options (pam_handle_t *pamh,
+                       int           argc,
+                       const char  **argv,
+                       GPtrArray   **out_args,
+                       char       ***out_env_variables,
+                       char        **out_log_file,
+                       GError      **error)
 {
   g_autoptr(GOptionContext) options_context = NULL;
   g_autoptr(GStrvBuilder) strv_builder = NULL;
@@ -802,6 +828,7 @@ handle_module_options (int argc, const
   g_auto(GStrv) args_strv = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *log_file = NULL;
+  g_autofree char *program_name = NULL;
   gboolean debug_enabled = FALSE;
 
   const GOptionEntry options_entries[] = {
@@ -811,10 +838,13 @@ handle_module_options (int argc, const
     G_OPTION_ENTRY_NULL
   };
 
+  if (!g_get_prgname ())
+    program_name = get_program_name (pamh);
+
   strv_builder = g_strv_builder_new ();
   /* We temporary add a fake item as first one, since the option parser ignores
    * it, since normally it's just the program name */
-  g_strv_builder_add (strv_builder, "pam-go-exec-module");
+  g_strv_builder_add (strv_builder, program_name ? program_name : G_LOG_DOMAIN);
   for (int i = 0; i < argc; ++i)
     g_strv_builder_add (strv_builder, argv[i]);
 
@@ -889,7 +919,7 @@ do_pam_action (pam_handle_t *pamh,
     g_log_set_handler (G_LOG_DOMAIN, G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL,
                        log_handler, &action_data);
 
-  if (!handle_module_options (argc, argv, &args, &env_variables, &log_file, &error))
+  if (!handle_module_options (pamh, argc, argv, &args, &env_variables, &log_file, &error))
     {
       G_UNLOCK (logger);
       notify_error (pamh, action, "impossible to parse arguments: %s", error->message);
