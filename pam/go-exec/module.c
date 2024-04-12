@@ -848,15 +848,17 @@ handle_module_options (int argc, const
 }
 
 static int
-do_pam_action (pam_handle_t *pamh,
-               const char   *action,
-               int           flags,
-               int           argc,
-               const char  **argv)
+do_pam_action_thread (pam_handle_t *pamh,
+                      const char   *action,
+                      int           flags,
+                      int           argc,
+                      const char  **argv)
 {
   ModuleData *module_data = NULL;
   g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
   g_auto(ActionData) action_data = {.current_action = action, 0};
+  g_autoptr(GMainContextPusher) context_pusher G_GNUC_UNUSED = NULL;
+  g_autoptr(GMainContext) main_context = NULL;
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
@@ -961,6 +963,12 @@ do_pam_action (pam_handle_t *pamh,
   action_data.module_data = module_data;
   action_data.cancellable = g_cancellable_new ();
 
+  /* We need to have the main context set before setting up the dbus server
+   * or we'll not report the events to the right receiver thread
+   */
+  main_context = g_main_context_new ();
+  context_pusher = g_main_context_pusher_new (main_context);
+
   server = setup_dbus_server (&action_data, &error);
   if (!server)
     {
@@ -1045,7 +1053,7 @@ do_pam_action (pam_handle_t *pamh,
   g_debug ("Launched child %"G_PID_FORMAT, child_pid);
   action_data.child_pid = child_pid;
 
-  action_data.loop = g_main_loop_new (NULL, FALSE);
+  action_data.loop = g_main_loop_new (main_context, FALSE);
 
   wait_thread_name = g_strdup_printf ("exec-%s-wait-child", action);
   wait_thread = g_thread_new (wait_thread_name, wait_child_thread, &(WaitChildThreadData){
@@ -1071,6 +1079,40 @@ do_pam_action (pam_handle_t *pamh,
     return PAM_SYSTEM_ERR;
 
   return exit_status;
+}
+
+typedef struct
+{
+  pam_handle_t *pamh;
+  const char   *action;
+  int           flags;
+  int           argc;
+  const char  **argv;
+} ActionThreadArgs;
+
+static inline gpointer
+thread_func (gpointer data)
+{
+  ActionThreadArgs * args = data;
+  return GINT_TO_POINTER (do_pam_action_thread (args->pamh, args->action, args->flags,
+                                                args->argc, args->argv));
+}
+
+static inline int
+do_pam_action (pam_handle_t *pamh,
+               const char   *action,
+               int           flags,
+               int           argc,
+               const char  **argv)
+{
+  GThread *thread = g_thread_new (action, thread_func, &(ActionThreadArgs){
+    .pamh = pamh,
+    .action = action,
+    .flags = flags,
+    .argc = argc,
+    .argv = argv,
+  });
+  return GPOINTER_TO_INT (g_thread_join (g_steal_pointer (&thread)));
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
