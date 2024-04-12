@@ -48,8 +48,6 @@ typedef struct
 {
   /* Per module-instance data */
   pam_handle_t *pamh;
-  GDBusServer  *server;
-  GCancellable *cancellable;
 
   ActionData   *action_data;
 } ModuleData;
@@ -60,6 +58,7 @@ typedef struct _ActionData
   ModuleData      *module_data;
 
   GMainLoop       *loop;
+  GDBusServer     *server;
   GDBusConnection *connection;
   GCancellable    *cancellable;
   const char      *current_action;
@@ -254,10 +253,9 @@ static void
 action_module_data_cleanup (ActionData *action_data)
 {
   ModuleData *module_data = action_data->module_data;
-  GDBusServer *server = NULL;
 
-  if (module_data && (server = g_atomic_pointer_get (&module_data->server)))
-    g_clear_signal_handler (&action_data->connection_new_id, server);
+  g_clear_signal_handler (&action_data->connection_new_id, action_data->server);
+  g_cancellable_cancel (action_data->cancellable);
 
   if (action_data->connection)
     {
@@ -266,12 +264,21 @@ action_module_data_cleanup (ActionData *action_data)
       g_clear_signal_handler (&action_data->connection_closed_id, action_data->connection);
     }
 
-  g_cancellable_cancel (action_data->cancellable);
+  if (action_data->server)
+    {
+      char *tmpdir;
+
+      g_dbus_server_stop (action_data->server);
+
+      tmpdir = g_object_get_data (G_OBJECT (action_data->server), "tmpdir");
+      g_clear_pointer (&tmpdir, g_rmdir);
+    }
 
   g_log_set_debug_enabled (FALSE);
 
   g_clear_object (&action_data->cancellable);
   g_clear_object (&action_data->connection);
+  g_clear_object (&action_data->server);
   g_clear_pointer (&action_data->loop, g_main_loop_unref);
   g_clear_handle_id (&action_data->child_pid, g_spawn_close_pid);
 
@@ -304,15 +311,6 @@ on_exec_module_removed (pam_handle_t *pamh,
   if ((action_data = g_atomic_pointer_get (&module_data->action_data)))
     action_module_data_cleanup (action_data);
 
-  g_cancellable_cancel (module_data->cancellable);
-
-#if GLIB_CHECK_VERSION (2, 74, 0)
-  server = g_atomic_pointer_exchange (&module_data->server, NULL);
-#else
-  server = g_atomic_pointer_get (&module_data->server);
-  g_atomic_pointer_set (&module_data->server, NULL);
-#endif
-
   if (server)
     {
       char *tmpdir;
@@ -323,7 +321,6 @@ on_exec_module_removed (pam_handle_t *pamh,
       g_clear_pointer (&tmpdir, g_rmdir);
     }
 
-  g_clear_object (&module_data->cancellable);
   g_free (module_data);
 }
 
@@ -344,7 +341,6 @@ setup_shared_module_data (pam_handle_t *pamh)
     }
 
   module_data->pamh = pamh;
-  module_data->cancellable = g_cancellable_new ();
 
   return module_data;
 }
@@ -730,8 +726,7 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
 }
 
 static GDBusServer *
-setup_dbus_server (ModuleData *module_data,
-                   const char *action,
+setup_dbus_server (ActionData *action_data,
                    GError    **error)
 {
   GDBusServer *server = NULL;
@@ -739,12 +734,6 @@ setup_dbus_server (ModuleData *module_data,
   g_autofree char *server_addr = NULL;
   g_autofree char *guid = NULL;
   g_autofree char *tmpdir = NULL;
-
-  /* This pointer is used as a semaphore, so accessing to server-related stuff
-   * does not need further atomic checks.
-   */
-  if ((server = g_atomic_pointer_get (&module_data->server)))
-    return server;
 
   tmpdir = g_dir_make_tmp ("authd-pam-server-XXXXXX", error);
   if (tmpdir == NULL)
@@ -764,7 +753,7 @@ setup_dbus_server (ModuleData *module_data,
                                    G_DBUS_SERVER_FLAGS_AUTHENTICATION_REQUIRE_SAME_USER,
                                    guid,
                                    NULL,
-                                   module_data->cancellable,
+                                   action_data->cancellable,
                                    error);
   if (server == NULL)
     return NULL;
@@ -858,7 +847,7 @@ handle_module_options (int argc, const
   return TRUE;
 }
 
-static inline int
+static int
 do_pam_action (pam_handle_t *pamh,
                const char   *action,
                int           flags,
@@ -966,18 +955,19 @@ do_pam_action (pam_handle_t *pamh,
       return PAM_MODULE_UNKNOWN;
     }
 
-  server = setup_dbus_server (module_data, action, &error);
+  if (!g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data))
+    g_error ("Impossible to set action data");
+
+  action_data.module_data = module_data;
+  action_data.cancellable = g_cancellable_new ();
+
+  server = setup_dbus_server (&action_data, &error);
   if (!server)
     {
       notify_error (pamh, action, "can't create DBus connection: %s", error->message);
       return PAM_SYSTEM_ERR;
     }
-
-  g_assert (g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data));
-  g_atomic_pointer_compare_and_exchange (&module_data->server, NULL, g_object_ref (server));
-
-  action_data.module_data = module_data;
-  action_data.cancellable = g_cancellable_new ();
+  action_data.server = g_object_ref (server);
 
   interactive_mode = isatty (STDIN_FILENO);
 
