@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"github.com/skip2/go-qrcode"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers"
+	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/proto"
 )
 
@@ -101,6 +103,9 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 
 	case brokersListReceived:
 		m.availableBrokers = msg.brokers
+		for _, b := range m.availableBrokers {
+			log.Debugf(context.TODO(), "We have Broker", *b)
+		}
 
 	case authModesReceived:
 		m.authModes = msg.authModes
@@ -114,7 +119,8 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		}
 
 		if len(m.availableBrokers) == 1 {
-			return m, sendEvent(brokerSelected{brokerID: m.availableBrokers[0].Id})
+			log.Debugf(context.TODO(), "Selecting broker...", m.availableBrokers[0].Id)
+			return m, selectBroker(m.availableBrokers[0].Id)
 		}
 
 		var choices choicesList
@@ -134,7 +140,8 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			})
 		}
 
-		return m, sendEvent(brokerSelected{brokerID: id})
+		log.Debug(context.TODO(), "Selecting broker...", id)
+		return m, selectBroker(id)
 
 	case nativeAuthSelectionRequested:
 		if len(m.authModes) < 1 {
