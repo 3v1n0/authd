@@ -57,6 +57,7 @@ typedef struct _ActionData
 {
   ModuleData      *module_data;
 
+  GMainContext    *main_context;
   GMainLoop       *loop;
   GDBusServer     *server;
   GDBusConnection *connection;
@@ -631,18 +632,19 @@ on_connection_closed (GDBusConnection *connection,
 }
 
 static gboolean
-on_new_connection (G_GNUC_UNUSED GDBusServer *server,
-                   GDBusConnection           *connection,
-                   gpointer                   user_data)
+on_new_connection_idle (gpointer user_data)
 {
   g_autoptr(GDBusNodeInfo) node = NULL;
   g_autoptr(GError) error = NULL;
-  ActionData *action_data = user_data;
-  pam_handle_t *pamh = action_data->module_data->pamh;
+  GDBusConnection *connection = user_data;
+  ActionData *action_data;
+  pam_handle_t *pamh;
   GCredentials *credentials;
   pid_t client_pid;
 
   credentials = g_dbus_connection_get_peer_credentials (connection);
+  action_data = g_object_get_data (G_OBJECT (connection), "action-data");
+  pamh = action_data->module_data->pamh;
 
   if (action_data->connection)
     {
@@ -723,13 +725,38 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
                       G_CALLBACK (on_connection_closed), action_data);
 
   return TRUE;
+  g_dbus_connection_start_message_processing (action_data->connection);
+
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean
+on_new_connection (G_GNUC_UNUSED GDBusServer *server,
+                   GDBusConnection           *connection,
+                   gpointer                   user_data)
+{
+  ActionData *action_data = user_data;
+  g_autoptr(GSource) idle_source = NULL;
+
+  g_object_set_data (G_OBJECT (connection), "action-data", action_data);
+
+  idle_source = g_idle_source_new ();
+  g_source_set_priority (idle_source, G_PRIORITY_DEFAULT);
+  g_source_set_callback (idle_source, on_new_connection_idle,
+                         g_object_ref (connection), g_object_unref);
+  g_source_set_static_name (idle_source, "[gio] emit_new_connection_in_idle");
+  g_source_attach (idle_source, action_data->main_context);
+
+  return FALSE;
 }
 
 static GDBusServer *
-setup_dbus_server (ActionData *action_data,
-                   GError    **error)
+setup_dbus_server (ActionData    *action_data,
+                   GMainContext  *main_context,
+                   GError       **error)
 {
   GDBusServer *server = NULL;
+  g_autoptr (GMainContextPusher) context_pusher = NULL;
   g_autofree char *escaped = NULL;
   g_autofree char *server_addr = NULL;
   g_autofree char *guid = NULL;
@@ -747,6 +774,12 @@ setup_dbus_server (ActionData *action_data,
   escaped = g_dbus_address_escape_value (tmpdir);
   server_addr = g_strdup_printf ("unix:tmpdir=%s", escaped);
   guid = g_dbus_generate_guid ();
+
+  // /* We need to set the context as default during the server initialization
+  //  * so that it will use it for notifying us signals, without having to
+  //  * reimplement the same ourself via G_DBUS_SERVER_FLAGS_RUN_IN_THREAD.
+  //  */
+  // context_pusher = g_main_context_pusher_new (main_context);
 
   g_debug ("Setting up connection at %s (%s)", server_addr, guid);
   server = g_dbus_server_new_sync (server_addr,
@@ -848,7 +881,7 @@ handle_module_options (int argc, const
 }
 
 static int
-do_pam_action (pam_handle_t *pamh,
+do_pam_action_thread (pam_handle_t *pamh,
                const char   *action,
                int           flags,
                int           argc,
@@ -857,6 +890,7 @@ do_pam_action (pam_handle_t *pamh,
   ModuleData *module_data = NULL;
   g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
   g_auto(ActionData) action_data = {.current_action = action, 0};
+  g_autoptr(GMainContext) main_context = NULL;
   g_autoptr(GError) error = NULL;
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
@@ -961,7 +995,10 @@ do_pam_action (pam_handle_t *pamh,
   action_data.module_data = module_data;
   action_data.cancellable = g_cancellable_new ();
 
-  server = setup_dbus_server (&action_data, &error);
+  main_context = g_main_context_new ();
+  g_main_context_push_thread_default (main_context);
+  action_data.main_context = main_context;
+  server = setup_dbus_server (&action_data, main_context, &error);
   if (!server)
     {
       notify_error (pamh, action, "can't create DBus connection: %s", error->message);
@@ -1045,7 +1082,7 @@ do_pam_action (pam_handle_t *pamh,
   g_debug ("Launched child %"G_PID_FORMAT, child_pid);
   action_data.child_pid = child_pid;
 
-  action_data.loop = g_main_loop_new (NULL, FALSE);
+  action_data.loop = g_main_loop_new (main_context, FALSE);
 
   wait_thread_name = g_strdup_printf ("exec-%s-wait-child", action);
   wait_thread = g_thread_new (wait_thread_name, wait_child_thread, &(WaitChildThreadData){
@@ -1071,6 +1108,46 @@ do_pam_action (pam_handle_t *pamh,
     return PAM_SYSTEM_ERR;
 
   return exit_status;
+}
+
+typedef struct {
+pam_handle_t *pamh;
+const char   *action;
+int           flags;
+int           argc;
+const char  **argv;
+} ActionThreadArgs;
+
+static gpointer
+thread_func(gpointer data)
+{
+  ActionThreadArgs* args = data;
+  pam_handle_t *pamh = args->pamh;
+  const char   *action = args->action;
+  int           flags = args->flags;
+  int           argc = args->argc;
+  const char  **argv = args->argv;
+
+  return GINT_TO_POINTER (do_pam_action_thread (pamh, action, flags, argc, argv));
+}
+
+static inline int
+do_pam_action (pam_handle_t *pamh,
+               const char   *action,
+               int           flags,
+               int           argc,
+               const char  **argv)
+{
+  ActionThreadArgs args = {
+    .pamh = pamh,
+    .action = action,
+    .flags = flags,
+    .argc = argc,
+    .argv = argv,
+  };
+
+  g_autoptr(GThread) thread = g_thread_new (action, thread_func, &args);
+  return GPOINTER_TO_INT (g_thread_join (g_steal_pointer (&thread)));
 }
 
 #define DEFINE_PAM_WRAPPER(name) \
