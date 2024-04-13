@@ -26,7 +26,7 @@ func buildCPAMModule(t *testing.T, sources []string, pkgConfigDeps []string, son
 
 	compiler := os.Getenv("CC")
 	if compiler == "" {
-		compiler = "cc"
+		compiler = "clang"
 	}
 
 	//nolint:gosec // G204 it's a test so we should allow using any compiler safely.
@@ -42,8 +42,14 @@ func buildCPAMModule(t *testing.T, sources []string, pkgConfigDeps []string, son
 	cmd.Args = append(cmd.Args,
 		"-Wall",
 		"-Werror",
-		"-g3",
-		"-O0",
+		"-g",
+		"-O1",
+		"-fsanitize=memory",
+		"-fsanitize-ignorelist=/tmp/memsanitizerignore.txt",
+		"-fsanitize-memory-track-origins",
+		"-fno-omit-frame-pointer",
+		"-fno-optimize-sibling-calls",
+		"-fno-sanitize-memory-use-after-dtor",
 		"-DAUTHD_TEST_MODULE=1",
 	)
 	if len(pkgConfigDeps) > 0 {
@@ -78,9 +84,10 @@ func buildCPAMModule(t *testing.T, sources []string, pkgConfigDeps []string, son
 		"-Wl,--allow-shlib-undefined",
 		"-shared",
 		"-fPIC",
-		"-Wl,--unresolved-symbols=report-all",
+		// "-Wl,--unresolved-symbols=report-all",
 		"-Wl,-soname," + soname + "",
 		"-lpam",
+		"-Wl,--unresolved-symbols=ignore-all",
 	}...)
 	if len(pkgConfigDeps) > 0 {
 		cmd.Args = append(cmd.Args,

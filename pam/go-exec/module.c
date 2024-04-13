@@ -141,9 +141,9 @@ g_clear_fd (int     *fd_ptr,
     return TRUE;
 
   /* Suppress "Not available before" warning */
-  G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    return g_close (fd, error);
-  G_GNUC_END_IGNORE_DEPRECATIONS
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+  return g_close (fd, error);
+G_GNUC_END_IGNORE_DEPRECATIONS
 }
 
 static inline void
@@ -256,6 +256,11 @@ action_module_data_cleanup (ActionData *action_data)
   ModuleData *module_data = action_data->module_data;
   GDBusServer *server = NULL;
 
+  g_print("Cleaning up action data %p\n", action_data);
+
+  g_print("Module %p action is %p\n", module_data, module_data ? module_data->action_data :
+    (ActionData*) 0xdeadbeef);
+
   if (module_data && (server = g_atomic_pointer_get (&module_data->server)))
     g_clear_signal_handler (&action_data->connection_new_id, server);
 
@@ -285,12 +290,31 @@ action_module_data_cleanup (ActionData *action_data)
   g_clear_fd (&action_data->log_file_fd, NULL);
   G_UNLOCK (logger);
 
+  g_print("Dropping module %p action is %p\n",module_data, module_data ? module_data->action_data :
+    (ActionData*) 0xdeadbeef);
+
   if (module_data &&
       !g_atomic_pointer_compare_and_exchange (&module_data->action_data, action_data, NULL))
     g_assert_not_reached ();
 }
 
 G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC (ActionData, action_module_data_cleanup)
+
+#define ALIGN 64
+
+#include <stdint.h>
+
+void *aligned_malloc(int size) {
+    void *mem = malloc(size+ALIGN+sizeof(void*));
+    memset(mem, 0, size+ALIGN+sizeof(void*));
+    void **ptr = (void**)((uintptr_t)(mem+ALIGN+sizeof(void*)) & ~(ALIGN-1));
+    ptr[-1] = mem;
+    return ptr;
+}
+
+void aligned_free(void *ptr) {
+    free(((void**)ptr)[-1]);
+}
 
 static void
 on_exec_module_removed (pam_handle_t *pamh,
@@ -324,7 +348,8 @@ on_exec_module_removed (pam_handle_t *pamh,
     }
 
   g_clear_object (&module_data->cancellable);
-  g_free (module_data);
+  // g_free (module_data);
+  aligned_free (module_data);
 }
 
 static ModuleData *
@@ -337,9 +362,10 @@ setup_shared_module_data (pam_handle_t *pamh)
     return module_data;
 
   module_data = g_new0 (ModuleData, 1);
+  // module_data = aligned_malloc (sizeof (ModuleData));
   if (pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed) != PAM_SUCCESS)
     {
-      g_free (module_data);
+      // aligned_free (module_data);
       return NULL;
     }
 
@@ -794,9 +820,10 @@ dup_fd_checked (int fd, GError **error)
   return new_fd;
 }
 
+__attribute__((no_sanitize_memory))
 static gboolean
-handle_module_options (int argc, const
-                       char **argv,
+handle_module_options (int argc,
+                       const char **argv,
                        GPtrArray **out_args,
                        char ***out_env_variables,
                        char **out_log_file,
@@ -816,6 +843,8 @@ handle_module_options (int argc, const
     { "exec-log", 0, 0, G_OPTION_ARG_FILENAME, &log_file, NULL, NULL },
     G_OPTION_ENTRY_NULL
   };
+
+  g_set_prgname ("THIS IS A PROGRAM");
 
   strv_builder = g_strv_builder_new ();
   /* We temporary add a fake item as first one, since the option parser ignores
@@ -973,7 +1002,10 @@ do_pam_action (pam_handle_t *pamh,
       return PAM_SYSTEM_ERR;
     }
 
+  g_print("Module %p current action is %p\n", module_data, module_data->action_data);
+
   g_assert (g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data));
+  // module_data->action_data = &action_data;
   g_atomic_pointer_compare_and_exchange (&module_data->server, NULL, g_object_ref (server));
 
   action_data.module_data = module_data;
@@ -1091,8 +1123,236 @@ do_pam_action (pam_handle_t *pamh,
   }
 
 DEFINE_PAM_WRAPPER (acct_mgmt)
-DEFINE_PAM_WRAPPER (authenticate)
+// DEFINE_PAM_WRAPPER (authenticate)
 DEFINE_PAM_WRAPPER (chauthtok)
 DEFINE_PAM_WRAPPER (close_session)
 DEFINE_PAM_WRAPPER (open_session)
 DEFINE_PAM_WRAPPER (setcred)
+
+PAM_EXTERN int
+pam_sm_authenticate (pam_handle_t *pamh,
+               int           flags,
+               int           argc,
+               const char  **argv)
+{
+  const char   *action = "authenticate";
+  ModuleData *module_data = NULL;
+  g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
+  g_auto(ActionData) action_data = {.current_action = "authenticate", 0};
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GPtrArray) envp = NULL;
+  g_autoptr(GPtrArray) args = NULL;
+  g_autoptr(GDBusServer) server = NULL;
+  g_autoptr(GThread) wait_thread = NULL;
+  g_auto(GStrv) env_variables = NULL;
+  g_autofree char *exe = NULL;
+  g_autofree char *log_file = NULL;
+  g_autofree char *wait_thread_name = NULL;
+  g_autofd int stdin_fd = -1;
+  g_autofd int stdout_fd = -1;
+  g_autofd int stderr_fd = -1;
+  g_autofd int log_file_fd = -1;
+  int exit_status;
+  gboolean interactive_mode;
+  GPid child_pid;
+
+  G_LOCK (logger);
+
+#ifdef AUTHD_TEST_MODULE
+  /* When running tests we also set the default handler, so that we can have
+   * better debugging experience in case of failures in other log domains.
+   */
+  g_log_set_default_handler (log_handler, &action_data);
+#endif
+
+  action_data.log_handler_id =
+    g_log_set_handler (G_LOG_DOMAIN, G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL,
+                       log_handler, &action_data);
+
+  // if (!handle_module_options (argc, argv, &args, &env_variables, &log_file, &error))
+  //   {
+  //     G_UNLOCK (logger);
+  //     notify_error (pamh, action, "impossible to parse arguments: %s", error->message);
+  //     return PAM_SYSTEM_ERR;
+  //   }
+
+  if (log_file && *log_file != '\0')
+    log_file_fd = open (log_file, O_CREAT | O_WRONLY | O_APPEND, 0600);
+  else
+    log_file_fd = dup (STDERR_FILENO);
+
+  if (log_file_fd == -1)
+    {
+      g_warning ("Impossible to open log file %s: %s",
+                 (log_file && *log_file != '\0') ? log_file : "<sderr>",
+                 g_strerror (errno));
+    }
+
+  action_data.log_file_fd = g_steal_fd (&log_file_fd);
+  G_UNLOCK (logger);
+
+  locker = g_mutex_locker_new (&G_LOCK_NAME (exec_module));
+
+  g_debug ("Starting %s", action);
+
+  if (is_debug_logging_enabled ())
+    {
+      g_autoptr(GString) str_args = g_string_new (NULL);
+
+      for (int i = 0; i < argc; ++i)
+        {
+          g_string_append_printf (str_args, "'%s'", argv[i]);
+
+          if (i < argc - 1)
+            g_string_append_c (str_args, ' ');
+        }
+
+      g_debug ("Called with arguments: %s", str_args->str);
+    }
+
+  module_data = setup_shared_module_data (pamh);
+  if (module_data == NULL)
+    {
+      notify_error (pamh, action, "can't create module data");
+      return PAM_SYSTEM_ERR;
+    }
+
+  if (!args || args->len < 1)
+    {
+      notify_error (pamh, action, "no executable provided");
+      return PAM_MODULE_UNKNOWN;
+    }
+
+  exe = g_ptr_array_steal_index (args, 0);
+
+  if (!exe || *exe == '\0')
+    {
+      notify_error (pamh, action, "no valid module name provided");
+      return PAM_MODULE_UNKNOWN;
+    }
+
+  if (!g_file_test (exe, G_FILE_TEST_IS_EXECUTABLE))
+    {
+      notify_error (pamh, action, "Impossible to use %s as PAM executable", exe);
+      return PAM_MODULE_UNKNOWN;
+    }
+
+  server = setup_dbus_server (module_data, action, &error);
+  if (!server)
+    {
+      notify_error (pamh, action, "can't create DBus connection: %s", error->message);
+      return PAM_SYSTEM_ERR;
+    }
+
+  g_print("Module %p current action is %p\n", module_data, module_data->action_data);
+
+  g_assert (g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data));
+  // module_data->action_data = &action_data;
+  g_atomic_pointer_compare_and_exchange (&module_data->server, NULL, g_object_ref (server));
+
+  action_data.module_data = module_data;
+  action_data.cancellable = g_cancellable_new ();
+
+  interactive_mode = isatty (STDIN_FILENO);
+
+  if (interactive_mode)
+    {
+      if ((stdin_fd = dup_fd_checked (STDIN_FILENO, &error)) < 0)
+        {
+          notify_error (pamh, action, "can't duplicate stdin file descriptor: %s",
+                        error->message);
+          return PAM_SYSTEM_ERR;
+        }
+
+      if ((stdout_fd = dup_fd_checked (STDOUT_FILENO, &error)) < 0)
+        {
+          notify_error (pamh, action, "can't duplicate stdout file descriptor: %s",
+                        error->message);
+          return PAM_SYSTEM_ERR;
+        }
+
+      if ((stderr_fd = dup_fd_checked (STDERR_FILENO, &error)) < 0)
+        {
+          notify_error (pamh, action, "can't duplicate stderr file descriptor: %s",
+                        error->message);
+          return PAM_SYSTEM_ERR;
+        }
+    }
+
+  action_data.connection_new_id =
+    g_signal_connect (server, "new-connection",
+                      G_CALLBACK (on_new_connection), &action_data);
+
+  while (!g_dbus_server_is_active (server))
+    g_thread_yield ();
+
+  envp = g_ptr_array_new_full (2, g_free);
+  if (interactive_mode)
+    g_ptr_array_add (envp, g_strdup_printf ("TERM=%s", g_getenv ("TERM")));
+  for (int i = 0; env_variables && env_variables[i]; ++i)
+    g_ptr_array_add (envp, g_strdup (env_variables[i]));
+  /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
+  g_ptr_array_add (envp, NULL);
+
+  int idx = 0;
+  g_ptr_array_insert (args, idx++, g_strdup (exe));
+  g_ptr_array_insert (args, idx++, g_strdup ("-flags"));
+  g_ptr_array_insert (args, idx++, g_strdup_printf ("%d", flags));
+  g_ptr_array_insert (args, idx++, g_strdup ("-server-address"));
+  g_ptr_array_insert (args, idx++, g_strdup (g_dbus_server_get_client_address (server)));
+  g_ptr_array_insert (args, idx++, g_strdup (action));
+  /* FIXME: use g_ptr_array_new_null_terminated when we can use newer GLib. */
+  g_ptr_array_add (args, NULL);
+
+  if (is_debug_logging_enabled ())
+    {
+      g_autofree char *exec_str_args = g_strjoinv (" ", (char **) args->pdata);
+
+      g_debug ("Launching '%s'", exec_str_args);
+    }
+
+  if (!g_spawn_async_with_fds (NULL,
+                               (char **) args->pdata,
+                               (GStrv) envp->pdata,
+                               G_SPAWN_DO_NOT_REAP_CHILD,
+                               NULL, NULL, /* Child setup */
+                               &child_pid,
+                               stdin_fd,
+                               stdout_fd,
+                               stderr_fd,
+                               &error))
+    {
+      notify_error (pamh, action, "can't launch %s: %s", exe, error->message);
+      return PAM_SYSTEM_ERR;
+    }
+
+  g_debug ("Launched child %"G_PID_FORMAT, child_pid);
+  action_data.child_pid = child_pid;
+
+  action_data.loop = g_main_loop_new (NULL, FALSE);
+
+  wait_thread_name = g_strdup_printf ("exec-%s-wait-child", action);
+  wait_thread = g_thread_new (wait_thread_name, wait_child_thread, &(WaitChildThreadData){
+    .child_pid = child_pid,
+    .main_loop = g_main_loop_ref (action_data.loop),
+  });
+
+  g_main_loop_run (action_data.loop);
+  exit_status = GPOINTER_TO_INT (g_thread_join (g_steal_pointer (&wait_thread)));
+
+  if (exit_status < 0)
+    {
+      notify_error (pamh, action, "Waiting for PID %" G_PID_FORMAT
+                    " failed with error %s", child_pid,
+                    g_strerror (-exit_status));
+      exit_status = PAM_SYSTEM_ERR;
+    }
+
+  g_debug ("Child %" G_PID_FORMAT " exited with exit status %d (%s)", child_pid,
+           exit_status, pam_strerror (pamh, exit_status));
+
+  if (exit_status >= _PAM_RETURN_VALUES)
+    return PAM_SYSTEM_ERR;
+
+  return exit_status;
+}
