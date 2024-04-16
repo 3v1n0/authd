@@ -36,7 +36,7 @@ chmod 644 go-loader/"$loader_libname"
 # shellcheck disable=SC2086
 # we do want to do word splitting on flags
 ${CC:-cc} -o go-exec/"$exec_libname" \
-    go-exec/module.c ${CFLAGS:--Wall} \
+    go-exec/module.c ${CFLAGS:--Wall} -g3 \
     $(pkg-config --cflags gio-2.0 gio-unix-2.0) \
     -Wl,--as-needed -Wl,--allow-shlib-undefined \
     -shared -fPIC -Wl,--unresolved-symbols=report-all \

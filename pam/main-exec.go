@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/msteinert/pam/v2"
@@ -19,15 +18,15 @@ import (
 var (
 	pamFlags      = flag.Int64("flags", 0, "pam flags")
 	serverAddress = flag.String("server-address", "", "the dbus connection to use to communicate with module")
-	timeout       = flag.Uint64("timeout", 120, "timeout for the server connection (in seconds)")
+	timeout       = flag.Uint64("timeout", 40, "timeout for the server connection (in seconds)")
 )
 
-func init() {
-	// We need to stay on the main thread all the time here, to make sure we're
-	// calling the dbus services from the process and so that the module PID
-	// check won't fail.
-	runtime.LockOSThread()
-}
+// func init() {
+// 	// We need to stay on the main thread all the time here, to make sure we're
+// 	// calling the dbus services from the process and so that the module PID
+// 	// check won't fail.
+// 	runtime.LockOSThread()
+// }
 
 func mainFunc() error {
 	module := &pamModule{}
@@ -43,10 +42,12 @@ func mainFunc() error {
 		return fmt.Errorf("%w: no connection provided", pam.ErrSystem)
 	}
 
+	fmt.Println("About to connect...", args)
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Duration(*timeout)*time.Second)
 	defer cancel()
 	mTx, closeFunc, err := dbusmodule.NewTransaction(ctx, *serverAddress)
 	if err != nil {
+		fmt.Println("Can't connect: ", err)
 		return fmt.Errorf("%w: can't connect to server: %w", pam.ErrSystem, err)
 	}
 	defer closeFunc()
@@ -57,6 +58,8 @@ func mainFunc() error {
 	if pamFlags != nil {
 		flags = pam.Flags(*pamFlags)
 	}
+
+	fmt.Println("About to do", action)
 
 	switch action {
 	case "authenticate":
@@ -78,6 +81,7 @@ func mainFunc() error {
 
 func main() {
 	err := mainFunc()
+	fmt.Println("ACTION Returning", err, "was", os.Args)
 	if err == nil {
 		os.Exit(0)
 	}

@@ -52,6 +52,7 @@ typedef struct
   GMainContext *main_context;
   GCancellable *cancellable;
 
+  gatomicrefcount server_refs;
   ActionData   *action_data;
 } ModuleData;
 
@@ -63,11 +64,13 @@ typedef struct _ActionData
   GMainLoop       *loop;
   GDBusConnection *connection;
   GCancellable    *cancellable;
+  GDBusServer     *server;
   const char      *current_action;
   GPid             child_pid;
   gulong           connection_new_id;
   gulong           connection_closed_id;
   guint            object_registered_id;
+  gboolean         server_started;
   guint            log_handler_id;
   int              log_file_fd;
 } ActionData;
@@ -258,13 +261,22 @@ action_module_data_cleanup (ActionData *action_data)
   GDBusServer *server = NULL;
 
   if (module_data && (server = g_atomic_pointer_get (&module_data->server)))
-    g_clear_signal_handler (&action_data->connection_new_id, server);
+    {
+      g_clear_signal_handler (&action_data->connection_new_id, server);
+
+      // if (g_atomic_ref_count_dec (&module_data->server_refs))
+      //   g_dbus_server_stop (server);
+    }
+
+  // g_clear_signal_handler (&action_data->connection_new_id, action_data->server);
+  // g_clear_pointer (&action_data->server, g_dbus_server_stop);
 
   if (action_data->connection)
     {
       g_dbus_connection_unregister_object (action_data->connection,
                                            action_data->object_registered_id);
       g_clear_signal_handler (&action_data->connection_closed_id, action_data->connection);
+      g_dbus_connection_close (action_data->connection, NULL, NULL, NULL);
     }
 
   g_cancellable_cancel (action_data->cancellable);
@@ -289,6 +301,8 @@ action_module_data_cleanup (ActionData *action_data)
   if (module_data &&
       !g_atomic_pointer_compare_and_exchange (&module_data->action_data, action_data, NULL))
     g_assert_not_reached ();
+
+  g_debug ("%d (%s) <------------------- ", getpid(), action_data->current_action);
 }
 
 G_DEFINE_AUTO_CLEANUP_CLEAR_FUNC (ActionData, action_module_data_cleanup)
@@ -301,6 +315,8 @@ on_exec_module_removed (pam_handle_t *pamh,
   g_autoptr(GDBusServer) server = NULL;
   ModuleData *module_data = data;
   ActionData *action_data;
+
+  g_debug ("Removing module data %p for %p\n", module_data, pamh);
 
   if ((action_data = g_atomic_pointer_get (&module_data->action_data)))
     action_module_data_cleanup (action_data);
@@ -332,11 +348,14 @@ on_exec_module_removed (pam_handle_t *pamh,
 static ModuleData *
 setup_shared_module_data (pam_handle_t *pamh)
 {
-  static const char *module_data_key = "go-exec-module-data";
+  g_autofree char *module_data_key = g_strdup ("go-exec-module-data");
+  // g_autofree char *module_data_key = g_strdup_printf ("go-exec-module-data-%d", getpid ());
   ModuleData *module_data = NULL;
 
-  if (pam_get_data (pamh, module_data_key, (const void **) &module_data) == PAM_SUCCESS)
+  if (pam_get_data (pamh, module_data_key, (const void **) &module_data) == PAM_SUCCESS) {
+    g_debug ("%s Reusing module data %p for %p\n", module_data_key, module_data, pamh);
     return module_data;
+  }
 
   module_data = g_new0 (ModuleData, 1);
   if (pam_set_data (pamh, module_data_key, module_data, on_exec_module_removed) != PAM_SUCCESS)
@@ -344,6 +363,8 @@ setup_shared_module_data (pam_handle_t *pamh)
       g_free (module_data);
       return NULL;
     }
+
+  g_debug ("%s Created module data %p for %p\n", module_data_key, module_data, pamh);
 
   module_data->pamh = pamh;
   module_data->cancellable = g_cancellable_new ();
@@ -366,15 +387,24 @@ is_debug_logging_enabled ()
          strstr (debug_messages, G_LOG_DOMAIN);
 }
 
+static void
+on_server_active_changed (GDBusServer *server,GParamSpec *pspec, gpointer    user_data) {
+  g_debug("SERVER ACTIVE CHANGED: %d (%s)\n", g_dbus_server_is_active(server), (char*)user_data);
+}
+
 typedef struct
 {
   pid_t      child_pid;
   GMainLoop *main_loop;
+  // GDBusConnection *connection;
+  // GCancellable *cancellable;
+  ActionData *action_data;
 } WaitChildThreadData;
 
 static gpointer
 wait_child_thread (gpointer data)
 {
+  g_autoptr(GError) error = NULL;
   WaitChildThreadData *thread_data = data;
   pid_t child_pid = thread_data->child_pid;
   int exit_status = PAM_SYSTEM_ERR;
@@ -401,8 +431,18 @@ wait_child_thread (gpointer data)
         }
     }
 
+  if (thread_data->action_data->connection &&
+      !g_dbus_connection_is_closed (thread_data->action_data->connection) &&
+      !g_dbus_connection_close_sync (thread_data->action_data->connection,
+                                     thread_data->action_data->cancellable,
+                                     &error))
+    if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+      g_warning ("Impossible to close connection: %s", error->message);
+
   g_main_loop_quit (thread_data->main_loop);
   g_clear_pointer (&thread_data->main_loop, g_main_loop_unref);
+  // g_clear_object (&thread_data->connection);
+  // g_clear_object (&thread_data->cancellable);
 
   return GINT_TO_POINTER (exit_status);
 }
@@ -648,6 +688,7 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
   GCredentials *credentials;
   pid_t client_pid;
 
+  g_print ("New connection %p\n", connection);
   credentials = g_dbus_connection_get_peer_credentials (connection);
 
   if (action_data->connection)
@@ -748,7 +789,19 @@ setup_dbus_server (ModuleData *module_data,
    * does not need further atomic checks.
    */
   if ((server = g_atomic_pointer_get (&module_data->server)))
-    return server;
+    {
+      if (g_atomic_ref_count_compare (&module_data->server_refs, 0))
+        {
+          g_atomic_ref_count_init (&module_data->server_refs);
+          // g_dbus_server_start (server);
+        }
+      else
+        {
+          g_atomic_ref_count_inc (&module_data->server_refs);
+        }
+
+      return server;
+    }
 
   tmpdir = g_dir_make_tmp ("authd-pam-server-XXXXXX", error);
   if (tmpdir == NULL)
@@ -787,13 +840,23 @@ setup_dbus_server (ModuleData *module_data,
 
   g_object_set_data_full (G_OBJECT (server), "tmpdir",
                           g_steal_pointer (&tmpdir), g_free);
-  g_dbus_server_start (server);
+  // g_dbus_server_start (server);
+  g_atomic_ref_count_init (&module_data->server_refs);
 
   g_debug ("Server started, connectable address %s",
            g_dbus_server_get_client_address (server));
 
   return server;
 }
+
+// static gboolean
+// on_done(gpointer data)
+// {
+//   gboolean *done = data;
+//   g_debug ("Timeout completed!");
+//   *done = TRUE;
+//   return FALSE;
+// }
 
 static int
 dup_fd_checked (int fd, GError **error)
@@ -811,8 +874,9 @@ dup_fd_checked (int fd, GError **error)
 }
 
 static gboolean
-handle_module_options (int argc, const
-                       char **argv,
+handle_module_options (const char *action,
+                       int argc,
+                       const char **argv,
                        GPtrArray **out_args,
                        char ***out_env_variables,
                        char **out_log_file,
@@ -833,6 +897,7 @@ handle_module_options (int argc, const
     G_OPTION_ENTRY_NULL
   };
 
+  g_set_prgname(action);
   strv_builder = g_strv_builder_new ();
   /* We temporary add a fake item as first one, since the option parser ignores
    * it, since normally it's just the program name */
@@ -869,10 +934,21 @@ handle_module_options (int argc, const
   if (out_log_file)
     *out_log_file = g_steal_pointer (&log_file);
 
-  g_log_set_debug_enabled (debug_enabled);
+  // g_log_set_debug_enabled (debug_enabled);
+  g_log_set_debug_enabled (TRUE);
 
   return TRUE;
 }
+
+
+typedef GDBusServer DBusServerStopper;
+static void
+stop_server(DBusServerStopper *server) {
+  g_debug("Stopping %p, was active: %d", server, g_dbus_server_is_active (server));
+  g_dbus_server_stop (server);
+}
+// G_DEFINE_AUTOPTR_CLEANUP_FUNC (DBusServerStopper, g_dbus_server_stop);
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (DBusServerStopper, stop_server);
 
 static int
 do_pam_action_thread (pam_handle_t *pamh,
@@ -890,6 +966,7 @@ do_pam_action_thread (pam_handle_t *pamh,
   g_autoptr(GPtrArray) envp = NULL;
   g_autoptr(GPtrArray) args = NULL;
   g_autoptr(GDBusServer) server = NULL;
+  g_autoptr(DBusServerStopper) G_GNUC_UNUSED server_stopper = NULL;
   g_autoptr(GThread) wait_thread = NULL;
   g_auto(GStrv) env_variables = NULL;
   g_autofree char *exe = NULL;
@@ -916,7 +993,7 @@ do_pam_action_thread (pam_handle_t *pamh,
     g_log_set_handler (G_LOG_DOMAIN, G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL,
                        log_handler, &action_data);
 
-  if (!handle_module_options (argc, argv, &args, &env_variables, &log_file, &error))
+  if (!handle_module_options (action, argc, argv, &args, &env_variables, &log_file, &error))
     {
       G_UNLOCK (logger);
       notify_error (pamh, action, "impossible to parse arguments: %s", error->message);
@@ -994,11 +1071,35 @@ do_pam_action_thread (pam_handle_t *pamh,
   g_assert (g_atomic_pointer_compare_and_exchange (&module_data->action_data, NULL, &action_data));
   g_atomic_pointer_compare_and_exchange (&module_data->server, NULL, g_object_ref (server));
 
+  // g_dbus_server_start (server);
+  // action_data.server = server;
+
+  // if (!g_dbus_server_is_active(server))
+  //   g_initable_init (G_INITABLE (server), action_data.cancellable, NULL);
+
+  g_dbus_server_start (server);
+  g_debug("Starting server %p (refs %d)\n", server, module_data->server_refs);
+  server_stopper = server;
+
+  g_signal_connect (server, "notify::active", G_CALLBACK (on_server_active_changed), (char*)action);
+
   action_data.module_data = module_data;
   action_data.cancellable = g_cancellable_new ();
 
   main_context = g_main_context_ref (module_data->main_context);
   context_pusher = g_main_context_pusher_new (main_context);
+
+  // gboolean done = FALSE;
+  // GSource *source = g_timeout_source_new_seconds(2);
+  // g_source_set_callback (source,
+  //                         on_done,
+  //                         &done, NULL);
+  // g_source_set_static_name (source, "[gio] emit_new_connection_in_idle");
+  // g_source_attach (source, main_context);
+  // g_source_unref (source);
+
+  // while (!done)
+  //   g_main_context_iteration (main_context, FALSE);
 
   interactive_mode = isatty (STDIN_FILENO);
 
@@ -1029,9 +1130,6 @@ do_pam_action_thread (pam_handle_t *pamh,
   action_data.connection_new_id =
     g_signal_connect (server, "new-connection",
                       G_CALLBACK (on_new_connection), &action_data);
-
-  while (!g_dbus_server_is_active (server))
-    g_thread_yield ();
 
   envp = g_ptr_array_new_full (2, g_free);
   if (interactive_mode)
@@ -1076,12 +1174,24 @@ do_pam_action_thread (pam_handle_t *pamh,
   g_debug ("Launched child %"G_PID_FORMAT, child_pid);
   action_data.child_pid = child_pid;
 
+  // g_atomic_ref_count_inc (&module_data->server_refs);
+  // g_dbus_server_start (server);
+
+  // while (!g_dbus_server_is_active (server))
+  //   g_thread_yield ();
+
   action_data.loop = g_main_loop_new (main_context, FALSE);
 
+  // Do this on timeout?!
   wait_thread_name = g_strdup_printf ("exec-%s-wait-child", action);
   wait_thread = g_thread_new (wait_thread_name, wait_child_thread, &(WaitChildThreadData){
     .child_pid = child_pid,
     .main_loop = g_main_loop_ref (action_data.loop),
+    .action_data = &action_data,
+    // .connection = NULL,
+    // .cancellable = NULL,
+    // .connection = g_object_ref (action_data.connection),
+    // .cancellable = g_object_ref (action_data.cancellable),
   });
 
   g_main_loop_run (action_data.loop);
@@ -1094,6 +1204,12 @@ do_pam_action_thread (pam_handle_t *pamh,
                     g_strerror (-exit_status));
       exit_status = PAM_SYSTEM_ERR;
     }
+
+  if (g_atomic_ref_count_dec (&module_data->server_refs))
+    g_debug ("Ref counts reduced to ZERO");
+  else
+    g_debug("Server refcounts are %d", module_data->server_refs);
+    // g_dbus_server_stop (server);
 
   g_debug ("Child %" G_PID_FORMAT " exited with exit status %d (%s)", child_pid,
            exit_status, pam_strerror (pamh, exit_status));
