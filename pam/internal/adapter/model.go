@@ -130,6 +130,7 @@ func (m *UIModel) Init() tea.Cmd {
 
 // Update handles events and actions to be done from the main model orchestrator.
 func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Debugf(nil, "UPDATE: %#v", msg)
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
@@ -370,11 +371,16 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 
 	switch s {
 	case pam_proto.Stage_userSelection:
+		// m.brokerSelectionModel.Reset()
+		// m.authenticationModel.Reset()
+		// m.authModeSelectionModel.Reset()
 		// The session should be ended when going back to previous state, but we don’t quit the stage immediately
 		// and so, we should always ensure we cancel previous session.
 		commands = append(commands, endSession(m.Client, m.currentSession), m.userSelectionModel.Focus())
 
 	case pam_proto.Stage_brokerSelection:
+		// m.brokerSelectionModel.Reset()
+		// m.authenticationModel.Reset()
 		m.authModeSelectionModel.Reset()
 		commands = append(commands, endSession(m.Client, m.currentSession), m.brokerSelectionModel.Focus())
 
