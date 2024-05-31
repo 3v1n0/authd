@@ -90,6 +90,7 @@ var (
 		"user1":             {Password: "goodpass"},
 		"user2":             {Password: "goodpass"},
 		"user-mfa":          {Password: "goodpass"},
+		"user-mfa2":         {Password: "goodpass"},
 		"user-needs-reset":  {Password: "goodpass"},
 		"user-can-reset":    {Password: "goodpass"},
 		"user-local-groups": {Password: "goodpass"},
@@ -131,7 +132,7 @@ func (b *Broker) NewSession(ctx context.Context, username, lang, mode string) (s
 	}
 
 	switch username {
-	case "user-mfa":
+	case "user-mfa", "user-mfa2":
 		info.neededAuthSteps = 3
 	case "user-needs-reset":
 		info.neededAuthSteps = 2

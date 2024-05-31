@@ -1114,6 +1114,7 @@ do_pam_action (pam_handle_t *pamh,
   return action_data.exit_status;
 }
 
+// FIXME: Use an enum for action types, instead of string
 #define DEFINE_PAM_WRAPPER(name) \
   PAM_EXTERN int \
     (pam_sm_ ## name) (pam_handle_t * pamh, int flags, int argc, const char **argv) \
