@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -226,7 +227,17 @@ func TestPamCLIRunStandalone(t *testing.T) {
 	outStr := string(out)
 	t.Log(outStr)
 
-	require.Contains(t, outStr, pam.ErrSystem.Error())
+	authErr := pam.ErrSystem
+
+	currentUser, err := user.Current()
+	require.NoError(t, err)
+	if currentUser.Username == "root" {
+		// When running as root, the conversation proceeds, but we stop it earlier
+		authErr = pam.ErrConv
+		return
+	}
+
+	require.Contains(t, outStr, authErr.Error())
 	require.Contains(t, outStr, pam.ErrIgnore.Error())
 }
 
