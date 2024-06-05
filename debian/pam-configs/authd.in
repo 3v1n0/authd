@@ -1,6 +1,6 @@
 Name: Authd authentication
 Default: yes
-Priority: 280
+Priority: 1050
 
 Auth-Type: Primary
 Auth:
