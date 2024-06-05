@@ -257,6 +257,29 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.gdmModel, gdmCmd = m.gdmModel.Update(msg)
 		}
 
+		// If the mode is passwd (meaning we are trying to change the user password) and we already have a AUTHTOK, we
+		// don't need to ask the user for a new one.
+		if msg.layout.Type == "newpassword" && m.SessionMode == authd.SessionMode_PASSWD {
+			challenge, err := m.PamMTx.GetItem(pam.Authtok)
+			if err == nil && challenge != "" {
+				cmds := []tea.Cmd{
+					m.authenticationModel.Compose(
+						m.currentSession.brokerID,
+						m.currentSession.sessionID,
+						m.currentSession.encryptionKey,
+						msg.layout,
+					),
+					m.changeStage(pam_proto.Stage_challenge),
+				}
+
+				updatedModel, cmd := m.Update(isAuthenticatedRequested{
+					item: &authd.IARequest_AuthenticationData_Challenge{Challenge: challenge},
+				})
+				return updatedModel, tea.Sequence(append(cmds, cmd)...)
+			}
+			log.Debugf(context.TODO(), "Could not find AUTHTOK, asking the user for it...")
+		}
+
 		return m, tea.Sequence(
 			m.authenticationModel.Compose(m.currentSession.brokerID, m.currentSession.sessionID, m.currentSession.encryptionKey, msg.layout),
 			gdmCmd,
