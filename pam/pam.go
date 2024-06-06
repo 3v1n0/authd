@@ -232,12 +232,30 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 	if mode == authd.SessionMode_PASSWD && flags&pam.PrelimCheck != 0 {
 		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
-		_, closeConn, err := newClient(parsedArgs)
+		c, closeConn, err := newClient(parsedArgs)
 		if err != nil {
 			log.Debugf(context.TODO(), "%s", err)
 			return fmt.Errorf("%w: %w", pam.ErrTryAgain, err)
 		}
-		closeConn()
+		defer closeConn()
+
+		username, err := mTx.GetItem(pam.User)
+		if err != nil {
+			return pam.ErrAuthinfoUnavail
+		}
+
+		response, err := c.GetPreviousBroker(context.TODO(), &authd.GPBRequest{Username: username})
+		if err != nil {
+			return errors.Join(
+				showPamMessage(mTx, pam.ErrorMsg, fmt.Sprintf("could not get current available brokers: %v", err)),
+				err,
+				pam.ErrSystem,
+			)
+		}
+
+		if response.GetPreviousBroker() == "local" {
+			return pam.ErrIgnore
+		}
 		return nil
 	}
 
