@@ -38,6 +38,7 @@ func TestCLIAuthenticate(t *testing.T) {
 		"Authenticate user with mfa":                          {tape: "mfa_auth"},
 		"Authenticate user with form mode with button":        {tape: "form_with_button"},
 		"Authenticate user with qr code":                      {tape: "qr_code"},
+		"Authenticate user with login code":                   {tape: "login_code"},
 		"Authenticate user and reset password":                {tape: "mandatory_password_reset"},
 		"Authenticate user and offer password reset":          {tape: "optional_password_reset"},
 		"Authenticate user switching auth mode":               {tape: "switch_auth_mode"},

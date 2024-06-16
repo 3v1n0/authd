@@ -52,6 +52,7 @@ var supportedArgs = []string{
 	"disable_journal", // Disable logging on systemd journal (this is implicit when `logfile` is set).
 	"socket",          // The authd socket to connect to.
 	"force_reauth",    // Whether the authentication should be performed again even if it has been already completed.
+	"disable_qrcode",  // Whether qrcode rendering should be disabled.
 }
 
 // parseArgs parses the PAM arguments and returns a map of them and a function that logs the parsing issues.
@@ -281,10 +282,11 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	defer closeConn()
 
 	appState := adapter.UIModel{
-		PamMTx:      mTx,
-		Client:      client,
-		ClientType:  pamClientType,
-		SessionMode: mode,
+		PamMTx:        mTx,
+		Client:        client,
+		ClientType:    pamClientType,
+		DisableQrCode: parsedArgs["disable_qrcode"] == "true",
+		SessionMode:   mode,
 	}
 
 	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {

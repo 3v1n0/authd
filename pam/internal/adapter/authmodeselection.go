@@ -21,6 +21,7 @@ type authModeSelectionModel struct {
 	focused bool
 
 	clientType                PamClientType
+	disableQrCode             bool
 	supportedUILayouts        []*authd.UILayout
 	supportedUILayoutsMu      *sync.Mutex
 	availableAuthModes        []*authd.GAMResponse_AuthenticationMode
@@ -52,12 +53,13 @@ func selectAuthMode(id string) tea.Cmd {
 }
 
 // newAuthModeSelectionModel initializes an empty list with default options of authModeSelectionModel.
-func newAuthModeSelectionModel(clientType PamClientType) authModeSelectionModel {
+func newAuthModeSelectionModel(clientType PamClientType, disableQrCode bool) authModeSelectionModel {
 	// FIXME: decouple UI from data model.
 	if clientType != InteractiveTerminal {
 		return authModeSelectionModel{
 			Model:                list.New(nil, itemLayout{}, 0, 0),
 			clientType:           clientType,
+			disableQrCode:        disableQrCode,
 			supportedUILayoutsMu: &sync.Mutex{},
 		}
 	}
@@ -75,6 +77,7 @@ func newAuthModeSelectionModel(clientType PamClientType) authModeSelectionModel 
 	return authModeSelectionModel{
 		Model:                l,
 		clientType:           clientType,
+		disableQrCode:        disableQrCode,
 		supportedUILayoutsMu: &sync.Mutex{},
 	}
 }
@@ -97,6 +100,10 @@ func (m *authModeSelectionModel) Init() tea.Cmd {
 			case termenv.ANSI, termenv.Ascii:
 				qrcodeContentSupportMode = optional
 			}
+		}
+
+		if m.disableQrCode {
+			qrcodeContentSupportMode = ""
 		}
 
 		return supportedUILayoutsReceived{

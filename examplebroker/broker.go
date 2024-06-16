@@ -335,6 +335,19 @@ func getSupportedModes(sessionInfo sessionInfo, supportedUILayouts []map[string]
 			}
 
 		case "qrcode":
+			if _, ok := layout["content"]; !ok {
+				allModes["codewithtypo"] = map[string]string{
+					"selection_label": "Use a Login Code",
+					"ui": mapToJSON(map[string]string{
+						"type":   "qrcode",
+						"label":  "Enter the code in the login page",
+						"wait":   "true",
+						"button": "regenerate code",
+					}),
+				}
+				break
+			}
+
 			allModes["qrcodewithtypo"] = map[string]string{
 				"selection_label": "Use a QR code",
 				"ui": mapToJSON(map[string]string{
@@ -424,6 +437,8 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 	case "qrcodewithtypo":
 		// generate the url and finish the prompt on the fly.
 		uiLayoutInfo["content"] = "https://ubuntu.com"
+		uiLayoutInfo["code"] = "1337"
+	case "codewithtypo":
 		uiLayoutInfo["code"] = "1337"
 	}
 
@@ -566,9 +581,9 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 			return AuthCancelled, "", nil
 		}
 
-	case "qrcodewithtypo":
+	case "qrcodewithtypo", "codewithtypo":
 		if authData["wait"] != "true" {
-			return AuthDenied, `{"message": "qrcodewithtypo should have wait set to true"}`, nil
+			return AuthDenied, fmt.Sprintf(`{"message": "%s should have wait set to true"}`, sessionInfo.currentAuthMode), nil
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
