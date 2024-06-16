@@ -52,6 +52,7 @@ var supportedArgs = []string{
 	"debug",               // When this is set to "true", then debug logging is enabled.
 	"logfile",             // The path of the file that will be used for logging.
 	"disable_journal",     // Disable logging on systemd journal (this is implicit when `logfile` is set).
+	"disable_qrcode",      // Whether qrcode rendering should be disabled.
 	"socket",              // The authd socket to connect to.
 	"force_native_client", // Use native PAM client instead of custom UIs.
 	"force_reauth",        // Whether the authentication should be performed again even if it has been already completed.
@@ -314,10 +315,11 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	defer closeConn()
 
 	appState := adapter.UIModel{
-		PamMTx:      mTx,
-		Client:      authd.NewPAMClient(conn),
-		ClientType:  pamClientType,
-		SessionMode: mode,
+		PamMTx:        mTx,
+		Client:        authd.NewPAMClient(conn),
+		ClientType:    pamClientType,
+		DisableQrCode: parsedArgs["disable_qrcode"] == "true",
+		SessionMode:   mode,
 	}
 
 	if pamClientType == adapter.Native && isSSHSession(mTx) {

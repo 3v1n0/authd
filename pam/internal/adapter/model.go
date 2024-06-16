@@ -49,6 +49,8 @@ type UIModel struct {
 	ClientType PamClientType
 	// SessionMode is the mode of the session invoked by the module.
 	SessionMode authd.SessionMode
+	// DisableQrCode is the flag to disable qrcode rendering
+	DisableQrCode bool
 
 	sessionStartingForBroker string
 	currentSession           *sessionInfo
@@ -120,7 +122,7 @@ func (m *UIModel) Init() tea.Cmd {
 	m.brokerSelectionModel = newBrokerSelectionModel(m.Client, m.ClientType)
 	cmds = append(cmds, m.brokerSelectionModel.Init())
 
-	m.authModeSelectionModel = newAuthModeSelectionModel(m.ClientType)
+	m.authModeSelectionModel = newAuthModeSelectionModel(m.ClientType, m.DisableQrCode)
 	cmds = append(cmds, m.authModeSelectionModel.Init())
 
 	m.authenticationModel = newAuthenticationModel(m.Client, m.ClientType)

@@ -359,13 +359,19 @@ func getSupportedModes(sessionInfo sessionInfo, supportedUILayouts []map[string]
 
 		case "qrcode":
 			modeName := "qrcodewithtypo"
+			modeSelectionLabel := "Use a QR code"
 			modeLabel := "Enter the following code after flashing the address: "
 			if layout["code"] != "" {
 				modeName = "qrcodeandcodewithtypo"
 				modeLabel = "Scan the qrcode or enter the code in the login page"
 			}
+			if _, ok := layout["content"]; !ok {
+				modeName = "codewithtypo"
+				modeSelectionLabel = "Use a Login code"
+				modeLabel = "Enter the code in the login page"
+			}
 			allModes[modeName] = map[string]string{
-				"selection_label": "Use a QR code",
+				"selection_label": modeSelectionLabel,
 				"ui": mapToJSON(map[string]string{
 					"type":   "qrcode",
 					"label":  modeLabel,
@@ -475,6 +481,9 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 		content, code := qrcodeData(&sessionInfo)
 		uiLayoutInfo["label"] += code
 		uiLayoutInfo["content"] = content
+	case "codewithtypo":
+		_, code := qrcodeData(&sessionInfo)
+		uiLayoutInfo["code"] = code
 	}
 
 	// Store selected mode
@@ -616,7 +625,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 			return AuthCancelled, "", nil
 		}
 
-	case "qrcodewithtypo", "qrcodeandcodewithtypo":
+	case "qrcodewithtypo", "qrcodeandcodewithtypo", "codewithtypo":
 		if authData["wait"] != "true" {
 			return AuthDenied, fmt.Sprintf(`{"message": "%s should have wait set to true"}`, sessionInfo.currentAuthMode), nil
 		}
