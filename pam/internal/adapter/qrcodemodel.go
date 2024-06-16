@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -15,27 +16,35 @@ type qrcodeModel struct {
 	buttonModel *buttonModel
 
 	content string
+	code    string
 	qrCode  *qrcode.QRCode
 
 	wait bool
 }
 
+var centeredStyle = lipgloss.NewStyle().Align(lipgloss.Center, lipgloss.Top)
+
 // newQRCodeModel initializes and return a new qrcodeModel.
-func newQRCodeModel(content, label, buttonLabel string, wait bool) (qrcodeModel, error) {
+func newQRCodeModel(content, code, label, buttonLabel string, wait bool) (qrcodeModel, error) {
 	var button *buttonModel
 	if buttonLabel != "" {
 		button = &buttonModel{label: buttonLabel}
 	}
 
-	qrCode, err := qrcode.New(content, qrcode.Medium)
-	if err != nil {
-		return qrcodeModel{}, fmt.Errorf("can't generate QR code: %v", err)
+	var qrCode *qrcode.QRCode
+	if content != "" {
+		var err error
+		qrCode, err = qrcode.New(content, qrcode.Medium)
+		if err != nil {
+			return qrcodeModel{}, fmt.Errorf("can't generate QR code: %v", err)
+		}
 	}
 
 	return qrcodeModel{
 		label:       label,
 		buttonModel: button,
 		content:     content,
+		code:        code,
 		qrCode:      qrCode,
 		wait:        wait,
 	}, nil
@@ -83,7 +92,15 @@ func (m qrcodeModel) View() string {
 		fields = append(fields, m.label, "")
 	}
 
-	fields = append(fields, m.qrCode.ToSmallString(false))
+	qrcodeWidth := 0
+	if m.qrCode != nil {
+		qr := strings.TrimRight(m.qrCode.ToSmallString(false), "\n")
+		fields = append(fields, qr)
+		qrcodeWidth = lipgloss.Width(qr)
+	}
+
+	style := centeredStyle.Width(qrcodeWidth)
+	fields = append(fields, style.Render(m.code))
 
 	if m.buttonModel != nil {
 		fields = append(fields, m.buttonModel.View())
