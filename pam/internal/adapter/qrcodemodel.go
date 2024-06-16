@@ -94,9 +94,22 @@ func (m qrcodeModel) View() string {
 
 	qrcodeWidth := 0
 	if m.qrCode != nil {
+		// var buf bytes.Buffer
+
+		// switch termenv.DefaultOutput().Profile {
+		// case termenv.ANSI, termenv.Ascii:
+		// 	qrterminal.Generate(m.content, qrterminal.L, &buf)
+		// default:
+		// 	qrterminal.GenerateHalfBlock(m.content, qrterminal.L, &buf)
+		// }
+		// qr := buf.String()
+		// qrcodeWidth = lipgloss.Width(qr)
+		// fields = append(fields, qr)
+
 		qr := strings.TrimRight(m.qrCode.ToSmallString(false), "\n")
 		fields = append(fields, qr)
 		qrcodeWidth = lipgloss.Width(qr)
+		// fields = append(fields, m.qrCode.ToString(false))
 	}
 
 	style := centeredStyle.Width(qrcodeWidth)

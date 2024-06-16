@@ -26,6 +26,7 @@ session required        pam_loginuid.so
 # SELinux in order to transition to the user context with the next execve()
 # call.
 session [success=ok ignore=ignore module_unknown=ignore default=bad]        pam_selinux.so open
+session required        pam_mkhomedir.so
 session optional        pam_keyinit.so force revoke
 session required        pam_limits.so
 session required        pam_env.so readenv=1
