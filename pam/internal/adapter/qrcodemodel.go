@@ -33,9 +33,13 @@ func newQRCodeModel(content, code, label, buttonLabel string, wait bool) (qrcode
 		button = &buttonModel{label: buttonLabel}
 	}
 
-	qrCode, err := qrcode.New(content, qrcode.Medium)
-	if err != nil {
-		return qrcodeModel{}, fmt.Errorf("can't generate QR code: %v", err)
+	var qrCode *qrcode.QRCode
+	if content != "" {
+		var err error
+		qrCode, err = qrcode.New(content, qrcode.Medium)
+		if err != nil {
+			return qrcodeModel{}, fmt.Errorf("can't generate QR code: %v", err)
+		}
 	}
 
 	return qrcodeModel{
@@ -106,9 +110,12 @@ func (m qrcodeModel) View() string {
 		fields = append(fields, m.label, "")
 	}
 
-	qr := m.renderQrCode()
-	fields = append(fields, qr)
-	qrcodeWidth := lipgloss.Width(qr)
+	qrcodeWidth := 0
+	if m.qrCode != nil {
+		qr := m.renderQrCode()
+		fields = append(fields, qr)
+		qrcodeWidth = lipgloss.Width(qr)
+	}
 
 	style := centeredStyle.Width(qrcodeWidth)
 	renderedContent := m.content

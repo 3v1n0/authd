@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/msteinert/pam/v2"
+	"github.com/muesli/termenv"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/log"
 )
@@ -90,6 +91,14 @@ func (m *authModeSelectionModel) Init() tea.Cmd {
 		requiredWithBooleans := "required:true,false"
 		optionalWithBooleans := "optional:true,false"
 
+		qrcodeContentSupportMode := required
+		if m.clientType == InteractiveTerminal {
+			switch termenv.DefaultOutput().ColorProfile() {
+			case termenv.ANSI, termenv.Ascii:
+				qrcodeContentSupportMode = optional
+			}
+		}
+
 		return supportedUILayoutsReceived{
 			layouts: []*authd.UILayout{
 				{
@@ -101,7 +110,7 @@ func (m *authModeSelectionModel) Init() tea.Cmd {
 				},
 				{
 					Type:    "qrcode",
-					Content: &required,
+					Content: &qrcodeContentSupportMode,
 					Code:    &optional,
 					Wait:    &requiredWithBooleans,
 					Label:   &optional,
