@@ -103,7 +103,7 @@ func (m qrcodeModel) View() string {
 	fields = append(fields, style.Render(m.code))
 
 	if m.buttonModel != nil {
-		fields = append(fields, m.buttonModel.View())
+		fields = append(fields, style.Render(m.buttonModel.View()))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
