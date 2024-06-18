@@ -183,10 +183,10 @@ Scan the qrcode or enter the code in the login page
 ████▄▄▄▄▄▄▄█▄█▄█▄█▄████▄▄▄▄▄▄████
 █████████████████████████████████
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+       https://ubuntu.com
               1337
 
       [ regenerate QR code ]
-
 
 
 
@@ -216,10 +216,10 @@ Scan the qrcode or enter the code in the login page
 ████▄▄▄▄▄▄▄█▄█▄█▄█▄████▄▄▄▄▄▄████
 █████████████████████████████████
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+       https://ubuntu.com
               1337
 
       [ regenerate QR code ]
-
 
 
 
@@ -249,10 +249,10 @@ Scan the qrcode or enter the code in the login page
 ████▄▄▄▄▄▄▄█▄█▄█▄█▄████▄▄▄▄▄▄████
 █████████████████████████████████
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+       https://ubuntu.com
               1337
 
       [ regenerate QR code ]
-
 
 
 
@@ -282,6 +282,7 @@ Scan the qrcode or enter the code in the login page
 ████▄▄▄▄▄▄▄█▄█▄█▄█▄████▄▄▄▄▄▄████
 █████████████████████████████████
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+       https://ubuntu.com
               1337
 
 PAM Authenticate() for user "user-integration-qr-code" exited with success
@@ -293,7 +294,6 @@ PAM AcctMgmt() exited with success
 
 
 
-
 ────────────────────────────────────────────────────────────────────────────────
 > ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
 Scan the qrcode or enter the code in the login page
@@ -315,12 +315,12 @@ Scan the qrcode or enter the code in the login page
 ████▄▄▄▄▄▄▄█▄█▄█▄█▄████▄▄▄▄▄▄████
 █████████████████████████████████
 ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+       https://ubuntu.com
               1337
 
 PAM Authenticate() for user "user-integration-qr-code" exited with success
 PAM AcctMgmt() exited with success
 >
-
 
 
 
