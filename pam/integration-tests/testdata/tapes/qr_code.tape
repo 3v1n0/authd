@@ -14,6 +14,12 @@ Set Margin 0
 Set Shell bash
 
 Hide
+Type "if [ -v AUTHD_PAM_CLI_TERM ]; then export TERM=${AUTHD_PAM_CLI_TERM}; fi"
+Enter
+Sleep 300ms
+Show
+
+Hide
 Type "./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}"
 Enter
 Sleep 300ms

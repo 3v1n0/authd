@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/skip2/go-qrcode"
 	"github.com/ubuntu/authd"
 )
@@ -88,7 +89,15 @@ func (m qrcodeModel) View() string {
 		fields = append(fields, m.label, "")
 	}
 
-	qr := strings.TrimRight(m.qrCode.ToSmallString(false), "\n")
+	var qr string
+	switch termenv.DefaultOutput().Profile {
+	case termenv.ANSI, termenv.Ascii:
+		qr = m.qrCode.ToString(false)
+	default:
+		qr = m.qrCode.ToSmallString(false)
+	}
+
+	qr = strings.TrimRight(qr, "\n")
 	fields = append(fields, qr)
 	qrcodeWidth := lipgloss.Width(qr)
 
