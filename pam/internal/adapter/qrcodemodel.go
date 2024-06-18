@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -22,6 +23,8 @@ type qrcodeModel struct {
 	code    string
 	qrCode  *qrcode.QRCode
 
+	windowSize tea.WindowSizeMsg
+
 	wait bool
 }
 
@@ -36,6 +39,7 @@ func newQRCodeModel(content, code, label, buttonLabel string, wait bool) (qrcode
 	if err != nil {
 		return qrcodeModel{}, fmt.Errorf("can't generate QR code: %v", err)
 	}
+	// qrCode.DisableBorder = true
 
 	return qrcodeModel{
 		label:       label,
@@ -82,6 +86,22 @@ func (m qrcodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m qrcodeModel) qrcodeString(inverseColor bool) string {
+	bits := m.qrCode.Bitmap()
+	var buf bytes.Buffer
+	for y := range bits {
+		for x := range bits[y] {
+			if bits[y][x] != inverseColor {
+				buf.WriteString("■")
+			} else {
+				buf.WriteString("■")
+			}
+		}
+		buf.WriteString("\n")
+	}
+	return buf.String()
+}
+
 // View renders a text view of the form.
 func (m qrcodeModel) View() string {
 	fields := []string{}
@@ -96,7 +116,9 @@ func (m qrcodeModel) View() string {
 	default:
 		qr = m.qrCode.ToSmallString(false)
 	}
-
+	qr = m.qrcodeString(false)
+	fields = append(fields, fmt.Sprintf("Profile :%d", termenv.DefaultOutput().Profile))
+	fields = append(fields, fmt.Sprintf("Length ▄,█,▀ :%d, %d", lipgloss.Width("▄"), lipgloss.Width("▀")))
 	qr = strings.TrimRight(qr, "\n")
 	fields = append(fields, qr)
 	qrcodeWidth := lipgloss.Width(qr)
