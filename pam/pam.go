@@ -241,8 +241,8 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 		defer closeConn()
 
 		username, err := mTx.GetItem(pam.User)
-		if err != nil {
-			return pam.ErrAuthinfoUnavail
+		if err != nil || username == "" {
+			return err
 		}
 
 		response, err := c.GetPreviousBroker(context.TODO(), &authd.GPBRequest{Username: username})

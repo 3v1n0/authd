@@ -272,13 +272,20 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// don't need to ask the user for a new one.
 		if msg.layout.Type == "newpassword" && m.SessionMode == authd.SessionMode_PASSWD {
 			challenge, err := m.PamMTx.GetItem(pam.Authtok)
-			if err == nil && challenge != "" {
+			if err != nil {
+				return m, sendEvent(pamError{
+					status: pam.ErrAuthinfoUnavail,
+					msg:    "could not get required AUTHTOK from PAM transaction",
+				})
+			}
+
+			if challenge != "" {
 				updatedModel, cmd := m.Update(isAuthenticatedRequested{
 					item: &authd.IARequest_AuthenticationData_Challenge{Challenge: challenge},
 				})
 				return updatedModel, tea.Sequence(append(cmds, cmd)...)
 			}
-			log.Debugf(context.TODO(), "Could not find AUTHTOK, asking the user for it...")
+			log.Debugf(context.TODO(), "Could not find required information, prompting the user for it...")
 		}
 
 		return m, tea.Sequence(cmds...)
