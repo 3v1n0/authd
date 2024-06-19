@@ -150,6 +150,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 		"Retry if password confirmation is not the same": {tape: "passwd_not_confirmed"},
 
 		"Prevent change password if auth fails":                                     {tape: "passwd_auth_fail"},
+		"Prevent change password if user do not exist":                              {tape: "passwd_unexistent_user"},
 		"Prevent change password if current user is not root as can't authenticate": {tape: "passwd_not_root", currentUserNotRoot: true},
 
 		"Exit authd if local broker is selected": {tape: "passwd_local_broker"},
