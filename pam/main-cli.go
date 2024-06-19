@@ -20,6 +20,7 @@ import (
 // Simulating pam on the CLI for manual testing.
 func main() {
 	logDir := os.Getenv("AUTHD_PAM_CLI_LOG_DIR")
+	baseServiceFile := os.Getenv("AUTHD_PAM_CLI_BASE_SERVICE_FILE")
 	supportsConversation := os.Getenv("AUTHD_PAM_CLI_SUPPORTS_CONVERSATION")
 	execModule := os.Getenv("AUTHD_PAM_EXEC_MODULE")
 	cliPath := os.Getenv("AUTHD_PAM_CLI_PATH")
@@ -74,6 +75,22 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("Can't create service file %s: %v", serviceFile, err)
+	}
+
+	if baseServiceFile != "" {
+		baseContent, err := os.ReadFile(baseServiceFile)
+		if err != nil {
+			log.Fatalf("Can't read base service file %s: %v", baseServiceFile, err)
+		}
+		content, err := os.ReadFile(serviceFile)
+		if err != nil {
+			log.Fatalf("Can't read service file %s: %v", serviceFile, err)
+		}
+		baseContent = append(baseContent, '\n')
+		content = append(baseContent, content...)
+		if err := os.WriteFile(serviceFile, []byte(content), 0600); err != nil {
+			log.Fatalf("Can't write service file %s: %v", serviceFile, err)
+		}
 	}
 
 	tx, err := pam.StartConfDir(filepath.Base(serviceFile), pamUser, pam.ConversationFunc(
