@@ -77,6 +77,15 @@ func main() {
 		log.Fatalf("Can't create service file %s: %v", serviceFile, err)
 	}
 
+	if !supportsConversation {
+		for _, arg := range args {
+			if arg == "force_native_client=true" {
+				supportsConversation = true
+				break
+			}
+		}
+	}
+
 	conversationHandler := pam.ConversationFunc(noConversationHandler)
 	if supportsConversation {
 		conversationHandler = pam.ConversationFunc(simpleConversationHandler)

@@ -29,6 +29,9 @@ func TestCLIAuthenticate(t *testing.T) {
 	currentDir, err := os.Getwd()
 	require.NoError(t, err, "Setup: Could not get current directory for the tests")
 
+	cliDir := t.TempDir()
+	cliEnv := prepareCLITest(t, cliDir)
+
 	tests := map[string]struct {
 		tape string
 
@@ -67,8 +70,8 @@ func TestCLIAuthenticate(t *testing.T) {
 			t.Parallel()
 
 			outDir := t.TempDir()
-
-			cliEnv := prepareCLITest(t, outDir)
+			err := os.Symlink(filepath.Join(cliDir, "pam_authd"), filepath.Join(outDir, "pam_authd"))
+			require.NoError(t, err, "Setup: symlinking the pam client")
 			cliLog := prepareCLILogging(t)
 			t.Cleanup(func() {
 				saveArtifactsForDebug(t, []string{
