@@ -28,6 +28,7 @@ func TestCLIAuthenticate(t *testing.T) {
 	currentDir, err := os.Getwd()
 	require.NoError(t, err, "Setup: Could not get current directory for the tests")
 
+	//nolint:dupl // Indeed, we want to duplicate as much of cases as we can with native UI!
 	tests := map[string]struct {
 		tape string
 
@@ -68,7 +69,7 @@ func TestCLIAuthenticate(t *testing.T) {
 
 			outDir := t.TempDir()
 
-			cliEnv := prepareCLITest(t, outDir)
+			cliEnv := prepareClientTest(t, outDir)
 			cliLog := prepareCLILogging(t)
 			t.Cleanup(func() {
 				saveArtifactsForDebug(t, []string{
@@ -121,7 +122,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 	t.Parallel()
 
 	outDir := t.TempDir()
-	cliEnv := prepareCLITest(t, outDir)
+	cliEnv := prepareClientTest(t, outDir)
 
 	// we don't care about the output of gpasswd for this test, but we still need to mock it.
 	err := os.MkdirAll(filepath.Join(outDir, "gpasswd"), 0700)
@@ -250,7 +251,7 @@ func runAuthd(t *testing.T, gpasswdOutput, groupsFile string, currentUserAsRoot 
 	return socketPath
 }
 
-func prepareCLITest(t *testing.T, clientPath string) []string {
+func prepareClientTest(t *testing.T, clientPath string) []string {
 	t.Helper()
 
 	// Due to external dependencies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
