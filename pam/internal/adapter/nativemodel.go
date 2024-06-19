@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"github.com/skip2/go-qrcode"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers"
+	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/proto"
 )
 
@@ -81,13 +83,15 @@ func sendPamError(err error) tea.Cmd {
 }
 
 func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
+	log.Debugf(context.TODO(), "%#v", msg)
+
 	switch msg := msg.(type) {
 	case userRequired:
 		err := m.pamMTx.SetItem(pam.User, "")
 		if err != nil {
 			return m, sendPamError(err)
 		}
-		user, err := m.promptForInput("Username")
+		user, err := m.promptForInput(pam.PromptEchoOn, "Username")
 		if err != nil {
 			return m, sendPamError(err)
 		}
@@ -220,17 +224,17 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m nativeModel) promptForInput(prompt string) (string, error) {
-	resp, err := m.pamMTx.StartStringConvf(pam.PromptEchoOn, "%s: ", prompt)
+func (m nativeModel) promptForInput(style pam.Style, prompt string) (string, error) {
+	resp, err := m.pamMTx.StartStringConvf(style, "%s: ", prompt)
 	if err != nil {
 		return "", err
 	}
 	return resp.Response(), nil
 }
 
-func (m nativeModel) promptForNumericInput(prompt string) (int, error) {
+func (m nativeModel) promptForNumericInput(style pam.Style, prompt string) (int, error) {
 	for {
-		out, err := m.promptForInput(prompt)
+		out, err := m.promptForInput(style, prompt)
 		if err != nil {
 			return -1, err
 		}
@@ -249,8 +253,8 @@ func (m nativeModel) promptForNumericInput(prompt string) (int, error) {
 	}
 }
 
-func (m nativeModel) promptForNumericInputAsString(prompt string) (string, error) {
-	input, err := m.promptForNumericInput(prompt)
+func (m nativeModel) promptForNumericInputAsString(style pam.Style, prompt string) (string, error) {
+	input, err := m.promptForNumericInput(style, prompt)
 	if errors.Is(err, errGoBack) {
 		return nativeCancelKey, nil
 	}
@@ -258,14 +262,6 @@ func (m nativeModel) promptForNumericInputAsString(prompt string) (string, error
 		return "", err
 	}
 	return fmt.Sprint(input), nil
-}
-
-func (m nativeModel) promptForSecret(prompt string) (string, error) {
-	resp, err := m.pamMTx.StartStringConvf(pam.PromptEchoOff, "%s: ", prompt)
-	if err != nil {
-		return "", err
-	}
-	return resp.Response(), nil
 }
 
 func (m nativeModel) sendError(errorMsg string, args ...any) error {
@@ -299,7 +295,7 @@ func (m nativeModel) promptForChoice(title string, choices choicesList, prompt s
 		}
 
 		msg += prompt
-		idx, err := m.promptForNumericInput(msg)
+		idx, err := m.promptForNumericInput(pam.PromptEchoOn, msg)
 		if err != nil {
 			return "", err
 		}
@@ -387,6 +383,8 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 	if prompt == "" {
 		switch m.uiLayout.GetEntry() {
 		case "digits":
+			fallthrough
+		case "digits_password":
 			prompt = "PIN"
 		case "chars":
 			prompt = "Value"
@@ -429,11 +427,13 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 func (m nativeModel) promptForChallenge(prompt string) (string, error) {
 	switch m.uiLayout.GetEntry() {
 	case "chars", "":
-		return m.promptForInput(prompt)
+		return m.promptForInput(pam.PromptEchoOn, prompt)
 	case "chars_password":
-		return m.promptForSecret(prompt)
+		return m.promptForInput(pam.PromptEchoOff, prompt)
 	case "digits":
-		return m.promptForNumericInputAsString(prompt)
+		return m.promptForNumericInputAsString(pam.PromptEchoOn, prompt)
+	case "digits_password":
+		return m.promptForNumericInputAsString(pam.PromptEchoOff, prompt)
 	default:
 		return "", fmt.Errorf("Unhandled entry %q", m.uiLayout.GetEntry())
 	}
