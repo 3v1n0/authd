@@ -139,6 +139,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 		tape string
 
 		currentUserNotRoot bool
+		baseServiceLines   []pam_test.ServiceLine
 	}{
 		"Change password successfully and authenticate with new one": {tape: "passwd_simple"},
 		"Change passwd after MFA auth":                               {tape: "passwd_mfa"},
@@ -148,7 +149,17 @@ func TestCLIChangeAuthTok(t *testing.T) {
 
 		"Prevent change password if auth fails":                                     {tape: "passwd_auth_fail"},
 		"Prevent change password if current user is not root as can't authenticate": {tape: "passwd_not_root", currentUserNotRoot: true},
-
+		"Prevent change password if already set via pam_pwquality": {
+			tape: "passwd_with_pam_pwquality",
+			baseServiceLines: []pam_test.ServiceLine{
+				{
+					Action:  pam_test.Password,
+					Control: pam_test.Requisite,
+					Module:  "pam_pwquality.so",
+					Args:    []string{"retry=3", "minlen=6", "dictcheck=0"},
+				},
+			},
+		},
 		"Exit authd if local broker is selected": {tape: "passwd_local_broker"},
 		"Exit authd if user sigints":             {tape: "passwd_sigint"},
 	}
@@ -178,6 +189,13 @@ func TestCLIChangeAuthTok(t *testing.T) {
 				fmt.Sprintf("AUTHD_PAM_CLI_LOG_DIR=%s", filepath.Dir(cliLog)),
 				fmt.Sprintf("AUTHD_PAM_CLI_TEST_NAME=%s", t.Name()))
 			cmd.Dir = outDir
+
+			if tc.baseServiceLines != nil {
+				baseServiceFile, err := pam_test.CreateService(t.TempDir(), "base-passwd-service", tc.baseServiceLines)
+				require.NoError(t, err, "Setup: Can't create service file %s", name)
+				cmd.Env = append(cmd.Env, pathEnv,
+					fmt.Sprintf("AUTHD_PAM_CLI_BASE_SERVICE_FILE=%s", baseServiceFile))
+			}
 
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, "Failed to run tape %q: %v: %s", tc.tape, err, out)

@@ -12,6 +12,7 @@ env:
   apt_deps: >-
     libpam-dev
     libglib2.0-dev
+    libpam-pwquality
 
   test_apt_deps: >-
     ffmpeg
