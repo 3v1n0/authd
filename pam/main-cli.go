@@ -14,11 +14,13 @@ import (
 
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
+	"golang.org/x/term"
 )
 
 // Simulating pam on the CLI for manual testing.
 func main() {
 	logDir := os.Getenv("AUTHD_PAM_CLI_LOG_DIR")
+	supportsConversation := os.Getenv("AUTHD_PAM_CLI_SUPPORTS_CONVERSATION")
 	execModule := os.Getenv("AUTHD_PAM_EXEC_MODULE")
 	cliPath := os.Getenv("AUTHD_PAM_CLI_PATH")
 	testName := os.Getenv("AUTHD_PAM_CLI_TEST_NAME")
@@ -81,6 +83,30 @@ func main() {
 				fmt.Fprintf(os.Stderr, "PAM Info Message: %s\n", msg)
 			case pam.ErrorMsg:
 				fmt.Fprintf(os.Stderr, "PAM Error Message: %s\n", msg)
+			case pam.PromptEchoOn:
+				if supportsConversation == "" {
+					return "", fmt.Errorf("PAM style %d not implemented", style)
+				}
+				fmt.Print(msg)
+				var input string
+				_, err := fmt.Scanln(&input)
+				if err != nil {
+					log.Fatalf("PAM Prompt error error: %v", err)
+					return "", err
+				}
+				return input, nil
+			case pam.PromptEchoOff:
+				if supportsConversation == "" {
+					return "", fmt.Errorf("PAM style %d not implemented", style)
+				}
+				fmt.Print(msg)
+				input, err := term.ReadPassword(int(os.Stdin.Fd()))
+				fmt.Print("\n")
+				if err != nil {
+					log.Fatalf("PAM Password Prompt error: %v", err)
+					return "", err
+				}
+				return string(input), nil
 			default:
 				return "", fmt.Errorf("PAM style %d not implemented", style)
 			}
