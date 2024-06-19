@@ -77,6 +77,7 @@ func main() {
 		log.Fatalf("Can't create service file %s: %v", serviceFile, err)
 	}
 
+	// fmt.Println("Service file is", baseServiceFile)
 	if baseServiceFile != "" {
 		baseContent, err := os.ReadFile(baseServiceFile)
 		if err != nil {
@@ -86,12 +87,49 @@ func main() {
 		if err != nil {
 			log.Fatalf("Can't read service file %s: %v", serviceFile, err)
 		}
+		/*
+			baseLines := strings.Split(string(baseContent), "\n")
+			contentLines := strings.Split(string(content), "\n")
+			insertBefore := func(base string) {
+				base = strings.TrimLeft(base, " \t")
+				var action string
+				for _, b := range base {
+					if b == ' ' || b == '\t' {
+						break
+					}
+					action += string(b)
+				}
+				// action := strings.SplitN(base, "\t", 1)[0]
+				for i, c := range contentLines {
+					if strings.HasPrefix(c, action) {
+						contentLines = slices.Insert(contentLines, i, base)
+						break
+					}
+				}
+			}
+			for _, l := range baseLines {
+				insertBefore(l)
+			}
+			if err := os.WriteFile(serviceFile, []byte(strings.Join(contentLines, "\n")), 0600); err != nil {
+				log.Fatalf("Can't write service file %s: %v", serviceFile, err)
+			}
+		*/
 		baseContent = append(baseContent, '\n')
 		content = append(baseContent, content...)
+		// slices.SortFunc(lines, func(a string, b string) int {
+		// 	return strings.Compare(a, b)
+		// })
+		// lines := slices.Sort()
+		// slices.Sort[]()
 		if err := os.WriteFile(serviceFile, []byte(content), 0600); err != nil {
 			log.Fatalf("Can't write service file %s: %v", serviceFile, err)
 		}
 	}
+
+	// bcnt, _ := os.ReadFile(baseServiceFile)
+	// fmt.Println("baseServiceFile content is", string(bcnt))
+	// cnt, _ := os.ReadFile(serviceFile)
+	// fmt.Println("COntent is\n", string(cnt))
 
 	tx, err := pam.StartConfDir(filepath.Base(serviceFile), pamUser, pam.ConversationFunc(
 		func(style pam.Style, msg string) (string, error) {

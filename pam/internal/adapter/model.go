@@ -259,6 +259,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		cmds := []tea.Cmd{
 			m.authenticationModel.Compose(
+				m.PamMTx, m.SessionMode,
 				m.currentSession.brokerID,
 				m.currentSession.sessionID,
 				m.currentSession.encryptionKey,
@@ -268,25 +269,27 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.changeStage(pam_proto.Stage_challenge),
 		}
 
+		// panic(fmt.Sprintf("Got message %s, sesison %s\n", msg.layout.Type, m.SessionMode))
+
 		// If the mode is passwd (meaning we are trying to change the user password) and we already have a AUTHTOK, we
 		// don't need to ask the user for a new one.
-		if msg.layout.Type == "newpassword" && m.SessionMode == authd.SessionMode_PASSWD {
-			challenge, err := m.PamMTx.GetItem(pam.Authtok)
-			if err != nil {
-				return m, sendEvent(pamError{
-					status: pam.ErrAuthinfoUnavail,
-					msg:    "could not get required AUTHTOK from PAM transaction",
-				})
-			}
+		// if (msg.layout.Type == "newpassword") && m.SessionMode == authd.SessionMode_PASSWD {
+		// 	challenge, err := m.PamMTx.GetItem(pam.Authtok)
+		// 	if err != nil {
+		// 		return m, sendEvent(pamError{
+		// 			status: pam.ErrAuthinfoUnavail,
+		// 			msg:    "could not get required AUTHTOK from PAM transaction",
+		// 		})
+		// 	}
 
-			if challenge != "" {
-				updatedModel, cmd := m.Update(isAuthenticatedRequested{
-					item: &authd.IARequest_AuthenticationData_Challenge{Challenge: challenge},
-				})
-				return updatedModel, tea.Sequence(append(cmds, cmd)...)
-			}
-			log.Debugf(context.TODO(), "Could not find required information, prompting the user for it...")
-		}
+		// 	if challenge != "" {
+		// 		updatedModel, cmd := m.Update(isAuthenticatedRequested{
+		// 			item: &authd.IARequest_AuthenticationData_Challenge{Challenge: challenge},
+		// 		})
+		// 		return updatedModel, tea.Sequence(append(cmds, cmd)...)
+		// 	}
+		// 	log.Debugf(context.TODO(), "Could not find required information, prompting the user for it...")
+		// }
 
 		return m, tea.Sequence(cmds...)
 

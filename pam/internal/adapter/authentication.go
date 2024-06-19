@@ -101,7 +101,9 @@ type authenticationModel struct {
 
 // startAuthentication signals that the authentication model can start
 // wait:true authentication and reset fields.
-type startAuthentication struct{}
+type startAuthentication struct {
+	currentChallenge string
+}
 
 // errMsgToDisplay signals from an authentication form to display an error message.
 type errMsgToDisplay struct {
@@ -128,6 +130,13 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 	case reselectAuthMode:
 		m.cancelIsAuthenticated()
 		return *m, sendEvent(AuthModeSelected{})
+
+	case startAuthentication:
+		if msg.currentChallenge != "" {
+			return *m, sendEvent(isAuthenticatedRequested{
+				item: &authd.IARequest_AuthenticationData_Challenge{Challenge: msg.currentChallenge},
+			})
+		}
 
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
@@ -230,7 +239,8 @@ func (m *authenticationModel) Blur() {
 
 // Compose initialize the authentication model to be used.
 // It creates and attaches the sub layout models based on UILayout.
-func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey *rsa.PublicKey, layout *authd.UILayout) tea.Cmd {
+func (m *authenticationModel) Compose(pamMTx pam.ModuleTransaction, sessionMode authd.SessionMode,
+	brokerID, sessionID string, encryptionKey *rsa.PublicKey, layout *authd.UILayout) tea.Cmd {
 	m.currentBrokerID = brokerID
 	m.currentSessionID = sessionID
 	m.encryptionKey = encryptionKey
@@ -238,8 +248,20 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 
 	m.errorMsg = ""
 
+	var currentChallenge string
+	if sessionMode == authd.SessionMode_PASSWD && layout.Type == "newpassword" {
+		challenge, err := pamMTx.GetItem(pam.Authtok)
+		if err != nil {
+			return sendEvent(pamError{
+				status: pam.ErrAuthinfoUnavail,
+				msg:    "could not get required AUTHTOK from PAM transaction",
+			})
+		}
+		currentChallenge = challenge
+	}
+
 	if m.clientType != InteractiveTerminal {
-		return sendEvent(startAuthentication{})
+		return sendEvent(startAuthentication{currentChallenge})
 	}
 
 	switch layout.Type {
@@ -265,7 +287,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 		})
 	}
 
-	return sendEvent(startAuthentication{})
+	return sendEvent(startAuthentication{currentChallenge})
 }
 
 // View renders a text view of the authentication UI.

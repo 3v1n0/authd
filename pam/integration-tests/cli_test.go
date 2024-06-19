@@ -198,6 +198,8 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			}
 
 			out, err := cmd.CombinedOutput()
+			// t.Log("TIME TO COPY THE DIR", t.TempDir())
+			// time.Sleep(3 * time.Minute)
 			require.NoError(t, err, "Failed to run tape %q: %v: %s", tc.tape, err, out)
 
 			tmp, err := os.ReadFile(filepath.Join(outDir, tc.tape+".txt"))
