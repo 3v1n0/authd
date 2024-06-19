@@ -167,7 +167,7 @@ func createServiceFileWithActionArgs(t *testing.T, name string, libPath string, 
 		{Action: pam_test.Session, Control: pam_test.SufficientRequisite, Module: libPath, Args: actionArgs[pam_test.Session]},
 		{Action: pam_test.Session, Control: pam_test.Requisite, Module: pam_test.Ignore.String()},
 	})
-	require.NoError(t, err, "Setup: Can't create service file %s", serviceFile)
+	require.NoError(t, err, "Setup: Can't create service file %s", name)
 	t.Logf("Created service file at %s", serviceFile)
 
 	return serviceFile
