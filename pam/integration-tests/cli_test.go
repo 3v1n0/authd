@@ -297,6 +297,7 @@ func buildPAMTestClient(execPath string) (cleanup func(), err error) {
 func buildPAMClient(t *testing.T) string {
 	t.Helper()
 
+	// FIXME: add -race too!
 	cmd := exec.Command("go", "build", "-C", "pam")
 	cmd.Dir = testutils.ProjectRoot()
 	if testutils.CoverDirForTests() != "" {
