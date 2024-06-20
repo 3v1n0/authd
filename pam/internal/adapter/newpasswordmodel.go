@@ -71,14 +71,6 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Clear()
 		return m, nil
 
-	case newPasswordCheckQualityResult:
-		if msg.err != nil {
-			m.Clear()
-			return m, sendEvent(errMsgToDisplay{msg: msg.err.Error()})
-		}
-
-		return m, tea.Batch(sendEvent(errMsgToDisplay{msg: ""}), m.focusNextField())
-
 	case tea.KeyMsg: // Key presses
 		switch msg.String() {
 		case "enter":
@@ -115,11 +107,7 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			m.errorMsg = ""
-			if m.focusIndex == 0 && m.passwordEntries[0].Value() != "" {
-				return m, sendEvent(newPasswordCheckQuality{m.passwordEntries[0].Value()})
-			}
-
-			return m, m.focusNextField()
+			return m, tea.Batch(sendEvent(errMsgToDisplay{msg: ""}), m.focusNextField())
 
 		default:
 			m.errorMsg = ""

@@ -137,10 +137,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		return *m, sendEvent(AuthModeSelected{})
 
 	case newPasswordCheckQualityResult:
-		if m.clientType == InteractiveTerminal {
-			break
-		}
-
 		if msg.err == nil {
 			return *m, sendEvent(isAuthenticatedSendChallenge{msg.challenge})
 		}
@@ -166,7 +162,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(isAuthenticatedSend(msg))
 		}
 
-		if m.currentLayoutType == "newpassword" && m.clientType != InteractiveTerminal {
+		if m.currentLayoutType == "newpassword" {
 			return *m, sendEvent(newPasswordCheckQualityResult{
 				err:       checkChallengeQuality(m.currentChallenge, challenge.Challenge),
 				challenge: challenge.Challenge,
