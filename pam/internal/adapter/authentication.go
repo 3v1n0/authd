@@ -190,6 +190,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, nil
 		}
 
+	case newPasswordCheckQuality:
+		return *m, sendEvent(newPasswordCheckQualityResult{
+			err: checkChallengeQuality(m.currentChallenge, msg.challenge),
+		})
+
 	case errMsgToDisplay:
 		m.errorMsg = msg.msg
 		return *m, nil
@@ -266,7 +271,6 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 
 	case "newpassword":
 		newPasswordModel := newNewPasswordModel(layout.GetLabel(), layout.GetEntry(), layout.GetButton())
-		newPasswordModel.currentChallenge = m.currentChallenge
 		m.currentModel = newPasswordModel
 
 	default:

@@ -7,12 +7,18 @@ import (
 	"github.com/ubuntu/authd"
 )
 
+type newPasswordCheckQuality struct {
+	challenge string
+}
+
+type newPasswordCheckQualityResult struct {
+	err error
+}
+
 // newPasswordModel is the form layout type to allow authentication and return a challenge.
 type newPasswordModel struct {
 	errorMsg string
 	label    string
-
-	currentChallenge string
 
 	passwordEntries []*textinputModel
 	focusableModels []authenticationComponent
@@ -64,6 +70,14 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Clear()
 		return m, nil
 
+	case newPasswordCheckQualityResult:
+		if msg.err != nil {
+			m.Clear()
+			return m, sendEvent(errMsgToDisplay{msg: msg.err.Error()})
+		}
+
+		return m, tea.Batch(sendEvent(errMsgToDisplay{msg: ""}), m.focusNextField())
+
 	case tea.KeyMsg: // Key presses
 		switch msg.String() {
 		case "enter":
@@ -101,26 +115,10 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			m.errorMsg = ""
 			if m.focusIndex == 0 && m.passwordEntries[0].Value() != "" {
-				err := checkChallengeQuality(m.currentChallenge, m.passwordEntries[0].Value())
-				if err != nil {
-					m.Clear()
-					return m, sendEvent(errMsgToDisplay{msg: err.Error()})
-				}
+				return m, sendEvent(newPasswordCheckQuality{m.passwordEntries[0].Value()})
 			}
 
-			cmds := []tea.Cmd{sendEvent(errMsgToDisplay{msg: ""})}
-			m.focusIndex++
-			if m.focusIndex == len(m.focusableModels) {
-				m.focusIndex = 0
-			}
-			for i, fm := range m.focusableModels {
-				if i != m.focusIndex {
-					fm.Blur()
-					continue
-				}
-				cmds = append(cmds, fm.Focus())
-			}
-			return m, tea.Batch(cmds...)
+			return m, m.focusNextField()
 
 		default:
 			m.errorMsg = ""
@@ -138,6 +136,22 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+func (m *newPasswordModel) focusNextField() tea.Cmd {
+	var cmd tea.Cmd
+	m.focusIndex++
+	if m.focusIndex == len(m.focusableModels) {
+		m.focusIndex = 0
+	}
+	for i, fm := range m.focusableModels {
+		if i != m.focusIndex || cmd != nil {
+			fm.Blur()
+			continue
+		}
+		cmd = fm.Focus()
+	}
+	return cmd
 }
 
 // View renders a text view of the form.
