@@ -12,7 +12,8 @@ type newPasswordCheckQuality struct {
 }
 
 type newPasswordCheckQualityResult struct {
-	err error
+	challenge string
+	err       error
 }
 
 // newPasswordModel is the form layout type to allow authentication and return a challenge.

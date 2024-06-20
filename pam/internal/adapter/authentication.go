@@ -57,6 +57,8 @@ type isAuthenticatedRequested struct {
 	item authd.IARequestAuthenticationDataItem
 }
 
+type isAuthenticatedSend isAuthenticatedRequested
+
 // isAuthenticatedResultReceived is the internal event with the authentication access result
 // and data that was retrieved.
 type isAuthenticatedResultReceived struct {
@@ -67,6 +69,9 @@ type isAuthenticatedResultReceived struct {
 // isAuthenticatedCancelled is the event to cancel the auth request.
 type isAuthenticatedCancelled struct {
 	msg string
+}
+type isAuthenticatedSendChallenge struct {
+	challenge string
 }
 
 // reselectAuthMode signals to restart auth mode selection with the same id (to resend sms or
@@ -93,6 +98,7 @@ type authenticationModel struct {
 	currentSessionID      string
 	currentBrokerID       string
 	currentChallenge      string
+	currentLayoutType     string
 	cancelIsAuthenticated func()
 
 	encryptionKey *rsa.PublicKey
@@ -130,24 +136,62 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		m.cancelIsAuthenticated()
 		return *m, sendEvent(AuthModeSelected{})
 
+	case newPasswordCheckQualityResult:
+		if m.clientType == InteractiveTerminal {
+			break
+		}
+
+		if msg.err == nil {
+			return *m, sendEvent(isAuthenticatedSendChallenge{msg.challenge})
+		}
+
+		v := make(map[string]string)
+		v["message"] = msg.err.Error()
+		errMsg, err := json.Marshal(v)
+		if err != nil {
+			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encode error: %v", err)})
+		}
+		return *m, sendEvent(isAuthenticatedResultReceived{
+			access: brokers.AuthRetry,
+			msg:    string(errMsg),
+		})
+
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
 		m.cancelIsAuthenticated()
-		ctx, cancel := context.WithCancel(context.Background())
-		m.cancelIsAuthenticated = cancel
 
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
 		if !ok {
-			challenge = &authd.IARequest_AuthenticationData_Challenge{Challenge: ""}
+			return *m, sendEvent(isAuthenticatedSend(msg))
 		}
-		m.currentChallenge = challenge.Challenge
 
+		if m.currentLayoutType == "newpassword" && m.clientType != InteractiveTerminal {
+			return *m, sendEvent(newPasswordCheckQualityResult{
+				err:       checkChallengeQuality(m.currentChallenge, challenge.Challenge),
+				challenge: challenge.Challenge,
+			})
+		}
+
+		return *m, sendEvent(isAuthenticatedSendChallenge{challenge.Challenge})
+
+	case isAuthenticatedSendChallenge:
 		// no challenge value, pass it as is
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
 		}
-		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
+
+		m.currentChallenge = msg.challenge
+		return *m, sendEvent(isAuthenticatedSend{
+			&authd.IARequest_AuthenticationData_Challenge{Challenge: msg.challenge},
+		})
+
+	case isAuthenticatedSend:
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelIsAuthenticated = cancel
+		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{
+			Item: msg.item,
+		})
 
 	case isAuthenticatedCancelled:
 		log.Debugf(context.TODO(), "%#v", msg)
@@ -192,7 +236,8 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case newPasswordCheckQuality:
 		return *m, sendEvent(newPasswordCheckQualityResult{
-			err: checkChallengeQuality(m.currentChallenge, msg.challenge),
+			challenge: msg.challenge,
+			err:       checkChallengeQuality(m.currentChallenge, msg.challenge),
 		})
 
 	case errMsgToDisplay:
@@ -250,6 +295,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 	m.currentSessionID = sessionID
 	m.encryptionKey = encryptionKey
 	m.cancelIsAuthenticated = func() {}
+	m.currentLayoutType = layout.Type
 
 	m.errorMsg = ""
 
@@ -330,20 +376,15 @@ func dataToMsg(data string) (string, error) {
 	return r, nil
 }
 
-func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
+func (authData *isAuthenticatedSendChallenge) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
 	// no challenge value, pass it as is
-	challenge, ok := authData.item.(*authd.IARequest_AuthenticationData_Challenge)
-	if !ok {
-		return nil
-	}
-
-	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(challenge.Challenge), nil)
+	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(authData.challenge), nil)
 	if err != nil {
 		return err
 	}
 
-	// encrypt it to base64 and replace the challenge with it
+	// encode it to base64 and replace the challenge with it
 	base64Encoded := base64.StdEncoding.EncodeToString(ciphertext)
-	authData.item = &authd.IARequest_AuthenticationData_Challenge{Challenge: base64Encoded}
+	authData.challenge = base64Encoded
 	return nil
 }
