@@ -47,12 +47,13 @@ type nativeUserSelection struct{}
 type nativeBrokerSelection struct{}
 
 var errGoBack = errors.New("request to go back")
+var errEmptyResponse = errors.New("empty response received")
 
 // Init initializes the main model orchestrator.
 func (m *nativeModel) Init() tea.Cmd {
 	return func() tea.Msg {
 		required, optional := "required", "optional"
-		supportedEntries := "optional:chars,chars_password,digits"
+		supportedEntries := "optional:chars,chars_password,digits,digits_password"
 		requiredWithBooleans := "required:true,false"
 		optionalWithBooleans := "optional:true,false"
 
@@ -125,7 +126,10 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 
 		return m, func() tea.Msg {
 			user, err := m.promptForInput(pam.PromptEchoOn, "Username")
-			if err != nil {
+			if errors.Is(err, errEmptyResponse) {
+				return nativeUserSelection{}
+			}
+			if err != nil && !errors.Is(err, errGoBack) {
 				return sendPamError(err)()
 			}
 			return userSelected{user}
@@ -273,12 +277,23 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 	return m, nil
 }
 
+func checkForPromptReplyValidity(reply string) error {
+	switch reply {
+	case nativeCancelKey:
+		return errGoBack
+	case "", "\n":
+		return errEmptyResponse
+	default:
+		return nil
+	}
+}
+
 func (m nativeModel) promptForInput(style pam.Style, prompt string) (string, error) {
 	resp, err := m.pamMTx.StartStringConvf(style, "%s: ", prompt)
 	if err != nil {
 		return "", err
 	}
-	return resp.Response(), nil
+	return resp.Response(), checkForPromptReplyValidity(resp.Response())
 }
 
 func (m nativeModel) promptForNumericInput(style pam.Style, prompt string) (int, error) {
@@ -286,9 +301,6 @@ func (m nativeModel) promptForNumericInput(style pam.Style, prompt string) (int,
 		out, err := m.promptForInput(style, prompt)
 		if err != nil {
 			return -1, err
-		}
-		if out == "" || out == nativeCancelKey {
-			return -1, errGoBack
 		}
 		intOut, err := strconv.Atoi(out)
 		if err == nil {
@@ -304,13 +316,7 @@ func (m nativeModel) promptForNumericInput(style pam.Style, prompt string) (int,
 
 func (m nativeModel) promptForNumericInputAsString(style pam.Style, prompt string) (string, error) {
 	input, err := m.promptForNumericInput(style, prompt)
-	if errors.Is(err, errGoBack) {
-		return nativeCancelKey, nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprint(input), nil
+	return fmt.Sprint(input), err
 }
 
 func (m nativeModel) sendError(errorMsg string, args ...any) error {
@@ -414,7 +420,10 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 
 		id, err := m.promptForChoice(authMode, choices, "Select action")
 		if errors.Is(err, errGoBack) {
-			return m.handleChallengeAnswer(nativeCancelKey, m.goBackCommand(), nil)
+			return m.goBackCommand()
+		}
+		if errors.Is(err, errEmptyResponse) {
+			return sendEvent(nativeChallengeRequested{})
 		}
 		if err != nil {
 			return sendPamError(err)
@@ -459,18 +468,22 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 	}
 
 	challenge, err := m.promptForChallenge(prompt)
+	if errors.Is(err, errGoBack) {
+		return m.goBackCommand()
+	}
+	if errors.Is(err, errEmptyResponse) {
+		if hasWait {
+			return sendAuthWaitCommand()
+		}
+		err = nil
+	}
 	if err != nil {
 		return sendPamError(err)
 	}
 
-	emptyActionCommand := m.goBackCommand()
-	if hasWait {
-		emptyActionCommand = sendAuthWaitCommand()
-	}
-
-	return m.handleChallengeAnswer(challenge, emptyActionCommand, sendEvent(isAuthenticatedRequested{
+	return sendEvent(isAuthenticatedRequested{
 		item: &authd.IARequest_AuthenticationData_Challenge{Challenge: challenge},
-	}))
+	})
 }
 
 // TestNativeAuthenticate/Authenticate_user_switching_to_local_broker
@@ -516,10 +529,12 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 		choices = append(choices, choicePair{id: "button", label: buttonLabel})
 	}
 
-	choices = append(choices, choicePair{id: "cancel", label: "Cancel"})
 	id, err := m.promptForChoice("Qr Code authentication", choices, "Select action")
 	if errors.Is(err, errGoBack) {
-		return m.handleChallengeAnswer(nativeCancelKey, sendAuthWaitCommand(), nil)
+		return m.goBackCommand()
+	}
+	if errors.Is(err, errEmptyResponse) {
+		return sendAuthWaitCommand()
 	}
 	if err != nil {
 		return sendPamError(err)
@@ -528,12 +543,8 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 	switch id {
 	case "button":
 		return sendEvent(reselectAuthMode{})
-	case "cancel":
-		return m.handleChallengeAnswer(nativeCancelKey, sendAuthWaitCommand(), nil)
 	case "wait":
-		return sendEvent(isAuthenticatedRequested{
-			item: &authd.IARequest_AuthenticationData_Wait{Wait: "true"},
-		})
+		return sendAuthWaitCommand()
 	default:
 		return nil
 	}
@@ -550,7 +561,7 @@ func (m nativeModel) handleNewPassword() tea.Cmd {
 
 		id, err := m.promptForChoice("Password Update", choices, "Select action")
 		if errors.Is(err, errGoBack) {
-			return m.handleChallengeAnswer(nativeCancelKey, m.goBackCommand(), nil)
+			return m.goBackCommand()
 		}
 		if err != nil {
 			return sendPamError(err)
@@ -569,12 +580,11 @@ func (m nativeModel) handleNewPassword() tea.Cmd {
 			return "", sendPamError(err)
 		}
 		challenge, err := m.promptForChallenge(m.uiLayout.GetLabel())
-		if err != nil {
-			return "", sendPamError(err)
+		if errors.Is(err, errGoBack) {
+			return "", m.goBackCommand()
 		}
-		cmd := m.handleChallengeAnswer(challenge, m.goBackCommand(), nil)
-		if cmd != nil {
-			return "", cmd
+		if err != nil && !errors.Is(err, errEmptyResponse) {
+			return "", sendPamError(err)
 		}
 		return challenge, nil
 	}
@@ -620,15 +630,4 @@ func sendAuthWaitCommand() tea.Cmd {
 	return sendEvent(isAuthenticatedRequested{
 		item: &authd.IARequest_AuthenticationData_Wait{Wait: "true"},
 	})
-}
-
-func (m nativeModel) handleChallengeAnswer(challenge string, emptyAnswerCommand tea.Cmd, defaultCommand tea.Cmd) tea.Cmd {
-	switch challenge {
-	case nativeCancelKey:
-		return m.goBackCommand()
-	case "", "\n":
-		return emptyAnswerCommand
-	default:
-		return defaultCommand
-	}
 }
