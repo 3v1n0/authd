@@ -109,6 +109,16 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case nativeChangeStage:
 		m.currentStage = msg.Stage
+		// switch m.currentStage {
+		// case proto.Stage_userSelection:
+		// 	return m, sendEvent(nativeUserSelection{})
+		// case proto.Stage_brokerSelection:
+		// 	return m, sendEvent(nativeBrokerSelection{})
+		// case proto.Stage_authModeSelection:
+		// 	return m, sendEvent(nativeAuthSelection{})
+		// case proto.Stage_challenge:
+		// 	return m, sendEvent(nativeChallengeRequested{})
+		// }
 
 	case nativeGoBack:
 		return m, m.goBackCommand()
@@ -596,6 +606,45 @@ func (m nativeModel) handleNewPassword() tea.Cmd {
 
 func (m nativeModel) goBackCommand() tea.Cmd {
 	return func() tea.Cmd {
+		// var commands []tea.Cmd
+		// // fmt.Println("Going back, current stage is", m.currentStage)
+		// switch m.currentStage {
+		// case proto.Stage_challenge:
+		// 	if m.uiLayout != nil {
+		// 		return sendEvent(isAuthenticatedCancelled{})
+		// 	}
+		// 	// m.uiLayout = nil
+		// 	if len(m.authModes) > 1 {
+		// 		commands = append(commands,
+		// 			sendEvent(ChangeStage{proto.Stage_authModeSelection}),
+		// 			sendEvent(nativeChangeStage{proto.Stage_authModeSelection}),
+		// 			sendEvent(nativeAuthSelection{}),
+		// 		)
+		// 		break
+		// 	}
+		// 	fallthrough
+		// case proto.Stage_authModeSelection:
+		// 	m.uiLayout = nil
+		// 	m.authModes = nil
+		// 	if len(m.availableBrokers) > 1 {
+		// 		commands = append(commands,
+		// 			sendEvent(ChangeStage{proto.Stage_brokerSelection}),
+		// 			sendEvent(nativeChangeStage{proto.Stage_brokerSelection}),
+		// 			sendEvent(nativeBrokerSelection{}),
+		// 		)
+		// 		break
+		// 	}
+		// 	fallthrough
+		// case proto.Stage_brokerSelection:
+		// 	// m.availableBrokers = nil
+		// 	commands = append(commands,
+		// 		sendEvent(ChangeStage{proto.Stage_userSelection}),
+		// 		sendEvent(nativeChangeStage{proto.Stage_userSelection}),
+		// 		sendEvent(nativeUserSelection{}),
+		// 	)
+		// }
+		// return tea.Sequence(commands...)
+
 		if m.uiLayout != nil {
 			return sendEvent(isAuthenticatedCancelled{})
 		}
