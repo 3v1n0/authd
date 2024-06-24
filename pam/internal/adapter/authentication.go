@@ -45,9 +45,14 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 			}
 		}
 
+		var challenge string
+		if ch, ok := authData.Item.(*authd.IARequest_AuthenticationData_Challenge); ok {
+			challenge = ch.Challenge
+		}
 		return isAuthenticatedResultReceived{
-			access: res.Access,
-			msg:    res.Msg,
+			access:    res.Access,
+			msg:       res.Msg,
+			challenge: challenge,
 		}
 	}
 }
@@ -61,8 +66,9 @@ type isAuthenticatedRequested struct {
 // isAuthenticatedResultReceived is the internal event with the authentication access result
 // and data that was retrieved.
 type isAuthenticatedResultReceived struct {
-	access string
-	msg    string
+	access    string
+	msg       string
+	challenge string
 }
 
 // isAuthenticatedCancelled is the event to cancel the auth request.
@@ -137,13 +143,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
 
-		// Store the current challenge, if present, for password verifications.
-		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
-		if !ok {
-			challenge = &authd.IARequest_AuthenticationData_Challenge{Challenge: ""}
-		}
-		m.currentChallenge = challenge.Challenge
-
 		// no challenge value, pass it as is
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
@@ -158,12 +157,8 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 	case isAuthenticatedResultReceived:
 		log.Debugf(context.TODO(), "%#v", msg)
 
-		// Resets challenge if the authentication wasn't successful.
-		defer func() {
-			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
-				m.currentChallenge = ""
-			}
-		}()
+		// Store the current challenge, if present, for password verifications.
+		m.currentChallenge = msg.challenge
 
 		switch msg.access {
 		case brokers.AuthGranted:
