@@ -64,6 +64,14 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Clear()
 		return m, nil
 
+	case newPasswordCheckResult:
+		if msg.msg != "" {
+			m.Clear()
+			return m, sendEvent(errMsgToDisplay{msg: msg.msg})
+		}
+
+		return m, tea.Batch(sendEvent(errMsgToDisplay{}), m.focusNextField())
+
 	case tea.KeyMsg: // Key presses
 		switch msg.String() {
 		case "enter":
@@ -106,21 +114,10 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.Clear()
 					return m, sendEvent(errMsgToDisplay{msg: err.Error()})
 				}
+				return m, sendEvent(newPasswordCheck{m.passwordEntries[0].Value()})
 			}
 
-			cmds := []tea.Cmd{sendEvent(errMsgToDisplay{msg: ""})}
-			m.focusIndex++
-			if m.focusIndex == len(m.focusableModels) {
-				m.focusIndex = 0
-			}
-			for i, fm := range m.focusableModels {
-				if i != m.focusIndex {
-					fm.Blur()
-					continue
-				}
-				cmds = append(cmds, fm.Focus())
-			}
-			return m, tea.Batch(cmds...)
+			return m, m.focusNextField()
 
 		default:
 			m.errorMsg = ""
@@ -166,6 +163,22 @@ func (m newPasswordModel) Blur() {
 		return
 	}
 	m.focusableModels[m.focusIndex].Blur()
+}
+
+func (m *newPasswordModel) focusNextField() tea.Cmd {
+	var cmd tea.Cmd
+	m.focusIndex++
+	if m.focusIndex == len(m.focusableModels) {
+		m.focusIndex = 0
+	}
+	for i, fm := range m.focusableModels {
+		if i != m.focusIndex || cmd != nil {
+			fm.Blur()
+			continue
+		}
+		cmd = fm.Focus()
+	}
+	return cmd
 }
 
 func (m *newPasswordModel) Clear() {
