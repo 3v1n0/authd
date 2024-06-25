@@ -20,7 +20,6 @@ Sleep 300ms
 Show
 
 Hide
-Type ""
 Enter
 Sleep 300ms
 Show
