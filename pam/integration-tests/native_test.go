@@ -181,7 +181,7 @@ func TestNativeChangeAuthTok(t *testing.T) {
 			})
 
 			// #nosec:G204 - we control the command arguments in tests
-			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "native-tapes", tc.tape+".tape"))
+			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", "native", tc.tape+".tape"))
 			cmd.Env = append(testutils.AppendCovEnv(cmd.Env), cliEnv...)
 			cmd.Env = append(cmd.Env, pathEnv,
 				fmt.Sprintf("%s=%s", socketPathEnv, socketPath),
