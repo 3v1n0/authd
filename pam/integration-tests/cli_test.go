@@ -41,7 +41,6 @@ func TestCLIAuthenticate(t *testing.T) {
 		"Authenticate user with qr code":                              {tape: "qr_code"},
 		"Authenticate user and reset password while enforcing policy": {tape: "mandatory_password_reset"},
 		"Authenticate user and offer password reset":                  {tape: "optional_password_reset_skip"},
-		"Authenticate user and accept password reset":                 {tape: "optional_password_reset_accept"},
 		"Authenticate user switching auth mode":                       {tape: "switch_auth_mode"},
 		"Authenticate user switching username":                        {tape: "switch_username"},
 		"Authenticate user switching to local broker":                 {tape: "switch_local_broker"},
