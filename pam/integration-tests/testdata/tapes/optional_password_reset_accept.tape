@@ -43,6 +43,21 @@ Sleep 2s
 Show
 
 Hide
+Tab
+Sleep 300ms
+Show
+
+Hide
+Tab
+Sleep 300ms
+Show
+
+Hide
+Tab
+Sleep 300ms
+Show
+
+Hide
 Type "authd2404"
 Tab
 Sleep 2s
