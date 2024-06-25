@@ -29,6 +29,7 @@ type nativeModel struct {
 	uiLayout         *authd.UILayout
 
 	currentStage proto.Stage
+	busy         bool
 }
 
 const nativeCancelKey = "r"
@@ -47,6 +48,9 @@ type nativeAuthSelection struct{}
 
 // nativeChallengeRequested is used to require the user input for challenge.
 type nativeChallengeRequested struct{}
+
+// nativeAsyncOperationCompleted is a message to tell we're done with an async operation.
+type nativeAsyncOperationCompleted struct{}
 
 // nativeGoBack is a message to require to go back to previous stage.
 type nativeGoBack struct{}
@@ -114,6 +118,9 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 	case nativeChangeStage:
 		m.currentStage = msg.Stage
 
+	case nativeAsyncOperationCompleted:
+		m.busy = false
+
 	case nativeGoBack:
 		return m, m.goBackCommand()
 
@@ -131,16 +138,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			return m, cmd
 		}
 
-		return m, func() tea.Msg {
-			user, err := m.promptForInput(pam.PromptEchoOn, "Username")
-			if errors.Is(err, errEmptyResponse) {
-				return nativeUserSelection{}
-			}
-			if err != nil && !errors.Is(err, errGoBack) {
-				return maybeSendPamError(err)()
-			}
-			return userSelected{user}
-		}
+		return m.startAsyncOp(m.userSelection)
 
 	case userSelected:
 		if err := m.pamMTx.SetItem(pam.User, msg.username); err != nil {
@@ -154,7 +152,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		m.authModes = msg.authModes
 
 	case brokerSelectionRequired:
-		if m.currentStage == proto.Stage_brokerSelection {
+		if m.busy {
 			// We may receive multiple concurrent requests, but due to the sync nature
 			// of this model, we can't just accept them once we've one in progress already
 			log.Debug(context.TODO(), "Broker selection already in progress")
@@ -174,24 +172,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			return m, sendEvent(brokerSelected{brokerID: m.availableBrokers[0].Id})
 		}
 
-		var choices []choicePair
-		for _, b := range m.availableBrokers {
-			choices = append(choices, choicePair{id: b.Id, label: b.Name})
-		}
-
-		return m, func() tea.Msg {
-			id, err := m.promptForChoice("Broker selection", choices, "Select broker")
-			if errors.Is(err, errGoBack) {
-				return nativeGoBack{}
-			}
-			if err != nil {
-				return pamError{
-					status: pam.ErrSystem,
-					msg:    fmt.Sprintf("broker selection error: %v", err),
-				}
-			}
-			return brokerSelected{brokerID: id}
-		}
+		return m.startAsyncOp(m.brokerSelection)
 
 	case nativeAuthSelection:
 		if len(m.authModes) < 1 {
@@ -374,6 +355,47 @@ func (m nativeModel) promptForChoice(title string, choices []choicePair, prompt 
 
 		return choices[idx-1].id, nil
 	}
+}
+
+func (m nativeModel) startAsyncOp(cmd func() tea.Cmd) (nativeModel, tea.Cmd) {
+	m.busy = true
+	return m, func() tea.Msg {
+		ret := cmd()
+		return tea.Sequence(
+			sendEvent(nativeAsyncOperationCompleted{}),
+			ret,
+		)()
+	}
+}
+
+func (m nativeModel) userSelection() tea.Cmd {
+	user, err := m.promptForInput(pam.PromptEchoOn, "Username")
+	if errors.Is(err, errEmptyResponse) {
+		return sendEvent(nativeUserSelection{})
+	}
+	if err != nil && !errors.Is(err, errGoBack) {
+		return maybeSendPamError(err)
+	}
+	return sendEvent(userSelected{user})
+}
+
+func (m nativeModel) brokerSelection() tea.Cmd {
+	var choices []choicePair
+	for _, b := range m.availableBrokers {
+		choices = append(choices, choicePair{id: b.Id, label: b.Name})
+	}
+
+	id, err := m.promptForChoice("Broker selection", choices, "Select broker")
+	if errors.Is(err, errGoBack) {
+		return sendEvent(nativeGoBack{})
+	}
+	if err != nil {
+		return sendEvent(pamError{
+			status: pam.ErrSystem,
+			msg:    fmt.Sprintf("broker selection error: %v", err),
+		})
+	}
+	return sendEvent(brokerSelected{brokerID: id})
 }
 
 func (m nativeModel) startChallenge() tea.Cmd {
