@@ -85,7 +85,7 @@ func TestNativeAuthenticate(t *testing.T) {
 
 			const socketPathEnv = "AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK"
 			// #nosec:G204 - we control the command arguments in tests
-			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "native-tapes", tc.tape+".tape"))
+			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", "native", tc.tape+".tape"))
 			cmd.Env = append(testutils.AppendCovEnv(cmd.Env), cliEnv...)
 			cmd.Env = append(cmd.Env,
 				pathEnv,
