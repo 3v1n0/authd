@@ -126,15 +126,16 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		return m, m.goBackCommand()
 
 	case userRequired:
-		if m.currentStage == proto.Stage_userSelection {
+		return m, sendEvent(nativeUserSelection{})
+
+	case nativeUserSelection:
+		if m.busy {
 			// We may receive multiple concurrent requests, but due to the sync nature
 			// of this model, we can't just accept them once we've one in progress already
 			log.Debug(context.TODO(), "User selection already in progress")
 			return m, nil
 		}
-		return m, sendEvent(nativeUserSelection{})
 
-	case nativeUserSelection:
 		if cmd := maybeSendPamError(m.pamMTx.SetItem(pam.User, "")); cmd != nil {
 			return m, cmd
 		}
@@ -153,15 +154,16 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		m.authModes = msg.authModes
 
 	case brokerSelectionRequired:
+		return m, sendEvent(nativeBrokerSelection{})
+
+	case nativeBrokerSelection:
 		if m.busy {
 			// We may receive multiple concurrent requests, but due to the sync nature
 			// of this model, we can't just accept them once we've one in progress already
 			log.Debug(context.TODO(), "Broker selection already in progress")
 			return m, nil
 		}
-		return m, sendEvent(nativeBrokerSelection{})
 
-	case nativeBrokerSelection:
 		if len(m.availableBrokers) < 1 {
 			return m, sendEvent(pamError{
 				status: pam.ErrSystem,
