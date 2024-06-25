@@ -81,6 +81,7 @@ func (m *nativeModel) Init() tea.Cmd {
 				{
 					Type:    "qrcode",
 					Content: &required,
+					Code:    &required,
 					Wait:    &requiredWithBooleans,
 					Label:   &optional,
 					Button:  &optional,
@@ -548,7 +549,9 @@ func (m nativeModel) getPamTtyFd() (int, func(), error) {
 	return int(file.Fd()), func() { file.Close() }, nil
 }
 
-func (m nativeModel) renderQrCode(qrCode *qrcode.QRCode) string {
+func (m nativeModel) renderQrCode(qrCode *qrcode.QRCode) (qr string) {
+	defer func() { qr = strings.TrimRight(qr, "\n") }()
+
 	tty, closeFunc, err := m.getPamTtyFd()
 	defer closeFunc()
 	if err != nil {
@@ -585,7 +588,25 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 		return cmd
 	}
 
-	if cmd := maybeSendPamError(m.sendInfo(m.renderQrCode(qrCode))); cmd != nil {
+	qrcode := m.renderQrCode(qrCode)
+	if cmd := maybeSendPamError(m.sendInfo(qrcode)); cmd != nil {
+		return cmd
+	}
+
+	if code := m.uiLayout.GetCode(); code != "" {
+		firstLine := strings.SplitN(qrcode, "\n", 2)[0]
+		sizeDiff := len([]rune(firstLine)) - len(code)
+		var padding string
+		if sizeDiff > 0 {
+			padding = strings.Repeat(" ", sizeDiff/2)
+		}
+		if cmd := maybeSendPamError(m.sendInfo(padding + code + padding)); cmd != nil {
+			return cmd
+		}
+	}
+
+	// Ass some extra vertical space to improve readability
+	if cmd := maybeSendPamError(m.sendInfo(" ")); cmd != nil {
 		return cmd
 	}
 
