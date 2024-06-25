@@ -85,11 +85,6 @@ Show
 
 Hide
 Type "authd2404"
-Sleep 300ms
-Enter
-Show
-
-Hide
 Enter
 Sleep 2s
 Show
