@@ -155,7 +155,7 @@ func TestNativeChangeAuthTok(t *testing.T) {
 		"Retry if new password does not match quality criteria": {tape: "passwd_bad_password"},
 
 		"Prevent change password if auth fails":                                     {tape: "passwd_auth_fail"},
-		"Prevent change password if user do not exist":                              {tape: "passwd_unexistent_user"},
+		"Prevent change password if user does not exist":                            {tape: "passwd_unexistent_user"},
 		"Prevent change password if current user is not root as can't authenticate": {tape: "passwd_not_root", currentUserNotRoot: true},
 
 		"Exit authd if local broker is selected": {tape: "passwd_local_broker"},
