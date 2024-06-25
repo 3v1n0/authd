@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
+	"github.com/muesli/termenv"
 	"github.com/skip2/go-qrcode"
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers"
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/proto"
+	"golang.org/x/term"
 )
 
 type nativeModel struct {
@@ -505,6 +508,48 @@ func (m nativeModel) promptForChallenge(prompt string) (string, error) {
 	}
 }
 
+func (m nativeModel) getPamTtyFd() (int, func(), error) {
+	pamTty, err := m.pamMTx.GetItem(pam.Tty)
+	if err != nil {
+		return -1, func() {}, err
+	}
+
+	if pamTty == "" {
+		return -1, func() {}, errors.New("no PAM_TTY value set")
+	}
+
+	file, err := os.OpenFile(pamTty, os.O_RDWR, 0600)
+	if err != nil {
+		return -1, func() {}, err
+	}
+
+	return int(file.Fd()), func() { file.Close() }, nil
+}
+
+func (m nativeModel) renderQrCode(qrCode *qrcode.QRCode) string {
+	tty, closeFunc, err := m.getPamTtyFd()
+	defer closeFunc()
+	if err != nil {
+		log.Debugf(context.TODO(), "Failed to open PAM TTY: %s", err)
+		tty = int(os.Stdin.Fd())
+	}
+
+	if !term.IsTerminal(tty) {
+		return qrCode.ToString(false)
+	}
+
+	if os.Getenv("XDG_SESSION_TYPE") == "tty" {
+		return qrCode.ToString(false)
+	}
+
+	switch termenv.DefaultOutput().Profile {
+	case termenv.ANSI, termenv.Ascii:
+		return qrCode.ToString(false)
+	default:
+		return qrCode.ToSmallString(false)
+	}
+}
+
 func (m nativeModel) handleQrCode() tea.Cmd {
 	qrCode, err := qrcode.New(m.uiLayout.GetContent(), qrcode.Medium)
 	if err != nil {
@@ -518,7 +563,7 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 		return cmd
 	}
 
-	if cmd := maybeSendPamError(m.sendInfo(qrCode.ToSmallString(false))); cmd != nil {
+	if cmd := maybeSendPamError(m.sendInfo(m.renderQrCode(qrCode))); cmd != nil {
 		return cmd
 	}
 
