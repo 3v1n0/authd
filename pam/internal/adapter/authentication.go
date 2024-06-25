@@ -27,11 +27,16 @@ var (
 // sendIsAuthenticated sends the authentication challenges or wait request to the brokers.
 // The event will contain the returned value from the broker.
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
-	authData *authd.IARequest_AuthenticationData) tea.Cmd {
+	encryptionKey *rsa.PublicKey, authData *isAuthenticatedRequested) tea.Cmd {
 	return func() tea.Msg {
+		challenge, err := authData.encryptChallengeIfPresent(encryptionKey)
+		if err != nil {
+			return sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
+		}
+
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
-			AuthenticationData: authData,
+			AuthenticationData: &authd.IARequest_AuthenticationData{Item: authData.item},
 		})
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
@@ -46,8 +51,9 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		}
 
 		return isAuthenticatedResultReceived{
-			access: res.Access,
-			msg:    res.Msg,
+			access:    res.Access,
+			msg:       res.Msg,
+			challenge: challenge,
 		}
 	}
 }
@@ -61,8 +67,9 @@ type isAuthenticatedRequested struct {
 // isAuthenticatedResultReceived is the internal event with the authentication access result
 // and data that was retrieved.
 type isAuthenticatedResultReceived struct {
-	access string
-	msg    string
+	access    string
+	msg       string
+	challenge string
 }
 
 // isAuthenticatedCancelled is the event to cancel the auth request.
@@ -137,18 +144,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelIsAuthenticated = cancel
 
-		// Store the current challenge, if present, for password verifications.
-		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
-		if !ok {
-			challenge = &authd.IARequest_AuthenticationData_Challenge{Challenge: ""}
-		}
-		m.currentChallenge = challenge.Challenge
-
-		// no challenge value, pass it as is
-		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
-			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
-		}
-		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
+		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, m.encryptionKey, &msg)
 
 	case isAuthenticatedCancelled:
 		log.Debugf(context.TODO(), "%#v", msg)
@@ -158,12 +154,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 	case isAuthenticatedResultReceived:
 		log.Debugf(context.TODO(), "%#v", msg)
 
-		// Resets challenge if the authentication wasn't successful.
-		defer func() {
-			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
-				m.currentChallenge = ""
-			}
-		}()
+		// Store the current challenge, if present, for password verifications.
+		if msg.access == brokers.AuthGranted || msg.access == brokers.AuthNext {
+			m.currentChallenge = msg.challenge
+		}
 
 		switch msg.access {
 		case brokers.AuthGranted:
@@ -338,20 +332,20 @@ func dataToMsg(data string) (string, error) {
 	return r, nil
 }
 
-func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
+func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *rsa.PublicKey) (string, error) {
 	// no challenge value, pass it as is
 	challenge, ok := authData.item.(*authd.IARequest_AuthenticationData_Challenge)
 	if !ok {
-		return nil
+		return "", nil
 	}
 
 	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(challenge.Challenge), nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// encrypt it to base64 and replace the challenge with it
 	base64Encoded := base64.StdEncoding.EncodeToString(ciphertext)
 	authData.item = &authd.IARequest_AuthenticationData_Challenge{Challenge: base64Encoded}
-	return nil
+	return challenge.Challenge, nil
 }
