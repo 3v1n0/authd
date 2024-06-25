@@ -289,7 +289,6 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 
 	case "newpassword":
 		newPasswordModel := newNewPasswordModel(layout.GetLabel(), layout.GetEntry(), layout.GetButton())
-		newPasswordModel.currentChallenge = m.currentChallenge
 		m.currentModel = newPasswordModel
 
 	default:

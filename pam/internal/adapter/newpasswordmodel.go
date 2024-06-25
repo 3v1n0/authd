@@ -12,8 +12,6 @@ type newPasswordModel struct {
 	errorMsg string
 	label    string
 
-	currentChallenge string
-
 	passwordEntries []*textinputModel
 	focusableModels []authenticationComponent
 	focusIndex      int
@@ -109,11 +107,6 @@ func (m newPasswordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "tab":
 			m.errorMsg = ""
 			if m.focusIndex == 0 && m.passwordEntries[0].Value() != "" {
-				err := checkChallengeQuality(m.currentChallenge, m.passwordEntries[0].Value())
-				if err != nil {
-					m.Clear()
-					return m, sendEvent(errMsgToDisplay{msg: err.Error()})
-				}
 				return m, sendEvent(newPasswordCheck{m.passwordEntries[0].Value()})
 			}
 
