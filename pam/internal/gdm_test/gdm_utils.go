@@ -31,6 +31,15 @@ func DataToJSON(t *testing.T, data *gdm.Data) string {
 	return string(json)
 }
 
+// EventsGroup returns a fake [gdm.EventData] that allows to group multiple events so
+// that it's possible to use this as an header to tell the test module handler that we may
+// respond to an event with multiple events.
+func EventsGroup(numEvents int) *gdm.EventData {
+	return &gdm.EventData{
+		Type: gdm.EventType(1000 + numEvents),
+	}
+}
+
 // SelectUserEvent generates a SelectUser event.
 func SelectUserEvent(username string) *gdm.EventData {
 	return &gdm.EventData{

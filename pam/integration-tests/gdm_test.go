@@ -156,13 +156,13 @@ func TestGdmModule(t *testing.T) {
 			wantAuthModeIDs: []string{passwordAuthID, phoneAck1ID},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
+					gdm_test.EventsGroup(2),
 					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.AuthModeSelectedEvent(phoneAck1ID),
+
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: "true",
 					}),
-				},
-				gdm.EventType_authEvent: {
-					gdm_test.AuthModeSelectedEvent(phoneAck1ID),
 				},
 			},
 		},
@@ -188,13 +188,13 @@ func TestGdmModule(t *testing.T) {
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
+					gdm_test.EventsGroup(2),
 					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
+
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: "true",
 					}),
-				},
-				gdm.EventType_authEvent: {
-					gdm_test.AuthModeSelectedEvent(qrcodeID),
 				},
 			},
 			wantUILayouts: []*authd.UILayout{

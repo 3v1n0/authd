@@ -80,9 +80,14 @@ func (gh *gdmTestModuleHandler) exampleHandleGdmData(gdmData *gdm.Data) (*gdm.Da
 func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 	events, ok := gh.eventPollResponses[event.Type]
 	if ok && len(events) > 0 {
-		pollResp := events[0]
-		gh.eventPollResponses[event.Type] = slices.Delete(events, 0, 1)
-		gh.pollResponses = append(gh.pollResponses, pollResp)
+		numEvents := 1
+		if baseGroup := gdm_test.EventsGroup(0); events[0].Type >= baseGroup.Type {
+			numEvents = int(events[0].Type) - int(baseGroup.Type)
+			events = slices.Delete(events, 0, 1)
+		}
+		pollEvents := slices.Clone(events[0:numEvents])
+		gh.eventPollResponses[event.Type] = slices.Delete(events, 0, numEvents)
+		gh.pollResponses = append(gh.pollResponses, pollEvents...)
 	}
 
 	switch ev := event.Data.(type) {
