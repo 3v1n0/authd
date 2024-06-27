@@ -37,6 +37,16 @@ const (
 	phoneAck1ID    = "phoneack1"
 )
 
+var testPasswordUILayout = authd.UILayout{
+	Type:    "form",
+	Label:   ptrValue("Gimme your password"),
+	Entry:   ptrValue("chars_password"),
+	Button:  ptrValue(""),
+	Code:    ptrValue(""),
+	Content: ptrValue(""),
+	Wait:    ptrValue(""),
+}
+
 func TestGdmModule(t *testing.T) {
 	t.Parallel()
 	t.Cleanup(pam_test.MaybeDoLeakCheck)
@@ -61,6 +71,7 @@ func TestGdmModule(t *testing.T) {
 
 		wantError            error
 		wantAuthModeIDs      []string
+		wantUILayouts        []*authd.UILayout
 		wantPamInfoMessages  []string
 		wantPamErrorMessages []string
 		wantAcctMgmtErr      error
@@ -316,6 +327,13 @@ func TestGdmModule(t *testing.T) {
 			gh.selectedAuthModeIDs = tc.wantAuthModeIDs
 			if gh.selectedAuthModeIDs == nil {
 				gh.selectedAuthModeIDs = []string{passwordAuthID}
+			}
+
+			gh.selectedUILayouts = tc.wantUILayouts
+			if gh.selectedAuthModeIDs == nil &&
+				len(gh.selectedAuthModeIDs) == 1 &&
+				gh.selectedAuthModeIDs[0] == passwordAuthID {
+				gh.selectedUILayouts = []*authd.UILayout{&testPasswordUILayout}
 			}
 
 			var pamFlags pam.Flags
