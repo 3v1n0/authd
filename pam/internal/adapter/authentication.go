@@ -90,11 +90,12 @@ type authenticationModel struct {
 	client     authd.PAMClient
 	clientType PamClientType
 
-	currentModel          authenticationComponent
-	currentSessionID      string
-	currentBrokerID       string
-	currentChallenge      string
-	cancelIsAuthenticated func()
+	currentModel     authenticationComponent
+	currentSessionID string
+	currentBrokerID  string
+	currentChallenge string
+	cancelAuthFunc   func()
+	cancelAuthChan   chan struct{}
 
 	encryptionKey *rsa.PublicKey
 
@@ -124,9 +125,8 @@ type newPasswordCheckResult struct {
 // newAuthenticationModel initializes a authenticationModel which needs to be Compose then.
 func newAuthenticationModel(client authd.PAMClient, clientType PamClientType) authenticationModel {
 	return authenticationModel{
-		client:                client,
-		clientType:            clientType,
-		cancelIsAuthenticated: func() {},
+		client:     client,
+		clientType: clientType,
 	}
 }
 
@@ -135,12 +135,23 @@ func (m *authenticationModel) Init() tea.Cmd {
 	return nil
 }
 
+func (m *authenticationModel) cancelIsAuthenticated() {
+	if m.cancelAuthFunc == nil {
+		return
+	}
+	m.cancelAuthFunc()
+	m.cancelAuthFunc = nil
+	<-m.cancelAuthChan
+}
+
 // Update handles events and actions.
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
-		m.cancelIsAuthenticated()
-		return *m, sendEvent(AuthModeSelected{})
+		return *m, func() tea.Msg {
+			m.cancelIsAuthenticated()
+			return AuthModeSelected{}
+		}
 
 	case newPasswordCheck:
 		res := newPasswordCheckResult{challenge: msg.challenge}
@@ -152,8 +163,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
 		m.cancelIsAuthenticated()
-		ctx, cancel := context.WithCancel(context.Background())
-		m.cancelIsAuthenticated = cancel
 
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
@@ -165,6 +174,13 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		// no challenge value, pass it as is
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelAuthChan = make(chan struct{})
+		m.cancelAuthFunc = func() {
+			cancel()
+			<-m.cancelAuthChan
 		}
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
 
@@ -181,6 +197,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
+			close(m.cancelAuthChan)
 		}()
 
 		switch msg.access {
@@ -213,7 +230,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(GetAuthenticationModesRequested{})
 
 		case brokers.AuthCancelled:
-			// nothing to do
 			return *m, nil
 		}
 
@@ -271,7 +287,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 	m.currentBrokerID = brokerID
 	m.currentSessionID = sessionID
 	m.encryptionKey = encryptionKey
-	m.cancelIsAuthenticated = func() {}
+	m.cancelAuthFunc = nil
 
 	m.errorMsg = ""
 
@@ -328,7 +344,7 @@ func (m authenticationModel) View() string {
 // Resets zeroes any internal state on the authenticationModel.
 func (m *authenticationModel) Reset() {
 	m.cancelIsAuthenticated()
-	m.cancelIsAuthenticated = func() {}
+	m.cancelAuthFunc = nil
 	m.currentModel = nil
 	m.currentSessionID = ""
 	m.currentBrokerID = ""
