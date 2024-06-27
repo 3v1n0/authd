@@ -11,6 +11,7 @@ import (
 	"github.com/msteinert/pam/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd"
+	"github.com/ubuntu/authd/internal/brokers"
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/gdm"
 	"github.com/ubuntu/authd/pam/internal/gdm_test"
@@ -162,6 +163,10 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		gh.t.Logf("Authentication event: %s", ev.AuthEvent.Response)
 		if msg := ev.AuthEvent.Response.Msg; msg != "" {
 			gh.t.Logf("Got message: %s", msg)
+		}
+
+		if ev.AuthEvent.Response.Access != brokers.AuthRetry {
+			gh.authModeID = ""
 		}
 	}
 	return nil
