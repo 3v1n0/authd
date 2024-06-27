@@ -147,6 +147,10 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		if msg := ev.AuthEvent.Response.Msg; msg != "" {
 			gh.t.Logf("Got message: %s", msg)
 		}
+
+		if ev.AuthEvent.Response.Access != brokers.AuthRetry {
+			gh.authModeID = ""
+		}
 	}
 	return nil
 }
