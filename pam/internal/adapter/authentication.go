@@ -143,19 +143,27 @@ func (m *authenticationModel) cancelIsAuthenticated() {
 	m.cancelAuthFunc = nil
 }
 
+func (m *authenticationModel) cancelIsAuthenticatedDelayingCommand(cmd tea.Cmd) bool {
+	if m.cancelAuthFunc == nil {
+		return false
+	}
+
+	// We need to wait until the cancellation actually happens before
+	// starting again the authentication.
+	m.postCancellation = append(m.postCancellation, cmd)
+	m.cancelIsAuthenticated()
+	return true
+}
+
 // Update handles events and actions.
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
 		cmd := sendEvent(AuthModeSelected{})
-		if m.cancelAuthFunc == nil {
-			return *m, cmd
+		if m.cancelIsAuthenticatedDelayingCommand(cmd) {
+			return *m, nil
 		}
-
-		// We need to wait until the cancellation actually happens before
-		// starting again the authentication.
-		m.postCancellation = append(m.postCancellation, cmd)
-		m.cancelIsAuthenticated()
+		return *m, cmd
 
 	case newPasswordCheck:
 		res := newPasswordCheckResult{challenge: msg.challenge}
@@ -166,7 +174,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
-		m.cancelIsAuthenticated()
+		if m.cancelIsAuthenticatedDelayingCommand(sendEvent(msg)) {
+			return *m, nil
+		}
+
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelAuthFunc = cancel
 
