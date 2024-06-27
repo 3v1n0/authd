@@ -129,6 +129,7 @@ func (m *UIModel) Init() tea.Cmd {
 
 // Update handles events and actions to be done from the main model orchestrator.
 func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Debugf(context.TODO(), "Update model %#v", msg)
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:

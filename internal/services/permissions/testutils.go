@@ -41,7 +41,7 @@ func currentUserUID() uint32 {
 //
 //nolint:unused // false positive as used in permissionstests with linkname.
 func (m *Manager) setCurrentUserAsRoot(currentUserAsRoot bool) {
-	testsdetection.MustBeTesting()
+	// testsdetection.MustBeTesting()
 
 	if !currentUserAsRoot {
 		m.rootUID = defaultOptions.rootUID

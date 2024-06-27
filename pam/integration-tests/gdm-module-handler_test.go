@@ -87,7 +87,10 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		}
 		pollEvents := slices.Clone(events[0:numEvents])
 		gh.eventPollResponses[event.Type] = slices.Delete(events, 0, numEvents)
+		gh.t.Logf("HANDLING EVENT %s, responding: %#v, %#v", event.Type, len(pollEvents), pollEvents[0])
 		gh.pollResponses = append(gh.pollResponses, pollEvents...)
+	} else {
+		gh.t.Logf("HANDLING EVENT %s, responding: NO response", event.Type)
 	}
 
 	switch ev := event.Data.(type) {
