@@ -35,6 +35,7 @@ const (
 	passwordAuthID = "password"
 	fido1AuthID    = "fidodevice1"
 	phoneAck1ID    = "phoneack1"
+	qrcodeID       = "qrcodewithtypo"
 )
 
 func TestGdmModule(t *testing.T) {
@@ -141,6 +142,25 @@ func TestGdmModule(t *testing.T) {
 				},
 				gdm.EventType_authEvent: {
 					gdm_test.AuthModeSelectedEvent(phoneAck1ID),
+				},
+			},
+		},
+		"Authenticates user after switching to qrcode": {
+			pamUser:     "user-integration-gdm-qrcode",
+			authModeIDs: []string{passwordAuthID, qrcodeID},
+			supportedLayouts: []*authd.UILayout{
+				pam_test.FormUILayout(),
+				pam_test.QrCodeUILayout(),
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+				},
+				gdm.EventType_authEvent: {
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
 				},
 			},
 		},
@@ -299,6 +319,7 @@ func TestGdmModule(t *testing.T) {
 			})
 			gh.eventPollResponses = tc.eventPollResponses
 
+			gh.supportedLayouts = tc.supportedLayouts
 			if tc.supportedLayouts == nil {
 				gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
 			}
