@@ -627,8 +627,68 @@ Plug your fido device and press with your thumb: r
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
 Plug your fido device and press with your thumb:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK} force_native_client=true
+Username: user-mfa
+== Broker selection (use 'r' to go back) ==
+1 - local
+2 - ExampleBroker
+Select broker: 2
+Insert 'r' to cancel the request and go back
+Gimme your password:
+== Authentication mode selection (use 'r' to go back) ==
+1 - Password authentication
+2 - Send URL to user-mfa@gmail.com
+3 - Use your fido device foo
+4 - Use your phone +33…
+5 - Use your phone +1…
+6 - Pin code
+7 - Use a QR code
+8 - Authentication code
+Select authentication mode: 1
+Insert 'r' to cancel the request and go back
+Gimme your password:
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
+Plug your fido device and press with your thumb: r
+== Authentication mode selection (use 'r' to go back) ==
+1 - Use your fido device foo
+2 - Use your phone +33…
+3 - Authentication code
+Select authentication mode: 1
+Leave the input field empty to wait for the authentication methodor insert 'r' to go back
+Plug your fido device and press with your thumb:
+r
+
 
 
 
@@ -687,12 +747,72 @@ Plug your fido device and press with your thumb: r
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
 Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
+r
+1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK} force_native_client=true
+Username: user-mfa
+== Broker selection (use 'r' to go back) ==
+1 - local
+2 - ExampleBroker
+Select broker: 2
+Insert 'r' to cancel the request and go back
+Gimme your password:
 == Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode:
+1 - Password authentication
+2 - Send URL to user-mfa@gmail.com
+3 - Use your fido device foo
+4 - Use your phone +33…
+5 - Use your phone +1…
+6 - Pin code
+7 - Use a QR code
+8 - Authentication code
+Select authentication mode: 1
+Insert 'r' to cancel the request and go back
+Gimme your password:
+Leave the input field empty to wait for the authentication methodor insert 'r' to go back
+Plug your fido device and press with your thumb: r
+== Authentication mode selection (use 'r' to go back) ==
+1 - Use your fido device foo
+2 - Use your phone +33…
+3 - Authentication code
+Select authentication mode: 1
+Leave the input field empty to wait for the authentication methodor insert 'r' to go back
+Plug your fido device and press with your thumb:
+r
+1
+
+
+
+
 
 
 
@@ -747,74 +867,14 @@ Plug your fido device and press with your thumb: r
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
 Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
+r
+1
 
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK} force_native_client=true
-Username: user-mfa
-== Broker selection (use 'r' to go back) ==
-1 - local
-2 - ExampleBroker
-Select broker: 2
-Insert 'r' to cancel the request and go back
-Gimme your password:
-== Authentication mode selection (use 'r' to go back) ==
-1 - Password authentication
-2 - Send URL to user-mfa@gmail.com
-3 - Use your fido device foo
-4 - Use your phone +33…
-5 - Use your phone +1…
-6 - Pin code
-7 - Use a QR code
-8 - Authentication code
-Select authentication mode: 1
-Insert 'r' to cancel the request and go back
-Gimme your password:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Plug your fido device and press with your thumb: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your fido device foo
-2 - Use your phone +33…
-3 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
 
 
 
@@ -867,16 +927,76 @@ Plug your fido device and press with your thumb: r
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
 Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
+r
+1
+
+authd2404
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK} force_native_client=true
+Username: user-mfa
+== Broker selection (use 'r' to go back) ==
+1 - local
+2 - ExampleBroker
+Select broker: 2
+Insert 'r' to cancel the request and go back
+Gimme your password:
 == Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
+1 - Password authentication
+2 - Send URL to user-mfa@gmail.com
+3 - Use your fido device foo
+4 - Use your phone +33…
+5 - Use your phone +1…
+6 - Pin code
+7 - Use a QR code
+8 - Authentication code
+Select authentication mode: 1
+Insert 'r' to cancel the request and go back
+Gimme your password:
+Leave the input field empty to wait for the authentication methodor insert 'r' to go back
+Plug your fido device and press with your thumb: r
+== Authentication mode selection (use 'r' to go back) ==
+1 - Use your fido device foo
+2 - Use your phone +33…
+3 - Authentication code
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
-Insert 'r' to cancel the request and go back
-Enter your new password:
+Plug your fido device and press with your thumb:
+r
+1
+
+authd2404
+authd2404
+
+
+
+
+
 
 
 
@@ -927,18 +1047,11 @@ Plug your fido device and press with your thumb: r
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
 Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
-Insert 'r' to cancel the request and go back
-Enter your new password:
-Repeat the previously inserted password or insert 'r' to cancel the request and go back
-Enter your new password:
+r
+1
+
+authd2404
+authd2404
 
 
 
@@ -946,59 +1059,6 @@ Enter your new password:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK} force_native_client=true
-Username: user-mfa
-== Broker selection (use 'r' to go back) ==
-1 - local
-2 - ExampleBroker
-Select broker: 2
-Insert 'r' to cancel the request and go back
-Gimme your password:
-== Authentication mode selection (use 'r' to go back) ==
-1 - Password authentication
-2 - Send URL to user-mfa@gmail.com
-3 - Use your fido device foo
-4 - Use your phone +33…
-5 - Use your phone +1…
-6 - Pin code
-7 - Use a QR code
-8 - Authentication code
-Select authentication mode: 1
-Insert 'r' to cancel the request and go back
-Gimme your password:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Plug your fido device and press with your thumb: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your fido device foo
-2 - Use your phone +33…
-3 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
-Insert 'r' to cancel the request and go back
-Enter your new password:
-Repeat the previously inserted password or insert 'r' to cancel the request and go back
-Enter your new password:
 
 
 
@@ -1047,21 +1107,11 @@ Plug your fido device and press with your thumb: r
 Select authentication mode: 1
 Leave the input field empty to wait for the authentication methodor insert 'r' to go back
 Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
-Insert 'r' to cancel the request and go back
-Enter your new password:
-Repeat the previously inserted password or insert 'r' to cancel the request and go back
-Enter your new password:
-PAM ChangeAuthTok() for user "user-mfa" exited with success
-PAM AcctMgmt() exited with success
->
+r
+1
+
+authd2404
+authd2404
 
 
 
@@ -1072,56 +1122,6 @@ PAM AcctMgmt() exited with success
 
 
 
-
-
-
-
-
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd passwd socket=${AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK} force_native_client=true
-Username: user-mfa
-== Broker selection (use 'r' to go back) ==
-1 - local
-2 - ExampleBroker
-Select broker: 2
-Insert 'r' to cancel the request and go back
-Gimme your password:
-== Authentication mode selection (use 'r' to go back) ==
-1 - Password authentication
-2 - Send URL to user-mfa@gmail.com
-3 - Use your fido device foo
-4 - Use your phone +33…
-5 - Use your phone +1…
-6 - Pin code
-7 - Use a QR code
-8 - Authentication code
-Select authentication mode: 1
-Insert 'r' to cancel the request and go back
-Gimme your password:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Plug your fido device and press with your thumb: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your fido device foo
-2 - Use your phone +33…
-3 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Plug your fido device and press with your thumb:
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface: r
-== Authentication mode selection (use 'r' to go back) ==
-1 - Use your phone +33…
-2 - Authentication code
-Select authentication mode: 1
-Leave the input field empty to wait for the authentication methodor insert 'r' to go back
-Unlock your phone +33… or accept request on web interface:
-Insert 'r' to cancel the request and go back
-Enter your new password:
-Repeat the previously inserted password or insert 'r' to cancel the request and go back
-Enter your new password:
-PAM ChangeAuthTok() for user "user-mfa" exited with success
-PAM AcctMgmt() exited with success
->
 
 
 

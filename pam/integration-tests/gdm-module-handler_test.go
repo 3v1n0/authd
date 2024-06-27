@@ -11,7 +11,6 @@ import (
 	"github.com/msteinert/pam/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd"
-	"github.com/ubuntu/authd/internal/brokers"
 	"github.com/ubuntu/authd/internal/log"
 	"github.com/ubuntu/authd/pam/internal/gdm"
 	"github.com/ubuntu/authd/pam/internal/gdm_test"
@@ -88,7 +87,10 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		}
 		pollEvents := slices.Clone(events[0:numEvents])
 		gh.eventPollResponses[event.Type] = slices.Delete(events, 0, numEvents)
+		gh.t.Logf("HANDLING EVENT %s, responding: %#v, %#v", event.Type, len(pollEvents), pollEvents[0])
 		gh.pollResponses = append(gh.pollResponses, pollEvents...)
+	} else {
+		gh.t.Logf("HANDLING EVENT %s, responding: NO response", event.Type)
 	}
 
 	switch ev := event.Data.(type) {
@@ -169,10 +171,6 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		if msg := ev.AuthEvent.Response.Msg; msg != "" {
 			gh.t.Logf("Got message: %s", msg)
 		}
-
-		if ev.AuthEvent.Response.Access != brokers.AuthRetry {
-			gh.authModeID = ""
-		}
 	}
 	return nil
 }
@@ -198,6 +196,15 @@ func (gh *gdmTestModuleHandler) exampleHandleAuthDRequest(gdmData *gdm.Data) (*g
 		}
 		gh.currentStage = req.ChangeStage.Stage
 		log.Debugf(context.TODO(), "Switching to stage %d", gh.currentStage)
+
+		switch req.ChangeStage.Stage {
+		case proto.Stage_brokerSelection:
+			gh.authModes = nil
+			gh.brokerID = ""
+		case proto.Stage_authModeSelection:
+			gh.authModeID = ""
+			gh.currentUILayout = nil
+		}
 
 		return &gdm.Data{
 			Type: gdm.DataType_response,

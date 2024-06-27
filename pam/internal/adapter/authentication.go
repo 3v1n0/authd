@@ -28,6 +28,7 @@ var (
 // The event will contain the returned value from the broker.
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
+	// fmt.Println(errrr.Errorf("IsAuthenticated?").ErrorStack())
 	return func() tea.Msg {
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
@@ -35,6 +36,7 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		})
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
+				// fmt.Println(errrr.Errorf("Cancelled").ErrorStack())
 				return isAuthenticatedResultReceived{
 					access: brokers.AuthCancelled,
 				}

@@ -129,6 +129,7 @@ func (m *UIModel) Init() tea.Cmd {
 
 // Update handles events and actions to be done from the main model orchestrator.
 func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	log.Debugf(context.TODO(), "Update model %#v", msg)
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
@@ -240,8 +241,13 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Reselection/reset of current authentication mode requested (button clicked for instance)
+		var commands []tea.Cmd
 		if msg.ID == "" {
 			msg.ID = m.authModeSelectionModel.currentAuthModeSelectedID
+
+			// if m.ClientType == Gdm {
+			// 	commands = append(commands, selectAuthMode(msg.ID))
+			// }
 		}
 		if msg.ID == "" {
 			return m, sendEvent(pamError{
@@ -249,9 +255,11 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg:    "reselection of current auth mode without current ID",
 			})
 		}
-		return m, getLayout(m.Client, m.currentSession.sessionID, msg.ID)
+		commands = append(commands, getLayout(m.Client, m.currentSession.sessionID, msg.ID))
+		return m, tea.Sequence(commands...)
 
 	case UILayoutReceived:
+		// fmt.Printf("MEDEBUG: LAYOUT RECEIVED %#v\n", msg.layout)
 		log.Debugf(context.TODO(), "%#v", msg)
 		if m.currentSession == nil {
 			return m, nil
