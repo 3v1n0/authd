@@ -564,7 +564,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Send notification to phone1 and wait on server signal to return if OK or not
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -576,7 +576,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// This one is failing remotely as an example
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			return AuthDenied, `{"message": "Timeout reached"}`, nil
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
@@ -589,7 +589,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// simulate direct exchange with the FIDO device
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -600,7 +600,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
