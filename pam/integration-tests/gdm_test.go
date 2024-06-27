@@ -48,6 +48,16 @@ var testPasswordUILayout = authd.UILayout{
 	Wait:    ptrValue(""),
 }
 
+var testQrcodeUILayout = authd.UILayout{
+	Type:    "qrcode",
+	Label:   ptrValue("Enter the following code after flashing the address: 1337"),
+	Content: ptrValue("https://ubuntu.com"),
+	Wait:    ptrValue("true"),
+	Button:  ptrValue("regenerate QR code"),
+	Code:    ptrValue(""),
+	Entry:   ptrValue(""),
+}
+
 func TestGdmModule(t *testing.T) {
 	t.Parallel()
 	t.Cleanup(pam_test.MaybeDoLeakCheck)
@@ -170,17 +180,7 @@ func TestGdmModule(t *testing.T) {
 					gdm_test.AuthModeSelectedEvent(qrcodeID),
 				},
 			},
-			wantUILayouts: []*authd.UILayout{
-				{
-					Type:    "qrcode",
-					Label:   ptrValue("Enter the following code after flashing the address: 1337"),
-					Content: ptrValue("https://ubuntu.com"),
-					Wait:    ptrValue("true"),
-					Button:  ptrValue("regenerate QR code"),
-					Code:    ptrValue(""),
-					Entry:   ptrValue(""),
-				},
-			},
+			wantUILayouts: []*authd.UILayout{&testQrcodeUILayout},
 		},
 		"Authenticates user after switching to qrcode": {
 			pamUser:         "user-integration-gdm-switch-qrcode",
@@ -202,15 +202,7 @@ func TestGdmModule(t *testing.T) {
 			},
 			wantUILayouts: []*authd.UILayout{
 				&testPasswordUILayout,
-				{
-					Type:    "qrcode",
-					Label:   ptrValue("Enter the following code after flashing the address: 1337"),
-					Content: ptrValue("https://ubuntu.com"),
-					Wait:    ptrValue("true"),
-					Button:  ptrValue("regenerate QR code"),
-					Code:    ptrValue(""),
-					Entry:   ptrValue(""),
-				},
+				&testQrcodeUILayout,
 			},
 		},
 
