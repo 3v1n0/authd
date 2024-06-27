@@ -199,6 +199,7 @@ func (gh *gdmTestModuleHandler) exampleHandleAuthDRequest(gdmData *gdm.Data) (*g
 			gh.authModes = nil
 			gh.brokerID = ""
 		case proto.Stage_authModeSelection:
+			gh.authModeID = ""
 			gh.currentUILayout = nil
 		}
 
