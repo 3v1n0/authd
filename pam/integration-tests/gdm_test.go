@@ -224,10 +224,20 @@ func TestGdmModule(t *testing.T) {
 					}),
 					gdm_test.ReselectAuthMode(),
 
-					// Only regenerate the qr code (2)
+					// Start authentication and regenerate the qrcode (2)
+					gdm_test.EventsGroup(2),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
 					gdm_test.ReselectAuthMode(),
 
-					// Start the final authentication
+					// Start authentication and regenerate the qrcode (3)
+					gdm_test.EventsGroup(2),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+					gdm_test.ReselectAuthMode(),
+
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: "true",
 					}),
