@@ -22,7 +22,8 @@ const (
 type gdmModel struct {
 	pamMTx pam.ModuleTransaction
 
-	waitingAuth bool
+	waitingAuthData     bool
+	waitingAuthResponse bool
 
 	// Given the bubbletea async nature we may end up receiving and forwarding
 	// events after we've got a PamReturnStatus and even after the PAM module
@@ -123,11 +124,11 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			commands = append(commands, selectAuthMode(res.AuthModeSelected.AuthModeId))
 
 		case *gdm.EventData_IsAuthenticatedRequested:
-			if !m.waitingAuth {
+			if !m.waitingAuthData {
 				log.Warningf(context.TODO(), "unexpected authentication received: %#v", res.IsAuthenticatedRequested)
 				break
 			}
-			m.waitingAuth = false
+			m.waitingAuthData = false
 			if res.IsAuthenticatedRequested == nil || res.IsAuthenticatedRequested.AuthenticationData == nil {
 				return sendEvent(pamError{
 					status: pam.ErrSystem, msg: "missing auth requested",
@@ -141,7 +142,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			commands = append(commands, sendEvent(reselectAuthMode{}))
 
 		case *gdm.EventData_IsAuthenticatedCancelled:
-			if m.waitingAuth {
+			if m.waitingAuthResponse {
 				commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
 			}
 
@@ -153,7 +154,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			}
 			log.Infof(context.TODO(), "GDM Stage changed to %s", res.StageChanged.Stage)
 
-			if m.waitingAuth && res.StageChanged.Stage != proto.Stage_challenge {
+			if m.waitingAuthData && res.StageChanged.Stage != proto.Stage_challenge {
 				// Maybe this can be sent only if we ever hit the challenge phase.
 				commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
 			}
@@ -223,18 +224,20 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		}))
 
 	case startAuthentication:
-		if m.waitingAuth {
+		if m.waitingAuthData {
 			log.Warning(context.TODO(), "Ignored authentication start request while one is still going")
 			return m, nil
 		}
-		m.waitingAuth = true
+		m.waitingAuthData = true
 		return m, sendEvent(m.emitEventSync(&gdm.EventData_StartAuthentication{
 			StartAuthentication: &gdm.Events_StartAuthentication{},
 		}))
 
 	case reselectAuthMode:
-		m.waitingAuth = false
-		return m, nil
+		m.waitingAuthData = false
+
+	case isAuthenticatedRequested:
+		m.waitingAuthResponse = true
 
 	case isAuthenticatedResultReceived:
 		access := msg.access
@@ -242,6 +245,8 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		if err != nil {
 			return m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 		}
+
+		m.waitingAuthResponse = false
 
 		switch access {
 		case brokers.AuthGranted:
@@ -266,7 +271,7 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		}))
 
 	case isAuthenticatedCancelled:
-		m.waitingAuth = false
+		m.waitingAuthData = false
 
 		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
 			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{

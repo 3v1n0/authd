@@ -61,6 +61,8 @@ type sessionInfo struct {
 	neededAuthSteps   int
 	currentAuthStep   int
 	firstSelectedMode string
+
+	qrcodeSelections int
 }
 
 type isAuthenticatedCtx struct {
@@ -121,6 +123,7 @@ func New(name string) (b *Broker, fullName, brandIcon string) {
 
 // NewSession creates a new session for the specified user.
 func (b *Broker) NewSession(ctx context.Context, username, lang, mode string) (sessionID, encryptionKey string, err error) {
+	fmt.Println("NewSession")
 	sessionID = uuid.New().String()
 	info := sessionInfo{
 		username:        username,
@@ -172,6 +175,7 @@ func (b *Broker) NewSession(ctx context.Context, username, lang, mode string) (s
 
 // GetAuthenticationModes returns the list of supported authentication modes for the selected broker depending on session info.
 func (b *Broker) GetAuthenticationModes(ctx context.Context, sessionID string, supportedUILayouts []map[string]string) (authenticationModes []map[string]string, err error) {
+	fmt.Println("GetAuthenticationModes")
 	sessionInfo, err := b.sessionInfo(sessionID)
 	if err != nil {
 		return nil, err
@@ -400,8 +404,16 @@ func getPasswdResetModes(info sessionInfo, supportedUILayouts []map[string]strin
 	return passwdResetModes
 }
 
+var qrcodeURIs = []string{
+	"https://ubuntu.com",
+	"https://ubuntu.fr/",
+	"https://ubuntuforum-br.org/",
+	"https://www.ubuntu-it.org/",
+}
+
 // SelectAuthenticationMode returns the UI layout information for the selected authentication mode.
 func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authenticationModeName string) (uiLayoutInfo map[string]string, err error) {
+	fmt.Println("SelectAuthenticationMode")
 	// Ensure session ID is an active one.
 	sessionInfo, err := b.sessionInfo(sessionID)
 	if err != nil {
@@ -428,12 +440,16 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 	case "fidodevice1":
 		// start transaction with fideo device
 	case "qrcodeandcodewithtypo":
-		uiLayoutInfo["code"] = "1337"
-		uiLayoutInfo["content"] = "https://ubuntu.com"
+		uiLayoutInfo["code"] = fmt.Sprint(1337 + sessionInfo.qrcodeSelections)
+		uiLayoutInfo["content"] = qrcodeURIs[sessionInfo.qrcodeSelections%len(qrcodeURIs)]
+		sessionInfo.qrcodeSelections++
+		// fmt.Println("Updating qrcode", sessionInfo.qrcodeSelections)
 	case "qrcodewithtypo":
 		// generate the url and finish the prompt on the fly.
-		uiLayoutInfo["label"] += "1337"
-		uiLayoutInfo["content"] = "https://ubuntu.com"
+		uiLayoutInfo["label"] += fmt.Sprint(1337 + sessionInfo.qrcodeSelections)
+		uiLayoutInfo["content"] = qrcodeURIs[sessionInfo.qrcodeSelections%len(qrcodeURIs)]
+		sessionInfo.qrcodeSelections++
+		// fmt.Println("Updating qrcode", sessionInfo.qrcodeSelections)
 	}
 
 	// Store selected mode
@@ -452,6 +468,7 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 
 // IsAuthenticated evaluates the provided authenticationData and returns the authentication status for the user.
 func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access, data string, err error) {
+	fmt.Println("IsAuthenticated")
 	sessionInfo, err := b.sessionInfo(sessionID)
 	if err != nil {
 		return "", "", err
@@ -509,6 +526,7 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 }
 
 func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionInfo, authData map[string]string) (access, data string, err error) {
+	fmt.Println("handleIsAuthenticated")
 	// Decrypt challenge if present.
 	challenge, err := decodeRawChallenge(b.privateKey, authData["challenge"])
 	if err != nil {
@@ -545,7 +563,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Send notification to phone1 and wait on server signal to return if OK or not
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(20 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -557,7 +575,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// This one is failing remotely as an example
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(20 * time.Second):
 			return AuthDenied, `{"message": "Timeout reached"}`, nil
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
@@ -570,7 +588,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// simulate direct exchange with the FIDO device
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(20 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -581,7 +599,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -649,6 +667,7 @@ func decodeRawChallenge(priv *rsa.PrivateKey, rawChallenge string) (string, erro
 
 // EndSession ends the requested session and triggers the necessary clean up steps, if any.
 func (b *Broker) EndSession(ctx context.Context, sessionID string) error {
+	fmt.Println("EndSession")
 	if _, err := b.sessionInfo(sessionID); err != nil {
 		return err
 	}
@@ -667,6 +686,7 @@ func (b *Broker) EndSession(ctx context.Context, sessionID string) error {
 // CancelIsAuthenticated cancels the IsAuthenticated request for the specified session.
 // If there is no pending IsAuthenticated call for the session, this is a no-op.
 func (b *Broker) CancelIsAuthenticated(ctx context.Context, sessionID string) {
+	fmt.Println("CancelIsAuthenticated")
 	b.isAuthenticatedCallsMu.Lock()
 	defer b.isAuthenticatedCallsMu.Unlock()
 	if _, exists := b.isAuthenticatedCalls[sessionID]; !exists {
@@ -678,6 +698,7 @@ func (b *Broker) CancelIsAuthenticated(ctx context.Context, sessionID string) {
 
 // UserPreCheck checks if the user is known to the broker.
 func (b *Broker) UserPreCheck(ctx context.Context, username string) error {
+	fmt.Println("UserPreCheck")
 	if _, exists := exampleUsers[username]; !exists {
 		return fmt.Errorf("user %q does not exist", username)
 	}
@@ -746,6 +767,7 @@ func decryptAES(key []byte, ct string) string {
 
 // sessionInfo returns the session information for the specified session ID or an error if the session is not active.
 func (b *Broker) sessionInfo(sessionID string) (sessionInfo, error) {
+	fmt.Println("sessionInfo")
 	b.currentSessionsMu.RLock()
 	defer b.currentSessionsMu.RUnlock()
 	session, active := b.currentSessions[sessionID]
@@ -757,6 +779,7 @@ func (b *Broker) sessionInfo(sessionID string) (sessionInfo, error) {
 
 // updateSession checks if the session is still active and updates the session info.
 func (b *Broker) updateSession(sessionID string, info sessionInfo) error {
+	fmt.Println("updateSession")
 	// Checks if the session was ended in the meantime, otherwise we would just accidentally recreate it.
 	if _, err := b.sessionInfo(sessionID); err != nil {
 		return err

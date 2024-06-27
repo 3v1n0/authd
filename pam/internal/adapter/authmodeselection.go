@@ -43,6 +43,7 @@ type authModeSelected struct {
 
 // selectAuthMode selects current authentication mode.
 func selectAuthMode(id string) tea.Cmd {
+	// fmt.Printf("MEDEBUG: selecting auth mode %#v\n", id)
 	return func() tea.Msg {
 		return authModeSelected{
 			id: id,

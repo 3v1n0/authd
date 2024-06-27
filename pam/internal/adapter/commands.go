@@ -91,6 +91,9 @@ func getLayout(client authd.PAMClient, sessionID, authModeID string) tea.Cmd {
 			}
 		}
 
+		// fmt.Printf("Selected auth mode, got %#v\n", uiInfo.GetUiLayoutInfo())
+		fmt.Println("Selected auth mode, got", uiInfo.GetUiLayoutInfo().GetType(),
+			uiInfo.GetUiLayoutInfo().GetCode(), uiInfo.GetUiLayoutInfo().GetContent())
 		return UILayoutReceived{
 			layout: uiInfo.GetUiLayoutInfo(),
 		}

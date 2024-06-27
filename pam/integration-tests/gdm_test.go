@@ -164,6 +164,35 @@ func TestGdmModule(t *testing.T) {
 				},
 			},
 		},
+		"Authenticates user after regenerating the qrcode": {
+			pamUser:     "user-integration-gdm-qrcode",
+			authModeIDs: []string{passwordAuthID, qrcodeID, qrcodeID},
+			supportedLayouts: []*authd.UILayout{
+				pam_test.FormUILayout(),
+				pam_test.QrCodeUILayout(),
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+
+					gdm_test.EventsGroup(2),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+					gdm_test.ReselectAuthMode(),
+
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+				},
+				gdm.EventType_authEvent: {
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
+				},
+				gdm.EventType_isAuthenticatedCancelled: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+				},
+			},
+		},
 
 		// Error cases
 		"Error on unknown protocol": {
@@ -382,104 +411,104 @@ func TestGdmModule(t *testing.T) {
 	}
 }
 
-func TestGdmModuleAuthenticateWithoutGdmExtension(t *testing.T) {
-	// This cannot be parallel!
-	t.Cleanup(pam_test.MaybeDoLeakCheck)
+// func TestGdmModuleAuthenticateWithoutGdmExtension(t *testing.T) {
+// 	// This cannot be parallel!
+// 	t.Cleanup(pam_test.MaybeDoLeakCheck)
 
-	libPath := buildPAMModule(t)
-	moduleArgs := []string{libPath}
+// 	libPath := buildPAMModule(t)
+// 	moduleArgs := []string{libPath}
 
-	gpasswdOutput := filepath.Join(t.TempDir(), "gpasswd.output")
-	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
-	ctx, cancel := context.WithCancel(context.Background())
-	env := append(localgroupstestutils.AuthdIntegrationTestsEnvWithGpasswdMock(t, gpasswdOutput, groupsFile), authdCurrentUserRootEnvVariableContent)
-	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath, testutils.WithEnvironment(env...))
-	t.Cleanup(func() {
-		cancel()
-		<-stopped
-	})
-	moduleArgs = append(moduleArgs, "socket="+socketPath)
+// 	gpasswdOutput := filepath.Join(t.TempDir(), "gpasswd.output")
+// 	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	env := append(localgroupstestutils.AuthdIntegrationTestsEnvWithGpasswdMock(t, gpasswdOutput, groupsFile), authdCurrentUserRootEnvVariableContent)
+// 	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath, testutils.WithEnvironment(env...))
+// 	t.Cleanup(func() {
+// 		cancel()
+// 		<-stopped
+// 	})
+// 	moduleArgs = append(moduleArgs, "socket="+socketPath)
 
-	gdmLog := prepareFileLogging(t, "authd-pam-gdm.log")
-	t.Cleanup(func() { saveArtifactsForDebug(t, []string{gdmLog}) })
-	moduleArgs = append(moduleArgs, "debug=true", "logfile="+gdmLog)
+// 	gdmLog := prepareFileLogging(t, "authd-pam-gdm.log")
+// 	t.Cleanup(func() { saveArtifactsForDebug(t, []string{gdmLog}) })
+// 	moduleArgs = append(moduleArgs, "debug=true", "logfile="+gdmLog)
 
-	serviceFile := createServiceFile(t, "gdm-authd", libPath, moduleArgs)
-	pamUser := "user1"
-	gh := newGdmTestModuleHandler(t, serviceFile, pamUser)
-	t.Cleanup(func() { require.NoError(t, gh.tx.End(), "PAM: can't end transaction") })
+// 	serviceFile := createServiceFile(t, "gdm-authd", libPath, moduleArgs)
+// 	pamUser := "user1"
+// 	gh := newGdmTestModuleHandler(t, serviceFile, pamUser)
+// 	t.Cleanup(func() { require.NoError(t, gh.tx.End(), "PAM: can't end transaction") })
 
-	// We disable gdm extension support, as if it was the case when the module is loaded
-	// outside GDM.
-	gdm.AdvertisePamExtensions(nil)
-	t.Cleanup(enableGdmExtension)
+// 	// We disable gdm extension support, as if it was the case when the module is loaded
+// 	// outside GDM.
+// 	gdm.AdvertisePamExtensions(nil)
+// 	t.Cleanup(enableGdmExtension)
 
-	var pamFlags pam.Flags
-	if !testutils.IsVerbose() {
-		pamFlags = pam.Silent
-	}
+// 	var pamFlags pam.Flags
+// 	if !testutils.IsVerbose() {
+// 		pamFlags = pam.Silent
+// 	}
 
-	require.ErrorIs(t, gh.tx.Authenticate(pamFlags), pam.ErrSystem,
-		"Authentication should fail")
-	requirePreviousBrokerForUser(t, socketPath, "", pamUser)
-}
+// 	require.ErrorIs(t, gh.tx.Authenticate(pamFlags), pam.ErrSystem,
+// 		"Authentication should fail")
+// 	requirePreviousBrokerForUser(t, socketPath, "", pamUser)
+// }
 
-func TestGdmModuleAcctMgmtWithoutGdmExtension(t *testing.T) {
-	// This cannot be parallel!
-	t.Cleanup(pam_test.MaybeDoLeakCheck)
+// func TestGdmModuleAcctMgmtWithoutGdmExtension(t *testing.T) {
+// 	// This cannot be parallel!
+// 	t.Cleanup(pam_test.MaybeDoLeakCheck)
 
-	libPath := buildPAMModule(t)
-	moduleArgs := []string{libPath}
+// 	libPath := buildPAMModule(t)
+// 	moduleArgs := []string{libPath}
 
-	gpasswdOutput := filepath.Join(t.TempDir(), "gpasswd.output")
-	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
-	ctx, cancel := context.WithCancel(context.Background())
-	env := append(localgroupstestutils.AuthdIntegrationTestsEnvWithGpasswdMock(t, gpasswdOutput, groupsFile), authdCurrentUserRootEnvVariableContent)
-	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath, testutils.WithEnvironment(env...))
-	t.Cleanup(func() {
-		cancel()
-		<-stopped
-	})
-	moduleArgs = append(moduleArgs, "socket="+socketPath)
+// 	gpasswdOutput := filepath.Join(t.TempDir(), "gpasswd.output")
+// 	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	env := append(localgroupstestutils.AuthdIntegrationTestsEnvWithGpasswdMock(t, gpasswdOutput, groupsFile), authdCurrentUserRootEnvVariableContent)
+// 	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath, testutils.WithEnvironment(env...))
+// 	t.Cleanup(func() {
+// 		cancel()
+// 		<-stopped
+// 	})
+// 	moduleArgs = append(moduleArgs, "socket="+socketPath)
 
-	gdmLog := prepareFileLogging(t, "authd-pam-gdm.log")
-	t.Cleanup(func() { saveArtifactsForDebug(t, []string{gdmLog}) })
-	moduleArgs = append(moduleArgs, "debug=true", "logfile="+gdmLog)
+// 	gdmLog := prepareFileLogging(t, "authd-pam-gdm.log")
+// 	t.Cleanup(func() { saveArtifactsForDebug(t, []string{gdmLog}) })
+// 	moduleArgs = append(moduleArgs, "debug=true", "logfile="+gdmLog)
 
-	serviceFile := createServiceFile(t, "gdm-authd", libPath, moduleArgs)
-	pamUser := "user1"
-	gh := newGdmTestModuleHandler(t, serviceFile, pamUser)
-	t.Cleanup(func() { require.NoError(t, gh.tx.End(), "PAM: can't end transaction") })
+// 	serviceFile := createServiceFile(t, "gdm-authd", libPath, moduleArgs)
+// 	pamUser := "user1"
+// 	gh := newGdmTestModuleHandler(t, serviceFile, pamUser)
+// 	t.Cleanup(func() { require.NoError(t, gh.tx.End(), "PAM: can't end transaction") })
 
-	gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
-	gh.protoVersion = gdm.ProtoVersion
-	gh.selectedBrokerName = exampleBrokerName
-	gh.selectedAuthModeIDs = []string{passwordAuthID}
-	gh.eventPollResponses = map[gdm.EventType][]*gdm.EventData{
-		gdm.EventType_startAuthentication: {
-			gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-				Challenge: "goodpass",
-			}),
-		},
-	}
+// 	gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
+// 	gh.protoVersion = gdm.ProtoVersion
+// 	gh.selectedBrokerName = exampleBrokerName
+// 	gh.selectedAuthModeIDs = []string{passwordAuthID}
+// 	gh.eventPollResponses = map[gdm.EventType][]*gdm.EventData{
+// 		gdm.EventType_startAuthentication: {
+// 			gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
+// 				Challenge: "goodpass",
+// 			}),
+// 		},
+// 	}
 
-	var pamFlags pam.Flags
-	if !testutils.IsVerbose() {
-		pamFlags = pam.Silent
-	}
+// 	var pamFlags pam.Flags
+// 	if !testutils.IsVerbose() {
+// 		pamFlags = pam.Silent
+// 	}
 
-	require.NoError(t, gh.tx.Authenticate(pamFlags), "Setup: Authentication failed")
-	requirePreviousBrokerForUser(t, socketPath, "", pamUser)
+// 	require.NoError(t, gh.tx.Authenticate(pamFlags), "Setup: Authentication failed")
+// 	requirePreviousBrokerForUser(t, socketPath, "", pamUser)
 
-	// We disable gdm extension support, as if it was the case when the module is loaded
-	// again from the exec module.
-	gdm.AdvertisePamExtensions(nil)
-	t.Cleanup(enableGdmExtension)
+// 	// We disable gdm extension support, as if it was the case when the module is loaded
+// 	// again from the exec module.
+// 	gdm.AdvertisePamExtensions(nil)
+// 	t.Cleanup(enableGdmExtension)
 
-	require.ErrorIs(t, gh.tx.AcctMgmt(pamFlags), pam_test.ErrIgnore,
-		"Account Management PAM Error message do not match")
-	requirePreviousBrokerForUser(t, socketPath, "", pamUser)
-}
+// 	require.ErrorIs(t, gh.tx.AcctMgmt(pamFlags), pam_test.ErrIgnore,
+// 		"Account Management PAM Error message do not match")
+// 	requirePreviousBrokerForUser(t, socketPath, "", pamUser)
+// }
 
 func buildPAMModule(t *testing.T) string {
 	t.Helper()

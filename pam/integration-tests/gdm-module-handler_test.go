@@ -86,7 +86,10 @@ func (gh *gdmTestModuleHandler) exampleHandleEvent(event *gdm.EventData) error {
 		}
 		pollEvents := slices.Clone(events[0:numEvents])
 		gh.eventPollResponses[event.Type] = slices.Delete(events, 0, numEvents)
+		gh.t.Logf("HANDLING EVENT %s, responding: %#v, %#v", event.Type, len(pollEvents), pollEvents[0])
 		gh.pollResponses = append(gh.pollResponses, pollEvents...)
+	} else {
+		gh.t.Logf("HANDLING EVENT %s, responding: NO response", event.Type)
 	}
 
 	switch ev := event.Data.(type) {
@@ -182,6 +185,16 @@ func (gh *gdmTestModuleHandler) exampleHandleAuthDRequest(gdmData *gdm.Data) (*g
 		}
 		gh.currentStage = req.ChangeStage.Stage
 		log.Debugf(context.TODO(), "Switching to stage %d", gh.currentStage)
+
+		// events, ok := gh.eventPollResponses[gdm.EventType_stageChanged]
+		// if ok && len(events) > 0 {
+		// 	pollResp := events[0]
+		// 	gh.eventPollResponses[gdm.EventType_stageChanged] = slices.Delete(events, 0, 1)
+		// 	gh.t.Logf("HANDLING EVENT %s, responding: %#v", gdm.EventType_stageChanged, pollResp)
+		// 	gh.pollResponses = append(gh.pollResponses, pollResp)
+		// } else {
+		// 	gh.t.Logf("HANDLING EVENT %s, responding: NO response", gdm.EventType_stageChanged)
+		// }
 
 		return &gdm.Data{
 			Type: gdm.DataType_response,
