@@ -35,6 +35,7 @@ const (
 	passwordAuthID = "password"
 	fido1AuthID    = "fidodevice1"
 	phoneAck1ID    = "phoneack1"
+	qrcodeID       = "qrcodewithtypo"
 )
 
 var testPasswordUILayout = authd.UILayout{
@@ -45,6 +46,16 @@ var testPasswordUILayout = authd.UILayout{
 	Code:    ptrValue(""),
 	Content: ptrValue(""),
 	Wait:    ptrValue(""),
+}
+
+var testQrcodeUILayout = authd.UILayout{
+	Type:    "qrcode",
+	Label:   ptrValue("Enter the following code after flashing the address: 1337"),
+	Content: ptrValue("https://ubuntu.com"),
+	Wait:    ptrValue("true"),
+	Button:  ptrValue("regenerate QR code"),
+	Code:    ptrValue(""),
+	Entry:   ptrValue(""),
 }
 
 func TestGdmModule(t *testing.T) {
@@ -153,6 +164,42 @@ func TestGdmModule(t *testing.T) {
 				gdm.EventType_authEvent: {
 					gdm_test.AuthModeSelectedEvent(phoneAck1ID),
 				},
+			},
+		},
+		"Authenticates user with qrcode": {
+			pamUser:          "user-integration-gdm-qrcode",
+			wantAuthModeIDs:  []string{qrcodeID},
+			supportedLayouts: []*authd.UILayout{pam_test.QrCodeUILayout()},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{&testQrcodeUILayout},
+		},
+		"Authenticates user after switching to qrcode": {
+			pamUser:         "user-integration-gdm-switch-qrcode",
+			wantAuthModeIDs: []string{passwordAuthID, qrcodeID},
+			supportedLayouts: []*authd.UILayout{
+				pam_test.FormUILayout(),
+				pam_test.QrCodeUILayout(),
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+				},
+				gdm.EventType_authEvent: {
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{
+				&testPasswordUILayout,
+				&testQrcodeUILayout,
 			},
 		},
 
@@ -310,6 +357,7 @@ func TestGdmModule(t *testing.T) {
 			})
 			gh.eventPollResponses = tc.eventPollResponses
 
+			gh.supportedLayouts = tc.supportedLayouts
 			if tc.supportedLayouts == nil {
 				gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
 			}
