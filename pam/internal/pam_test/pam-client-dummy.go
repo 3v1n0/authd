@@ -44,6 +44,7 @@ type options struct {
 	isAuthenticatedWantWait      time.Duration
 	isAuthenticatedMessage       string
 	isAuthenticatedMaxRetries    int
+	isAuthenticatedCancelFistN   int
 
 	endSessionErr error
 
@@ -154,6 +155,13 @@ func WithIsAuthenticatedWantWait(wait time.Duration) func(o *options) {
 func WithIsAuthenticatedMaxRetries(maxRetries int) func(o *options) {
 	return func(o *options) {
 		o.isAuthenticatedMaxRetries = maxRetries
+	}
+}
+
+// WithIsAuthenticatedCancelFistN is the option to define the IsAuthenticated cancellation steps.
+func WithIsAuthenticatedCancelFistN(cancellationsN int) func(o *options) {
+	return func(o *options) {
+		o.isAuthenticatedCancelFistN = cancellationsN
 	}
 }
 
@@ -413,6 +421,16 @@ func (dc *DummyClient) IsAuthenticated(ctx context.Context, in *authd.IARequest,
 		return nil, errors.New("no authentication data provided")
 	}
 
+	// fmt.Println("req Cancellation", dc.isAuthenticatedCancelFistN)
+	// if dc.isAuthenticatedCancelFistN > 0 {
+	// 	defer func() { dc.isAuthenticatedCancelFistN-- }()
+	// 	return &authd.IAResponse{
+	// 		Access: brokers.AuthCancelled,
+	// 		Msg: fmt.Sprintf(`{"message": "Cancellation %d | %s"}`,
+	// 			dc.isAuthenticatedCancelFistN, dc.isAuthenticatedMessage),
+	// 	}, nil
+	// }
+
 	var msg string
 	if dc.isAuthenticatedMessage != "" {
 		msg = fmt.Sprintf(`{"message": "%s"}`, dc.isAuthenticatedMessage)
@@ -428,6 +446,7 @@ func (dc *DummyClient) IsAuthenticated(ctx context.Context, in *authd.IARequest,
 		if dc.isAuthenticatedWantWait == 0 {
 			return nil, errors.New("no wanted wait provided")
 		}
+		// ctx, _ := context.WithCancel(ctx)
 		select {
 		case <-time.After(dc.isAuthenticatedWantWait):
 		case <-ctx.Done():
