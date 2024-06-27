@@ -232,6 +232,10 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 			StartAuthentication: &gdm.Events_StartAuthentication{},
 		}))
 
+	case reselectAuthMode:
+		m.waitingAuth = false
+		return m, nil
+
 	case isAuthenticatedResultReceived:
 		access := msg.access
 		authMsg, err := dataToMsg(msg.msg)
