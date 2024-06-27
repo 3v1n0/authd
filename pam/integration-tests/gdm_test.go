@@ -202,6 +202,49 @@ func TestGdmModule(t *testing.T) {
 				&testQrcodeUILayout,
 			},
 		},
+		"Authenticates user after regenerating the qrcode": {
+			pamUser: "user-integration-gdm-qrcode-regenerate",
+			wantAuthModeIDs: []string{
+				passwordAuthID,
+				qrcodeID,
+				qrcodeID,
+				qrcodeID,
+				qrcodeID,
+			},
+			supportedLayouts: []*authd.UILayout{
+				pam_test.FormUILayout(),
+				pam_test.QrCodeUILayout(),
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.EventsGroup(2),
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
+
+					// Start authentication and regenerate the qrcode (1)
+					gdm_test.EventsGroup(2),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+					gdm_test.ReselectAuthMode(),
+
+					// Only regenerate the qr code (2)
+					gdm_test.ReselectAuthMode(),
+
+					// Start the final authentication
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{
+				&testPasswordUILayout,
+				&testQrcodeUILayout,
+				&testQrcodeUILayout,
+				&testQrcodeUILayout,
+				&testQrcodeUILayout,
+			},
+		},
 
 		// Error cases
 		"Error on unknown protocol": {
