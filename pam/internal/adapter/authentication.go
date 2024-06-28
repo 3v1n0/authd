@@ -29,6 +29,7 @@ var (
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
+		log.Debug(context.TODO(), "-> Requesting authentication", authData.GetWait())
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
@@ -67,7 +68,8 @@ type isAuthenticatedResultReceived struct {
 
 // isAuthenticatedCancelled is the event to cancel the auth request.
 type isAuthenticatedCancelled struct {
-	msg string
+	msg     string
+	command tea.Cmd
 }
 
 // reselectAuthMode signals to restart auth mode selection with the same id (to resend sms or
@@ -185,10 +187,15 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedCancelled:
 		log.Debugf(context.TODO(), "%#v", msg)
+		if m.cancelAuthFunc == nil {
+			return *m, msg.command
+		}
+		m.postCancellation = append(m.postCancellation, msg.command)
 		m.cancelIsAuthenticated()
 		return *m, nil
 
 	case isAuthenticatedResultReceived:
+		log.Debug(context.TODO(), "<- Authentication result received!", msg.access)
 		log.Debugf(context.TODO(), "%#v", msg)
 
 		// Resets challenge if the authentication wasn't successful.
