@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -24,15 +25,20 @@ var (
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000"))
 )
 
+var authRequests atomic.Int32
+
 // sendIsAuthenticated sends the authentication challenges or wait request to the brokers.
 // The event will contain the returned value from the broker.
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
+		reqN := authRequests.Add(1)
+		log.Debugf(context.TODO(), "IsAuthRequest call %d: %#v", reqN, sessionID)
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
 		})
+		log.Debugf(context.TODO(), "IsAuthRequest returned %d: %#v | %#v", reqN, res, err)
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				return isAuthenticatedResultReceived{
@@ -95,7 +101,7 @@ type authenticationModel struct {
 	currentBrokerID  string
 	currentChallenge string
 	cancelAuthFunc   func()
-	postCancellation []tea.Cmd
+	afterAuthCmds    []tea.Cmd
 
 	encryptionKey *rsa.PublicKey
 
@@ -154,7 +160,9 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 		// We need to wait until the cancellation actually happens before
 		// starting again the authentication.
-		m.postCancellation = append(m.postCancellation, cmd)
+		m.afterAuthCmds = append(m.afterAuthCmds,
+			// tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return nil }),
+			cmd)
 		m.cancelIsAuthenticated()
 
 	case newPasswordCheck:
@@ -198,6 +206,9 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			}
 		}()
 
+		log.Debugf(context.TODO(), "Auth event got %s, events %#v, %d", msg.access, m.afterAuthCmds,
+			len(m.afterAuthCmds))
+
 		switch msg.access {
 		case brokers.AuthGranted:
 			infoMsg, err := dataToMsg(msg.msg)
@@ -228,8 +239,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(GetAuthenticationModesRequested{})
 
 		case brokers.AuthCancelled:
-			defer func() { m.postCancellation = nil }()
-			return *m, tea.Sequence(m.postCancellation...)
+			// defer func() { m.afterAuthCmds = nil }()
+			cmds := m.afterAuthCmds
+			m.afterAuthCmds = nil
+			return *m, tea.Sequence(cmds...)
 		}
 
 	case errMsgToDisplay:
