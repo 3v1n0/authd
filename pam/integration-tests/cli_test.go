@@ -207,6 +207,9 @@ func TestPamCLIRunStandalone(t *testing.T) {
 		cmd.Args = append(cmd.Args, "-cover")
 		cmd.Env = testutils.AppendCovEnv(os.Environ())
 	}
+	if testutils.IsRace() {
+		cmd.Args = append(cmd.Args, "-race")
+	}
 
 	cmd.Dir = testutils.ProjectRoot()
 	cmd.Args = append(cmd.Args, "-tags", "pam_binary_cli", "./pam", "login", "--exec-debug")
@@ -269,6 +272,9 @@ func buildPAMTestClient(execPath string) (cleanup func(), err error) {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
+	if testutils.IsRace() {
+		cmd.Args = append(cmd.Args, "-race")
+	}
 	if pam_test.IsAddressSanitizerActive() {
 		// -asan is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-asan")
@@ -289,6 +295,9 @@ func buildPAMClient(t *testing.T) string {
 	if testutils.CoverDirForTests() != "" {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
+	}
+	if testutils.IsRace() {
+		cmd.Args = append(cmd.Args, "-race")
 	}
 	if pam_test.IsAddressSanitizerActive() {
 		// -asan is a "positional flag", so it needs to come right after the "build" command.

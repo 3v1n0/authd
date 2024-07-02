@@ -2,6 +2,8 @@ package testutils
 
 import (
 	"os"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -9,6 +11,8 @@ import (
 var (
 	isVerbose     bool
 	isVerboseOnce sync.Once
+	isRace        bool
+	isRaceOnce    sync.Once
 )
 
 // IsVerbose returns whether the tests are running in verbose mode.
@@ -23,4 +27,26 @@ func IsVerbose() bool {
 		}
 	})
 	return isVerbose
+}
+
+// IsRace returns whether the tests are running in verbose mode.
+func IsRace() bool {
+	isRaceOnce.Do(func() {
+		b, ok := debug.ReadBuildInfo()
+		if !ok {
+			panic("could not read build info")
+		}
+
+		for _, s := range b.Settings {
+			if s.Key != "-race" {
+				continue
+			}
+			var err error
+			isRace, err = strconv.ParseBool(s.Value)
+			if err != nil {
+				panic(err)
+			}
+		}
+	})
+	return isRace
 }
