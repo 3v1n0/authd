@@ -95,7 +95,7 @@ type authenticationModel struct {
 	currentBrokerID  string
 	currentChallenge string
 	cancelAuthFunc   func()
-	postCancellation []tea.Cmd
+	cancelAuthChan   chan struct{}
 
 	encryptionKey *rsa.PublicKey
 
@@ -141,21 +141,17 @@ func (m *authenticationModel) cancelIsAuthenticated() {
 	}
 	m.cancelAuthFunc()
 	m.cancelAuthFunc = nil
+	<-m.cancelAuthChan
 }
 
 // Update handles events and actions.
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
-		cmd := sendEvent(AuthModeSelected{})
-		if m.cancelAuthFunc == nil {
-			return *m, cmd
+		return *m, func() tea.Msg {
+			m.cancelIsAuthenticated()
+			return AuthModeSelected{}
 		}
-
-		// We need to wait until the cancellation actually happens before
-		// starting again the authentication.
-		m.postCancellation = append(m.postCancellation, cmd)
-		m.cancelIsAuthenticated()
 
 	case newPasswordCheck:
 		res := newPasswordCheckResult{challenge: msg.challenge}
@@ -167,8 +163,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
 		m.cancelIsAuthenticated()
-		ctx, cancel := context.WithCancel(context.Background())
-		m.cancelAuthFunc = cancel
 
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
@@ -180,6 +174,13 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		// no challenge value, pass it as is
 		if err := msg.encryptChallengeIfPresent(m.encryptionKey); err != nil {
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelAuthChan = make(chan struct{})
+		m.cancelAuthFunc = func() {
+			cancel()
+			<-m.cancelAuthChan
 		}
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
 
@@ -196,6 +197,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
+			close(m.cancelAuthChan)
 		}()
 
 		switch msg.access {
@@ -228,8 +230,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(GetAuthenticationModesRequested{})
 
 		case brokers.AuthCancelled:
-			defer func() { m.postCancellation = nil }()
-			return *m, tea.Sequence(m.postCancellation...)
+			return *m, nil
 		}
 
 	case errMsgToDisplay:
