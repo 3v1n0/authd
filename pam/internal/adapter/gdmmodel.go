@@ -141,6 +141,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			commands = append(commands, sendEvent(reselectAuthMode{}))
 
 		case *gdm.EventData_IsAuthenticatedCancelled:
+			m.waitingAuth = false
 			commands = append(commands, sendEvent(isAuthenticatedCancelled{}))
 
 		case *gdm.EventData_StageChanged:
@@ -244,7 +245,6 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		case brokers.AuthGranted:
 		case brokers.AuthDenied:
 		case brokers.AuthCancelled:
-			return m, sendEvent(isAuthenticatedCancelled{})
 		case brokers.AuthRetry:
 		case brokers.AuthNext:
 		default:
@@ -264,13 +264,6 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 
 	case isAuthenticatedCancelled:
 		m.waitingAuth = false
-
-		return m, sendEvent(m.emitEventSync(&gdm.EventData_AuthEvent{
-			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
-				Access: brokers.AuthCancelled,
-				Msg:    msg.msg,
-			}},
-		}))
 	}
 
 	return m, nil

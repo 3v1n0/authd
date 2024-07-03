@@ -99,16 +99,40 @@ func (b dbusBroker) SelectAuthenticationMode(ctx context.Context, sessionID, aut
 }
 
 // IsAuthenticated calls the corresponding method on the broker bus and returns the user information and access.
-func (b dbusBroker) IsAuthenticated(_ context.Context, sessionID, authenticationData string) (access, data string, err error) {
+func (b dbusBroker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access, data string, err error) {
 	dbusMethod := DbusInterface + ".IsAuthenticated"
 
 	call := b.dbusObject.Call(dbusMethod, 0, sessionID, authenticationData)
+	log.Debugf(context.TODO(), "dbus, result is %#v", *call)
 	if err = call.Err; err != nil {
 		return "", "", err
 	}
 	if err = call.Store(&access, &data); err != nil {
 		return "", "", err
 	}
+
+	// result := make(chan *dbus.Call)
+	// go func() {
+	// 	result <- b.dbusObject.Call(dbusMethod, 0, sessionID, authenticationData)
+	// }()
+
+	// select {
+	// case call := <-result:
+	// 	log.Debugf(context.TODO(), "dbus, result is %#v", *call)
+	// 	if err = call.Err; err != nil {
+	// 		return "", "", err
+	// 	}
+	// 	if err = call.Store(&access, &data); err != nil {
+	// 		return "", "", err
+	// 	}
+	// case <-ctx.Done():
+	// 	log.Debugf(context.TODO(), "dbus, Context done")
+
+	// 	return brokers.AuthCancelled, "", nil
+	// 	// <-authStarted
+	// 	// close(result)
+	// 	// b.cancelIsAuthenticated(ctx, sessionID)
+	// }
 
 	return access, data, nil
 }

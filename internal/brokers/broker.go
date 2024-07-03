@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -155,9 +156,17 @@ func (b Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authent
 	return b.validateUILayout(sessionID, uiLayoutInfo)
 }
 
+var authRequests atomic.Int32
+
 // IsAuthenticated calls the broker corresponding method, stripping broker ID prefix from sessionID.
 func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access string, data string, err error) {
 	sessionID = b.parseSessionID(sessionID)
+	reqN := authRequests.Add(1)
+	log.Debugf(context.TODO(), "Iface IsAuthenticated call %d: %#v", reqN, sessionID)
+
+	defer func() {
+		log.Debugf(context.TODO(), "Iface IsAuthenticated About to return %d: %s, %s", reqN, access, data)
+	}()
 
 	// monitor ctx in goroutine to call cancel
 	done := make(chan struct{})
@@ -249,7 +258,9 @@ func (b Broker) endSession(ctx context.Context, sessionID string) (err error) {
 //
 // Even though this is a public method, it should only be interacted with through IsAuthenticated and ctx cancellation.
 func (b Broker) cancelIsAuthenticated(ctx context.Context, sessionID string) {
+	log.Debugf(context.TODO(), "Iface: CancelIsAuthenticated About to cancel %s", sessionID)
 	b.brokerer.CancelIsAuthenticated(ctx, sessionID)
+	log.Debugf(context.TODO(), "Iface: CancelIsAuthenticated Cancelled %s", sessionID)
 }
 
 // UserPreCheck calls the broker corresponding method.
