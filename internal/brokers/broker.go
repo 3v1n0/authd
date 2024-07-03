@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/ubuntu/authd/internal/log"
@@ -171,6 +172,13 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 			return "", "", err
 		}
 	case <-ctx.Done():
+		// Very very ugly, but we need to ensure that IsAuthenticated call has been delivered
+		// to the broker before calling cancelIsAuthenticated or that cancel request may happen
+		// before than the actual IsAuthenticated() has been invoked, and thus we may have nothing
+		// to cancel in the broker side.
+		// So let's wait a bit in such case (we may be even too much generous), before delivering
+		// the actual cancellation.
+		<-time.After(time.Millisecond * 10)
 		b.cancelIsAuthenticated(ctx, sessionID)
 		<-done
 	}
