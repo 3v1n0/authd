@@ -18,9 +18,11 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ubuntu/authd/internal/log"
 	"golang.org/x/exp/slices"
 )
 
@@ -411,6 +413,7 @@ func getPasswdResetModes(info sessionInfo, supportedUILayouts []map[string]strin
 // SelectAuthenticationMode returns the UI layout information for the selected authentication mode.
 func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authenticationModeName string) (uiLayoutInfo map[string]string, err error) {
 	// Ensure session ID is an active one.
+	log.Debugf(context.TODO(), "SelectAuthenticationMode call %d: %#v", authRequests.Load(), sessionID)
 	sessionInfo, err := b.sessionInfo(sessionID)
 	if err != nil {
 		return nil, err
@@ -458,8 +461,12 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 	return uiLayoutInfo, nil
 }
 
+var authRequests atomic.Int32
+
 // IsAuthenticated evaluates the provided authenticationData and returns the authentication status for the user.
 func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access, data string, err error) {
+	reqN := authRequests.Add(1)
+	log.Debugf(context.TODO(), "IsAuthenticated call %d: %#v", reqN, sessionID)
 	sessionInfo, err := b.sessionInfo(sessionID)
 	if err != nil {
 		return "", "", err
@@ -485,12 +492,16 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 
 	// Cleans up the IsAuthenticated context when the call is done.
 	defer func() {
+		log.Debugf(context.TODO(), "IsAuthenticated About to return %d: %s, %s", reqN, access, data)
+
 		b.isAuthenticatedCallsMu.Lock()
 		delete(b.isAuthenticatedCalls, sessionID)
 		b.isAuthenticatedCallsMu.Unlock()
+
+		log.Debugf(context.TODO(), "IsAuthenticated returned %d: %s, %s", reqN, access, data)
 	}()
 
-	access, data, err = b.handleIsAuthenticated(b.isAuthenticatedCalls[sessionID].ctx, sessionInfo, authData)
+	access, data, err = b.handleIsAuthenticated(ctx, sessionInfo, authData)
 	if access == AuthGranted && sessionInfo.currentAuthStep < sessionInfo.neededAuthSteps {
 		sessionInfo.currentAuthStep++
 		access = AuthNext
@@ -675,9 +686,12 @@ func (b *Broker) EndSession(ctx context.Context, sessionID string) error {
 // CancelIsAuthenticated cancels the IsAuthenticated request for the specified session.
 // If there is no pending IsAuthenticated call for the session, this is a no-op.
 func (b *Broker) CancelIsAuthenticated(ctx context.Context, sessionID string) {
+	log.Debugf(context.TODO(), "CancelIsAuthenticated About to cancel %s", sessionID)
 	b.isAuthenticatedCallsMu.Lock()
 	defer b.isAuthenticatedCallsMu.Unlock()
-	if _, exists := b.isAuthenticatedCalls[sessionID]; !exists {
+	_, exists := b.isAuthenticatedCalls[sessionID]
+	log.Debugf(context.TODO(), "Cancelling %s, %v", sessionID, exists)
+	if !exists {
 		return
 	}
 	b.isAuthenticatedCalls[sessionID].cancelFunc()
