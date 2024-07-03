@@ -207,6 +207,8 @@ func TestGdmModule(t *testing.T) {
 				qrcodeID,
 				qrcodeID,
 				qrcodeID,
+				qrcodeID,
+				qrcodeID,
 			},
 			supportedLayouts: []*authd.UILayout{
 				pam_test.FormUILayout(),
@@ -230,7 +232,18 @@ func TestGdmModule(t *testing.T) {
 					// Only regenerate the qr code (2)
 					gdm_test.ReselectAuthMode(),
 
-					// Start the final authentication
+					// Start authentication and regenerate the qrcode (3)
+					gdm_test.EventsGroupBegin(),
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: "true",
+					}),
+					gdm_test.ReselectAuthMode(),
+					gdm_test.EventsGroupEnd(),
+
+					// Only regenerate the qr code (4)
+					gdm_test.ReselectAuthMode(),
+
+					// Start the final authentication (5)
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: "true",
 					}),
@@ -238,6 +251,8 @@ func TestGdmModule(t *testing.T) {
 			},
 			wantUILayouts: []*authd.UILayout{
 				&testPasswordUILayout,
+				&testQrcodeUILayout,
+				&testQrcodeUILayout,
 				&testQrcodeUILayout,
 				&testQrcodeUILayout,
 				&testQrcodeUILayout,
