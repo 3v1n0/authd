@@ -148,6 +148,16 @@ func (m *authenticationModel) cancelIsAuthenticated() {
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
+		// cmd := sendEvent(AuthModeSelected{})
+		// if m.cancelAuthFunc == nil {
+		// 	return *m, cmd
+		// }
+
+		// // We need to wait until the cancellation actually happens before
+		// // starting again the authentication.
+		// m.postCancellation = append(m.postCancellation, cmd)
+		// m.cancelIsAuthenticated()
+		// return *m, sendEvent(AuthModeSelected{})
 		return *m, func() tea.Msg {
 			m.cancelIsAuthenticated()
 			return AuthModeSelected{}
@@ -161,7 +171,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		return *m, sendEvent(res)
 
 	case isAuthenticatedRequested:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 		m.cancelIsAuthenticated()
 
 		// Store the current challenge, if present, for password verifications.
@@ -178,6 +188,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelAuthChan = make(chan struct{})
+		log.Infof(context.TODO(), "Chan created")
 		m.cancelAuthFunc = func() {
 			cancel()
 			<-m.cancelAuthChan
@@ -197,7 +208,12 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
+			// select {
+			// case <-m.cancelAuthChan:
+			// default:
+			log.Infof(context.TODO(), "Closing cancel %#v", msg)
 			close(m.cancelAuthChan)
+			// }
 		}()
 
 		switch msg.access {
