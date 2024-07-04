@@ -141,7 +141,6 @@ func (m *authenticationModel) cancelIsAuthenticated() {
 	}
 	m.cancelAuthFunc()
 	m.cancelAuthFunc = nil
-	<-m.cancelAuthChan
 }
 
 // Update handles events and actions.
@@ -197,6 +196,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
+			close(m.cancelAuthChan)
 		}()
 
 		switch msg.access {
@@ -229,7 +229,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(GetAuthenticationModesRequested{})
 
 		case brokers.AuthCancelled:
-			close(m.cancelAuthChan)
+			// nothing to do
 			return *m, nil
 		}
 
