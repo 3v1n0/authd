@@ -140,23 +140,31 @@ fn passwd_entries_to_passwds(entries: Vec<PasswdEntry>) -> Vec<Passwd> {
     entries.into_iter().map(passwd_entry_to_passwd).collect()
 }
 
-/// should_pre_check returns true if the current process is a child of sshd.
+fn is_proc_matching(pid: u32, name: &str) -> bool {
+    let proc = procfs::process::Process::new(pid as i32);
+    if proc.is_err() {
+        return false;
+    }
+
+    let exe = proc.unwrap().exe();
+    if exe.is_err() {
+        return false;
+    }
+
+    matches!(exe.unwrap().file_stem().unwrap(), s if s == name)
+}
+
+/// should_pre_check returns true if the current process sshd or a child of sshd.
 #[allow(unreachable_code)] // This function body is overridden in integration tests, so we need to ignore the warning.
 fn should_pre_check() -> bool {
     #[cfg(feature = "integration_tests")]
     return std::env::var("AUTHD_NSS_SHOULD_PRE_CHECK").is_ok();
 
+    let pid = std::process::id();
+    if is_proc_matching(pid, "sshd") {
+        return true;
+    }
+
     let ppid = std::os::unix::process::parent_id();
-    let parent = procfs::process::Process::new(ppid as i32);
-    if parent.is_err() {
-        return false;
-    }
-
-    let cmds = parent.unwrap().cmdline();
-    if cmds.is_err() {
-        return false;
-    }
-
-    let cmds = cmds.unwrap();
-    matches!(&cmds[0], s if s == "sshd")
+    return is_proc_matching(ppid, "sshd");
 }
