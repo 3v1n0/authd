@@ -197,7 +197,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
-			close(m.cancelAuthChan)
 		}()
 
 		switch msg.access {
@@ -230,6 +229,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			return *m, sendEvent(GetAuthenticationModesRequested{})
 
 		case brokers.AuthCancelled:
+			close(m.cancelAuthChan)
 			return *m, nil
 		}
 
@@ -342,12 +342,14 @@ func (m authenticationModel) View() string {
 }
 
 // Resets zeroes any internal state on the authenticationModel.
-func (m *authenticationModel) Reset() {
-	m.cancelIsAuthenticated()
-	m.cancelAuthFunc = nil
+func (m *authenticationModel) Reset() tea.Cmd {
 	m.currentModel = nil
 	m.currentSessionID = ""
 	m.currentBrokerID = ""
+	return func() tea.Msg {
+		m.cancelIsAuthenticated()
+		return nil
+	}
 }
 
 // dataToMsg returns the data message from a given JSON message.
