@@ -1067,14 +1067,16 @@ func TestGdmModel(t *testing.T) {
 				gdm.EventType_uiLayoutReceived,
 				gdm.EventType_startAuthentication,
 				gdm.EventType_authModeSelected,
-				gdm.EventType_authEvent,
+				gdm.EventType_authEvent, // cancelled
 				gdm.EventType_uiLayoutReceived,
 				gdm.EventType_startAuthentication,
-				gdm.EventType_authEvent,
+				gdm.EventType_authEvent, // cancelled
+				// gdm.EventType_authEvent, // granted
 			},
 			wantStage: pam_proto.Stage_challenge,
 			wantGdmAuthRes: []*authd.IAResponse{
 				{Access: brokers.AuthCancelled},
+				// {Access: brokers.AuthCancelled},
 				{Access: brokers.AuthGranted},
 			},
 			wantExitStatus: PamSuccess{BrokerID: firstBrokerInfo.Id},

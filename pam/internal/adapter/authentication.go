@@ -29,10 +29,13 @@ var (
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
+		log.Debug(context.TODO(), "IsAuthenticated requested")
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
 		})
+		log.Debugf(context.TODO(), "IsAuthenticated requested returned %#v, %v",
+			res, err)
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				return isAuthenticatedResultReceived{
@@ -135,23 +138,39 @@ func (m *authenticationModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *authenticationModel) cancelIsAuthenticated() {
+func (m *authenticationModel) cancelIsAuthenticated(afterMsg tea.Msg) tea.Cmd {
+	log.Infof(context.TODO(), "Cancelling authentication %#v", m.cancelAuthFunc)
 	if m.cancelAuthFunc == nil {
-		return
+		return sendEvent(afterMsg)
 	}
-	m.cancelAuthFunc()
+
+	cancelAuthFunc := m.cancelAuthFunc
 	m.cancelAuthFunc = nil
-	<-m.cancelAuthChan
+
+	return func() tea.Msg {
+		// m.cancelIsAuthenticated()
+		// return AuthModeSelected{}
+		cancelAuthFunc()
+		<-m.cancelAuthChan
+
+		// No we can't use a tea.Sequence here
+		return afterMsg
+	}
+	// m.cancelAuthFunc()
+	// m.cancelAuthFunc = nil
+	// <-m.cancelAuthChan
 }
 
 // Update handles events and actions.
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
+	// log.Infof(context.TODO(), "Auth UPDATE %#v", msg)
 	switch msg := msg.(type) {
 	case reselectAuthMode:
-		return *m, func() tea.Msg {
-			m.cancelIsAuthenticated()
-			return AuthModeSelected{}
-		}
+		return *m, m.cancelIsAuthenticated(AuthModeSelected{})
+		// return *m, func() tea.Msg {
+		// 	m.cancelIsAuthenticated()
+		// 	return AuthModeSelected{}
+		// }
 
 	case newPasswordCheck:
 		res := newPasswordCheckResult{challenge: msg.challenge}
@@ -162,7 +181,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
-		m.cancelIsAuthenticated()
+		log.Debug(context.TODO(), "Calling cancelIsAuthenticated, REQUESTED")
+
+		if m.cancelAuthFunc != nil {
+			return *m, m.cancelIsAuthenticated(msg)
+		}
 
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
@@ -186,8 +209,8 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedCancelled:
 		log.Debugf(context.TODO(), "%#v", msg)
-		m.cancelIsAuthenticated()
-		return *m, nil
+		log.Debug(context.TODO(), "Calling cancelIsAuthenticated, CANCELLED")
+		return *m, m.cancelIsAuthenticated(nil)
 
 	case isAuthenticatedResultReceived:
 		log.Debugf(context.TODO(), "%#v", msg)
@@ -342,12 +365,12 @@ func (m authenticationModel) View() string {
 }
 
 // Resets zeroes any internal state on the authenticationModel.
-func (m *authenticationModel) Reset() {
-	m.cancelIsAuthenticated()
-	m.cancelAuthFunc = nil
+func (m *authenticationModel) Reset() tea.Cmd {
+	log.Debug(context.TODO(), "Calling cancelIsAuthenticated: RESET")
 	m.currentModel = nil
 	m.currentSessionID = ""
 	m.currentBrokerID = ""
+	return m.cancelIsAuthenticated(nil)
 }
 
 // dataToMsg returns the data message from a given JSON message.
