@@ -5,6 +5,8 @@ use libnss::passwd::{Passwd, PasswdHooks};
 use tokio::runtime::Builder;
 use tonic::Request;
 
+const SSHD_BINARY_PATH: &str = "/usr/sbin/sshd";
+
 use crate::client::{self, authd};
 use authd::PasswdEntry;
 
@@ -90,6 +92,7 @@ fn get_entry_by_uid(uid: uid_t) -> Response<Passwd> {
 
 /// get_entry_by_name connects to the grpc server and asks for the passwd entry with the given name.
 fn get_entry_by_name(name: String) -> Response<Passwd> {
+    eprintln!("Get entry by name {}", name);
     let rt = match Builder::new_current_thread().enable_all().build() {
         Ok(rt) => rt,
         Err(e) => {
@@ -107,13 +110,18 @@ fn get_entry_by_name(name: String) -> Response<Passwd> {
             }
         };
 
+        eprintln!("Req precheck? {}", should_pre_check());
         let mut req = Request::new(authd::GetPasswdByNameRequest {
             name: name.clone(),
             should_pre_check: should_pre_check(),
         });
         req.set_timeout(REQUEST_TIMEOUT);
         match client.get_passwd_by_name(req).await {
-            Ok(r) => Response::Success(passwd_entry_to_passwd(r.into_inner())),
+            Ok(r) => {
+                let inner = r.into_inner();
+                eprintln!("Response result OK, {} - {} {}", inner.name, inner.passwd, inner.uid);
+                return Response::Success(passwd_entry_to_passwd(inner));
+            }
             Err(e) => {
                 info!("error when getting passwd by name '{}': {}", name, e.code());
                 super::grpc_status_to_nss_response(e)
@@ -151,7 +159,7 @@ fn is_proc_matching(pid: u32, name: &str) -> bool {
         return false;
     }
 
-    matches!(exe.unwrap().file_stem().unwrap(), s if s == name)
+    matches!(exe.unwrap().to_str().unwrap(), s if s == name)
 }
 
 /// should_pre_check returns true if the current process sshd or a child of sshd.
@@ -161,10 +169,10 @@ fn should_pre_check() -> bool {
     return std::env::var("AUTHD_NSS_SHOULD_PRE_CHECK").is_ok();
 
     let pid = std::process::id();
-    if is_proc_matching(pid, "sshd") {
+    if is_proc_matching(pid, SSHD_BINARY_PATH) {
         return true;
     }
 
     let ppid = std::os::unix::process::parent_id();
-    return is_proc_matching(ppid, "sshd");
+    return is_proc_matching(ppid, SSHD_BINARY_PATH);
 }
