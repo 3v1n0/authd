@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -29,12 +30,16 @@ var (
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
+		log.Debugf(context.TODO(), "Sending isAuth %v | %v", *authData)
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
 		})
+		log.Debugf(context.TODO(), "IsAuthenticated result %v | %v", res, err)
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
+				// Note that this error is only the client-side error, so being here doesn't
+				// mean the cancellation on broker side is fully completed.
 				return isAuthenticatedResultReceived{
 					access: brokers.AuthCancelled,
 				}
@@ -57,6 +62,8 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 type isAuthenticatedRequested struct {
 	item authd.IARequestAuthenticationDataItem
 }
+
+type isAuthenticatedRequestedReal isAuthenticatedRequested
 
 // isAuthenticatedResultReceived is the internal event with the authentication access result
 // and data that was retrieved.
@@ -95,7 +102,8 @@ type authenticationModel struct {
 	currentBrokerID  string
 	currentChallenge string
 	cancelAuthFunc   func()
-	cancelAuthChan   chan struct{}
+	// cancelAuthChan   chan struct{}
+	authWg *sync.WaitGroup
 
 	encryptionKey *rsa.PublicKey
 
@@ -127,6 +135,7 @@ func newAuthenticationModel(client authd.PAMClient, clientType PamClientType) au
 	return authenticationModel{
 		client:     client,
 		clientType: clientType,
+		authWg:     &sync.WaitGroup{},
 	}
 }
 
@@ -141,10 +150,14 @@ func (m *authenticationModel) cancelIsAuthenticated(nextMsg tea.Msg) tea.Cmd {
 	}
 
 	cancelAuthFunc := m.cancelAuthFunc
-	m.cancelAuthFunc = nil
+	// m.cancelAuthFunc = nil
+	// defer func() { m.cancelAuthFunc = nil }()
 
 	return func() tea.Msg {
+		log.Debugf(context.TODO(), "Waiting for wait group...")
 		cancelAuthFunc()
+		// m.authWg.Wait()
+		log.Debugf(context.TODO(), "Wait done!")
 		// <-m.cancelAuthChan
 
 		// No we can't use a tea.Sequence to call cancelIsAuthenticated because it
@@ -157,6 +170,7 @@ func (m *authenticationModel) cancelIsAuthenticated(nextMsg tea.Msg) tea.Cmd {
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
+		log.Debugf(context.TODO(), "%#v", msg)
 		// return *m, m.cancelIsAuthenticated(AuthModeSelected{})
 		return *m, tea.Sequence(m.cancelIsAuthenticated(nil), sendEvent(AuthModeSelected{}))
 
@@ -170,14 +184,34 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
 
-		if m.cancelAuthFunc != nil {
-			// There's still an authentication in progress, send the request only
-			// after we've cancelled it.
-			// return *m, m.cancelIsAuthenticated(msg)
-			return *m, tea.Sequence(m.cancelIsAuthenticated(nil), sendEvent(msg))
+		// if m.cancelAuthFunc != nil {
+		// 	// There's still an authentication in progress, send the request only
+		// 	// after we've got a response for it.
+		// 	return *m, func() tea.Msg {
+		// 		log.Debugf(context.TODO(), "Got new auth request... delay it")
+		// 		m.authWg.Wait()
+		// 		log.Debugf(context.TODO(), "Ok auth request can be re-forwarded")
+		// 		return msg
+		// 	}
+		// }
+
+		// if m.cancelAuthFunc != nil {
+		// 	m.cancelAuthFunc()
+		// 	m.cancelAuthFunc = nil
+		// }
+
+		// There's still an authentication in progress, send the request only
+		// after we've cancelled it.
+		// return *m, m.cancelIsAuthenticated(msg)
+		// return *m, tea.Sequence(m.cancelIsAuthenticated(nil), sendEvent(msg))
+		return *m, func() tea.Msg {
+			log.Debugf(context.TODO(), "Got new auth request... delay it")
+			m.authWg.Wait()
+			log.Debugf(context.TODO(), "Ok auth request can be re-forwarded")
+			return isAuthenticatedRequestedReal(msg)
 		}
 
-
+	case isAuthenticatedRequestedReal:
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
 		if !ok {
@@ -191,10 +225,16 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
-		m.cancelAuthChan = make(chan struct{})
+		// m.cancelAuthChan = make(chan struct{})
+		// m.authWg.Wait()
+		m.authWg.Add(1)
 		m.cancelAuthFunc = func() {
+			log.Debugf(context.TODO(), "Cancelling REQUEST!")
 			cancel()
-			<-m.cancelAuthChan
+			log.Debugf(context.TODO(), "REQUEST cancelled... waiting for real")
+			m.authWg.Wait()
+			log.Debugf(context.TODO(), "Wait done!")
+			// <-m.cancelAuthChan
 		}
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
 
@@ -210,7 +250,9 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
-			close(m.cancelAuthChan)
+			// close(m.cancelAuthChan)
+			m.authWg.Done()
+			m.cancelAuthFunc = nil
 		}()
 
 		switch msg.access {
@@ -384,7 +426,7 @@ func dataToMsg(data string) (string, error) {
 	return r, nil
 }
 
-func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
+func (authData *isAuthenticatedRequestedReal) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
 	// no challenge value, pass it as is
 	challenge, ok := authData.item.(*authd.IARequest_AuthenticationData_Challenge)
 	if !ok {
