@@ -35,6 +35,8 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		})
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
+				// Note that this error is only the client-side error, so being here doesn't
+				// mean the cancellation on broker side is fully completed.
 				return isAuthenticatedResultReceived{
 					access: brokers.AuthCancelled,
 				}
@@ -176,7 +178,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			// return *m, m.cancelIsAuthenticated(msg)
 			return *m, tea.Sequence(m.cancelIsAuthenticated(nil), sendEvent(msg))
 		}
-
 
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
