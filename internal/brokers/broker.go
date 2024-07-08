@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -156,6 +157,8 @@ func (b *Broker) GetAuthenticationModes(ctx context.Context, sessionID string, s
 	return authenticationModes, nil
 }
 
+var requests atomic.Int32
+
 // SelectAuthenticationMode calls the broker corresponding method, stripping broker ID prefix from sessionID.
 func (b Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authenticationModeName string) (uiLayoutInfo map[string]string, err error) {
 	sessionID = b.parseSessionID(sessionID)
@@ -203,6 +206,8 @@ func (b Broker) maybeWaitForPreviousIsAuthenticationCompleted(sessionID string) 
 // IsAuthenticated calls the broker corresponding method, stripping broker ID prefix from sessionID.
 func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access string, data string, err error) {
 	sessionID = b.parseSessionID(sessionID)
+	reqN := requests.Add(1)
+	log.Debugf(ctx, "IsAuthenticated check: %v %v", reqN, authenticationData)
 
 	// Ensure that no further `IsAuthentication` request is sent to the broker until we've finished
 	// the previous (cancellation) request, or we may end up re-authenticating too quickly.
@@ -212,7 +217,9 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 	// monitor ctx in goroutine to call cancel
 	done := make(chan struct{})
 	go func() {
+		log.Debugf(ctx, "IsAuthenticated started: %v %v", reqN, authenticationData)
 		access, data, err = b.brokerer.IsAuthenticated(ctx, sessionID, authenticationData)
+		log.Debugf(ctx, "IsAuthenticated done: %v %s, %s, %v", reqN, access, data, err)
 		close(done)
 	}()
 
@@ -279,6 +286,8 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 			return "", "", fmt.Errorf("access mode %q should not return any data, got: %v", access, data)
 		}
 	}
+
+	log.Debugf(ctx, "isAuthentication returning: %v, %s", reqN, access)
 
 	return access, data, nil
 }

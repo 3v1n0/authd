@@ -589,7 +589,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}

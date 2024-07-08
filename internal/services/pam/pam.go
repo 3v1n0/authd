@@ -228,7 +228,26 @@ func (s Service) IsAuthenticated(ctx context.Context, req *authd.IARequest) (res
 		return nil, err
 	}
 
-	access, data, err := broker.IsAuthenticated(ctx, sessionID, string(authenticationDataJSON))
+	var access string
+	var data string
+	// var err error
+	done := make(chan struct{})
+	go func() {
+		log.Debugf(ctx, "pam: IsAuthenticated started: %v", req)
+		access, data, err = broker.IsAuthenticated(ctx, sessionID, string(authenticationDataJSON))
+		log.Debugf(ctx, "pam: IsAuthenticated done: %v %s, %v", req, access, data, err)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		if err != nil {
+			return nil, err
+		}
+	case <-ctx.Done():
+		log.Debugf(ctx, "pam: CANCELLED: %v", req)
+	}
+
 	if err != nil {
 		return nil, err
 	}
