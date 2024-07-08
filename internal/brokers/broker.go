@@ -58,7 +58,15 @@ type Broker struct {
 	ongoingUserRequests   map[string]string
 	ongoingUserRequestsMu *sync.Mutex
 
+	isAuthenticationRequestsMu *sync.Mutex
+	isAuthenticationRequests   map[string]*isAuthenticationRequest
+
 	brokerer brokerer
+}
+
+type isAuthenticationRequest struct {
+	inProgress bool
+	cond       *sync.Cond
 }
 
 type layoutValidator map[string]fieldValidator
@@ -100,6 +108,9 @@ func newBroker(ctx context.Context, name, configFile string, bus *dbus.Conn) (b 
 		layoutValidatorsMu:    &sync.Mutex{},
 		ongoingUserRequests:   make(map[string]string),
 		ongoingUserRequestsMu: &sync.Mutex{},
+
+		isAuthenticationRequestsMu: &sync.Mutex{},
+		isAuthenticationRequests:   make(map[string]*isAuthenticationRequest),
 	}, nil
 }
 
@@ -155,9 +166,48 @@ func (b Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authent
 	return b.validateUILayout(sessionID, uiLayoutInfo)
 }
 
+// maybeWaitForPreviousIsAuthenticationCompleted waits for the previous IsAuthentication requests
+// for the current session to be fully completed and returns when all those are delivered.
+// It returns a function that needs to be called to mark the current request as completed.
+func (b Broker) maybeWaitForPreviousIsAuthenticationCompleted(sessionID string) (done func()) {
+	b.isAuthenticationRequestsMu.Lock()
+
+	req, ok := b.isAuthenticationRequests[sessionID]
+	if !ok {
+		req = &isAuthenticationRequest{cond: sync.NewCond(&sync.Mutex{})}
+		b.isAuthenticationRequests[sessionID] = req
+	}
+
+	// Unlock early, so we can leave other sessions not to wait on the current one.
+	b.isAuthenticationRequestsMu.Unlock()
+
+	// Wait for previous cancellation requests to have been delivered, we do it
+	// keeping the lock so that if another `IsAuthenticated` request for the same session
+	// arrives while waiting, we're just delaying that until we're unlocked.
+	req.cond.L.Lock()
+	defer req.cond.L.Unlock()
+	for req.inProgress {
+		req.cond.Wait()
+	}
+
+	req.inProgress = true
+
+	return func() {
+		req.cond.L.Lock()
+		defer req.cond.L.Unlock()
+		req.inProgress = false
+		req.cond.Signal()
+	}
+}
+
 // IsAuthenticated calls the broker corresponding method, stripping broker ID prefix from sessionID.
 func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access string, data string, err error) {
 	sessionID = b.parseSessionID(sessionID)
+
+	// Ensure that no further `IsAuthentication` request is sent to the broker until we've finished
+	// the previous (cancellation) request, or we may end up re-authenticating too quickly.
+	authCompleted := b.maybeWaitForPreviousIsAuthenticationCompleted(sessionID)
+	defer authCompleted()
 
 	// monitor ctx in goroutine to call cancel
 	done := make(chan struct{})
@@ -240,6 +290,10 @@ func (b Broker) endSession(ctx context.Context, sessionID string) (err error) {
 	b.ongoingUserRequestsMu.Lock()
 	defer b.ongoingUserRequestsMu.Unlock()
 	delete(b.ongoingUserRequests, sessionID)
+
+	b.isAuthenticationRequestsMu.Lock()
+	defer b.isAuthenticationRequestsMu.Unlock()
+	delete(b.isAuthenticationRequests, sessionID)
 
 	return b.brokerer.EndSession(ctx, sessionID)
 }
