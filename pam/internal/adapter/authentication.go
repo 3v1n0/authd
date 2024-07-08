@@ -165,6 +165,8 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
+		fmt.Printf("%p isAuthenticatedRequested %#v %v, current challenge %q\n", m, msg, m.cancelAuthFunc != nil,
+			m.currentChallenge)
 
 		if m.cancelAuthFunc != nil {
 			// There's still an authentication in progress, send the request only
@@ -190,7 +192,9 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		m.cancelAuthFunc = func() {
 			cancel()
 			<-authChan
+			// fmt.Printf("%p Cancellation done %#v\n", m, msg)
 		}
+		fmt.Printf("%p SendIsAuthenticated, Setting authFunc: %v\n", m, m.cancelAuthFunc != nil)
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
 
 	case isAuthenticatedCancelled:
@@ -199,7 +203,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 
 	case isAuthenticatedResultReceived:
 		log.Debugf(context.TODO(), "%#v", msg)
+		fmt.Printf("%p isAuthenticatedResultReceived %#v\n", m, msg)
 
+		// m.cancelAuthFunc = nil
+		fmt.Printf("%p AuthReceived, dropping authFunc: %v\n", m, m.cancelAuthFunc != nil)
 		// Resets challenge if the authentication wasn't successful.
 		defer func() {
 			// the returned authModel is a copy of function-level's `m` at this point!
@@ -210,6 +217,10 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 			m.cancelAuthFunc = nil
 			close(m.authChan)
 		}()
+
+		// if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
+		// 	m.currentChallenge = ""
+		// }
 
 		switch msg.access {
 		case brokers.AuthGranted:

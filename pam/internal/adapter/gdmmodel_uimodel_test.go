@@ -92,8 +92,14 @@ func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	commands := []tea.Cmd{}
 
-	_, cmd := m.UIModel.Update(msg)
+	um, cmd := m.UIModel.Update(msg)
 	commands = append(commands, cmd)
+
+	uiModel, ok := um.(*UIModel)
+	if !ok {
+		panic("invalid UI model")
+	}
+	m.UIModel = *uiModel
 
 	switch msg := msg.(type) {
 	case gdmTestAddPollResultEvent:
