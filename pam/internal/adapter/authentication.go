@@ -96,8 +96,9 @@ type authenticationModel struct {
 	currentSessionID string
 	currentBrokerID  string
 	currentChallenge string
-	cancelAuthFunc   func()
-	cancelAuthChan   chan struct{}
+
+	authChan       chan struct{}
+	cancelAuthFunc func()
 
 	encryptionKey *rsa.PublicKey
 
@@ -138,12 +139,10 @@ func (m *authenticationModel) Init() tea.Cmd {
 }
 
 func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
-	if m.cancelAuthFunc == nil {
+	cancelAuthFunc := m.cancelAuthFunc
+	if cancelAuthFunc == nil {
 		return nil
 	}
-
-	cancelAuthFunc := m.cancelAuthFunc
-	m.cancelAuthFunc = nil
 
 	return func() tea.Msg {
 		cancelAuthFunc()
@@ -186,10 +185,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
-		m.cancelAuthChan = make(chan struct{})
+		authChan := make(chan struct{})
+		m.authChan = authChan
 		m.cancelAuthFunc = func() {
 			cancel()
-			<-m.cancelAuthChan
+			<-authChan
 		}
 		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
 
@@ -205,6 +205,8 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
+			m.cancelAuthFunc = nil
+			close(m.authChan)
 		}()
 
 		switch msg.access {
@@ -238,7 +240,6 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 		case brokers.AuthCancelled:
 			// nothing to do
-			close(m.cancelAuthChan)
 			return *m, nil
 		}
 
