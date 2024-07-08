@@ -23,8 +23,6 @@ func withCurrentUserAsRoot() Option {
 
 // currentUserUID returns the current user UID or panics.
 func currentUserUID() uint32 {
-	testsdetection.MustBeTesting()
-
 	u, err := user.Current()
 	if err != nil {
 		panic(fmt.Sprintf("could not get current user: %v", err))

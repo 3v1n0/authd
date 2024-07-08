@@ -8,11 +8,16 @@ import (
 
 	"github.com/ubuntu/authd/examplebroker"
 	"github.com/ubuntu/authd/internal/log"
+	"github.com/ubuntu/authd/internal/services/permissions"
 	"github.com/ubuntu/authd/internal/testutils"
 )
 
 // useExampleBrokers starts a mock system bus and exports the examplebroker in it.
 func useExampleBrokers() (string, func(), error) {
+	if os.Getenv("AUTHD_EXAMPLES_CURRENT_USER_AS_ROOT") != "" {
+		permissions.DefaultCurrentUserAsRoot()
+	}
+
 	busCleanup, err := testutils.StartSystemBusMock()
 	if err != nil {
 		return "", nil, err

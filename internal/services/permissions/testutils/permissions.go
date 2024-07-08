@@ -44,7 +44,7 @@ func currentUserUID() uint32
 
 // DefaultCurrentUserAsRoot mocks the current user as root for the permission manager.
 func DefaultCurrentUserAsRoot() {
-	defaultOptions.rootUID = currentUserUID()
+	permissions.DefaultCurrentUserAsRoot()
 }
 
 //go:linkname permErrorFmt github.com/ubuntu/authd/internal/services/permissions.permErrorFmt
