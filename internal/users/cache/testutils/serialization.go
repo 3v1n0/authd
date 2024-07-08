@@ -5,18 +5,13 @@ import (
 	"io"
 	"os"
 	"testing"
+
 	//nolint:revive,nolintlint // needed for go:linkname, but only used in tests. nolinlint as false positive then.
 	_ "unsafe"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ubuntu/authd/internal/testsdetection"
 	"github.com/ubuntu/authd/internal/users/cache"
 )
-
-func init() {
-	// No import outside of testing environment.
-	testsdetection.MustBeTesting()
-}
 
 var (
 	// DbName is database name exported for tests
