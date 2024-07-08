@@ -35,8 +35,6 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		})
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
-				// Note that this error is only the client-side error, so being here doesn't
-				// mean the cancellation on broker side is fully completed.
 				return isAuthenticatedResultReceived{
 					access: brokers.AuthCancelled,
 				}

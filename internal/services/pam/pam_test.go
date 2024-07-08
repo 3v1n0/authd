@@ -406,22 +406,19 @@ func TestIsAuthenticated(t *testing.T) {
 		sessionID  string
 		existingDB string
 
-		username             string
-		secondCall           bool
-		secondCallNewSession bool
-		cancelFirstCall      bool
-		localGroupsFile      string
-		currentUserNotRoot   bool
+		username           string
+		secondCall         bool
+		cancelFirstCall    bool
+		localGroupsFile    string
+		currentUserNotRoot bool
 
 		// There is no wantErr as it's stored in the golden file.
 	}{
-		"Successfully authenticate":                                               {username: "success"},
-		"Successfully authenticate if first call is canceled":                     {username: "IA_second_call", secondCall: true, cancelFirstCall: true},
-		"Successfully authenticates after calling second time without cancelling": {username: "IA_second_call", secondCall: true},
-		"Successfully authenticate if second call has different session ID":       {username: "IA_second_call", secondCall: true, secondCallNewSession: true},
-		"Denies authentication when broker times out":                             {username: "IA_timeout"},
-		"Update existing DB on success":                                           {username: "success", existingDB: "cache-with-user.db"},
-		"Update local groups":                                                     {username: "success_with_local_groups", localGroupsFile: "valid.group"},
+		"Successfully authenticate":                           {username: "success"},
+		"Successfully authenticate if first call is canceled": {username: "IA_second_call", secondCall: true, cancelFirstCall: true},
+		"Denies authentication when broker times out":         {username: "IA_timeout"},
+		"Update existing DB on success":                       {username: "success", existingDB: "cache-with-user.db"},
+		"Update local groups":                                 {username: "success_with_local_groups", localGroupsFile: "valid.group"},
 
 		// service errors
 		"Error when not root":           {username: "success", currentUserNotRoot: true},
@@ -435,6 +432,7 @@ func TestIsAuthenticated(t *testing.T) {
 		"Error when broker returns invalid data":                             {username: "IA_invalid_data"},
 		"Error when broker returns invalid userinfo":                         {username: "IA_invalid_userinfo"},
 		"Error when broker returns username different than the one selected": {username: "IA_info_mismatching_user_name"},
+		"Error when calling second time without cancelling":                  {username: "IA_second_call", secondCall: true},
 
 		// local group error
 		"Error on updating local groups with unexisting file": {username: "success_with_local_groups", localGroupsFile: "does_not_exists.group"},
@@ -505,12 +503,8 @@ func TestIsAuthenticated(t *testing.T) {
 			}
 
 			if tc.secondCall {
-				sessionID := tc.sessionID
-				if tc.secondCallNewSession {
-					sessionID = startSession(t, client, tc.username)
-				}
 				iaReq := &authd.IARequest{
-					SessionId:          sessionID,
+					SessionId:          tc.sessionID,
 					AuthenticationData: &authd.IARequest_AuthenticationData{},
 				}
 				iaResp, err := client.IsAuthenticated(context.Background(), iaReq)
