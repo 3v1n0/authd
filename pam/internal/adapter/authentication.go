@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -18,6 +20,13 @@ import (
 	pam_proto "github.com/ubuntu/authd/pam/internal/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+const (
+	// cancellationWait is the time that we are waiting for the cancellation to be
+	// delivered to the brokers, but also it's used to compute the time we should
+	// wait for the fully cancellation to have completed once delivered.
+	cancellationWait = time.Millisecond * 10
 )
 
 var (
@@ -35,6 +44,14 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 		})
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
+				// Note that this error is only the client-side error, so being here doesn't
+				// mean the cancellation on broker side is fully completed.
+
+				// Wait for the cancellation requests to have been delivered and actually handled.
+				// The multiplier can be increased to avoid that we return the cancelled event too
+				// early, but it implies slowing down the UI responses.
+				<-time.After(cancellationWait * 3)
+
 				return isAuthenticatedResultReceived{
 					access: brokers.AuthCancelled,
 				}
@@ -56,6 +73,11 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 // with the given challenge or wait has been requested.
 type isAuthenticatedRequested struct {
 	item authd.IARequestAuthenticationDataItem
+}
+
+type isAuthenticatedRequestedSend struct {
+	isAuthenticatedRequested
+	ctx context.Context
 }
 
 // isAuthenticatedResultReceived is the internal event with the authentication access result
@@ -95,12 +117,17 @@ type authenticationModel struct {
 	currentBrokerID  string
 	currentChallenge string
 
-	authChan       chan struct{}
 	cancelAuthFunc func()
+	authTracker    *authTracker
 
 	encryptionKey *rsa.PublicKey
 
 	errorMsg string
+}
+
+type authTracker struct {
+	inProgress bool
+	cond       *sync.Cond
 }
 
 // startAuthentication signals that the authentication model can start
@@ -126,8 +153,9 @@ type newPasswordCheckResult struct {
 // newAuthenticationModel initializes a authenticationModel which needs to be Compose then.
 func newAuthenticationModel(client authd.PAMClient, clientType PamClientType) authenticationModel {
 	return authenticationModel{
-		client:     client,
-		clientType: clientType,
+		client:      client,
+		clientType:  clientType,
+		authTracker: &authTracker{cond: sync.NewCond(&sync.Mutex{})},
 	}
 }
 
@@ -164,12 +192,40 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 	case isAuthenticatedRequested:
 		log.Debugf(context.TODO(), "%#v", msg)
 
+		authTracker := m.authTracker
+
+		// An authentication may still be in progress, so we repeat the same
+		// message, until the previous requests have been been handled.
 		if m.cancelAuthFunc != nil {
-			// There's still an authentication in progress, send the request only
-			// after we've cancelled it.
-			return *m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(msg))
+			return *m, func() tea.Msg {
+				authTracker.wait()
+				return msg
+			}
 		}
 
+		ctx, cancel := context.WithCancel(context.Background())
+		m.cancelAuthFunc = func() {
+			// Very very ugly, but we need to ensure that IsAuthenticated call has been delivered
+			// to the broker before calling broker's cancelIsAuthenticated or that cancel request may happen
+			// before than the IsAuthenticated() one has been invoked, and thus we may have nothing
+			// to cancel in the broker side.
+			// So let's wait a bit in such case (we may be even too much generous), before delivering
+			// the actual cancellation.
+			<-time.After(cancellationWait)
+			cancel()
+			authTracker.wait()
+		}
+
+		// At the point that we proceed with the actual authentication request in the goroutine,
+		// there may still an authentication in progress, so send the request only after
+		// we've completed the previous one(s).
+		return *m, func() tea.Msg {
+			authTracker.waitAndStart()
+			return isAuthenticatedRequestedSend{msg, ctx}
+		}
+
+	case isAuthenticatedRequestedSend:
+		log.Debugf(context.TODO(), "%#v", msg)
 		// Store the current challenge, if present, for password verifications.
 		challenge, ok := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
 		if !ok {
@@ -182,14 +238,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt challenge payload: %v", err)})
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		authChan := make(chan struct{})
-		m.authChan = authChan
-		m.cancelAuthFunc = func() {
-			cancel()
-			<-authChan
-		}
-		return *m, sendIsAuthenticated(ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
+		return *m, sendIsAuthenticated(msg.ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item})
 
 	case isAuthenticatedCancelled:
 		log.Debugf(context.TODO(), "%#v", msg)
@@ -205,10 +254,9 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
-			if m.cancelAuthFunc != nil {
-				m.cancelAuthFunc = nil
-				close(m.authChan)
-			}
+
+			m.cancelAuthFunc = nil
+			m.authTracker.reset()
 		}()
 
 		switch msg.access {
@@ -382,7 +430,7 @@ func dataToMsg(data string) (string, error) {
 	return r, nil
 }
 
-func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
+func (authData *isAuthenticatedRequestedSend) encryptChallengeIfPresent(publicKey *rsa.PublicKey) error {
 	// no challenge value, pass it as is
 	challenge, ok := authData.item.(*authd.IARequest_AuthenticationData_Challenge)
 	if !ok {
@@ -398,4 +446,34 @@ func (authData *isAuthenticatedRequested) encryptChallengeIfPresent(publicKey *r
 	base64Encoded := base64.StdEncoding.EncodeToString(ciphertext)
 	authData.item = &authd.IARequest_AuthenticationData_Challenge{Challenge: base64Encoded}
 	return nil
+}
+
+// wait waits for the current authentication to be completed.
+func (at *authTracker) wait() {
+	at.cond.L.Lock()
+	defer at.cond.L.Unlock()
+
+	for at.inProgress {
+		at.cond.Wait()
+	}
+}
+
+// waitAndStart waits for the current authentication to be completed and
+// marks the authentication as in progress.
+func (at *authTracker) waitAndStart() {
+	at.cond.L.Lock()
+	defer at.cond.L.Unlock()
+
+	for at.inProgress {
+		at.cond.Wait()
+	}
+
+	at.inProgress = true
+}
+
+func (at *authTracker) reset() {
+	at.cond.L.Lock()
+	defer at.cond.L.Unlock()
+	at.inProgress = false
+	at.cond.Signal()
 }
