@@ -151,7 +151,7 @@ func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
 }
 
 // Update handles events and actions.
-func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
+func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel, command tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
 		return *m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(AuthModeSelected{}))
@@ -202,6 +202,8 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 		// Resets challenge if the authentication wasn't successful.
 		defer func() {
+			// the returned authModel is a copy of function-level's `m` at this point!
+			m := &authModel
 			if msg.access != brokers.AuthGranted && msg.access != brokers.AuthNext {
 				m.currentChallenge = ""
 			}
