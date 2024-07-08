@@ -228,7 +228,7 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 		// to cancel in the broker side.
 		// So let's wait a bit in such case (we may be even too much generous), before delivering
 		// the actual cancellation.
-		<-time.After(time.Millisecond * 5)
+		<-time.After(time.Millisecond * 10)
 		b.cancelIsAuthenticated(ctx, sessionID)
 		<-done
 	}

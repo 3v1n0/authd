@@ -137,9 +137,9 @@ func (m *authenticationModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *authenticationModel) cancelIsAuthenticated(nextMsg tea.Msg) tea.Cmd {
+func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
 	if m.cancelAuthFunc == nil {
-		return sendEvent(nextMsg)
+		return nil
 	}
 
 	cancelAuthFunc := m.cancelAuthFunc
@@ -147,11 +147,7 @@ func (m *authenticationModel) cancelIsAuthenticated(nextMsg tea.Msg) tea.Cmd {
 
 	return func() tea.Msg {
 		cancelAuthFunc()
-		// <-m.cancelAuthChan
-
-		// No we can't use a tea.Sequence to call cancelIsAuthenticated because it
-		// returns a func, so the order can't be guaranteed.
-		return nextMsg
+		return nil
 	}
 }
 
@@ -159,8 +155,7 @@ func (m *authenticationModel) cancelIsAuthenticated(nextMsg tea.Msg) tea.Cmd {
 func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
-		// return *m, m.cancelIsAuthenticated(AuthModeSelected{})
-		return *m, tea.Sequence(m.cancelIsAuthenticated(nil), sendEvent(AuthModeSelected{}))
+		return *m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(AuthModeSelected{}))
 
 	case newPasswordCheck:
 		res := newPasswordCheckResult{challenge: msg.challenge}
@@ -175,8 +170,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 		if m.cancelAuthFunc != nil {
 			// There's still an authentication in progress, send the request only
 			// after we've cancelled it.
-			// return *m, m.cancelIsAuthenticated(msg)
-			return *m, tea.Sequence(m.cancelIsAuthenticated(nil), sendEvent(msg))
+			return *m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(msg))
 		}
 
 		// Store the current challenge, if present, for password verifications.
@@ -201,7 +195,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authenticationModel, tea.Cmd)
 
 	case isAuthenticatedCancelled:
 		log.Debugf(context.TODO(), "%#v", msg)
-		return *m, m.cancelIsAuthenticated(nil)
+		return *m, m.cancelIsAuthenticated()
 
 	case isAuthenticatedResultReceived:
 		log.Debugf(context.TODO(), "%#v", msg)
@@ -361,7 +355,7 @@ func (m *authenticationModel) Reset() tea.Cmd {
 	m.currentModel = nil
 	m.currentSessionID = ""
 	m.currentBrokerID = ""
-	return m.cancelIsAuthenticated(nil)
+	return m.cancelIsAuthenticated()
 }
 
 // dataToMsg returns the data message from a given JSON message.
