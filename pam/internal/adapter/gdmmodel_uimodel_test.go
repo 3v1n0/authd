@@ -85,7 +85,7 @@ func (m *gdmTestUIModel) maybeHandleWantMessageUnlocked(msg tea.Msg) {
 }
 
 func (m *gdmTestUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	log.Debugf(context.TODO(), "%#v", msg)
+	// log.Debugf(context.TODO(), "%#v", msg)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()

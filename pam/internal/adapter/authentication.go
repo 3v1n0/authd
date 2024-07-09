@@ -38,10 +38,12 @@ var (
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData) tea.Cmd {
 	return func() tea.Msg {
+		log.Debugf(context.TODO(), "Sending isAuth %v | %v", *authData)
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
 		})
+		log.Debugf(context.TODO(), "IsAuthenticated result %v | %v", res, err)
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				// Note that this error is only the client-side error, so being here doesn't
@@ -166,6 +168,8 @@ func (m *authenticationModel) Init() tea.Cmd {
 
 func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
 	cancelAuthFunc := m.cancelAuthFunc
+	log.Debugf(context.TODO(), "cancelIsAuthenticated %p", cancelAuthFunc)
+
 	if cancelAuthFunc == nil {
 		return nil
 	}
@@ -180,6 +184,8 @@ func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
 func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel, command tea.Cmd) {
 	switch msg := msg.(type) {
 	case reselectAuthMode:
+		log.Infof(context.TODO(), "%#v", msg)
+		// return *m, m.cancelIsAuthenticated(AuthModeSelected{})
 		return *m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(AuthModeSelected{}))
 
 	case newPasswordCheck:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -283,6 +284,11 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func init() {
+	log.SetOutput(os.Stderr)
+	// log.SetLevel(log.DebugLevel)
 }
 
 func (m gdmModel) changeStage(s proto.Stage) tea.Cmd {

@@ -235,7 +235,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case AuthModeSelected:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 		if m.currentSession == nil {
 			return m, nil
 		}
