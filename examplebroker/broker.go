@@ -61,6 +61,8 @@ type sessionInfo struct {
 	neededAuthSteps   int
 	currentAuthStep   int
 	firstSelectedMode string
+
+	qrCodeRequests int
 }
 
 type isAuthenticatedCtx struct {
@@ -436,12 +438,14 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 	case "fidodevice1":
 		// start transaction with fideo device
 	case "qrcodeandcodewithtypo":
-		uiLayoutInfo["code"] = "1337"
+		uiLayoutInfo["code"] = fmt.Sprint(1337 + sessionInfo.qrCodeRequests)
 		uiLayoutInfo["content"] = "https://ubuntu.com"
+		sessionInfo.qrCodeRequests++
 	case "qrcodewithtypo":
 		// generate the url and finish the prompt on the fly.
-		uiLayoutInfo["label"] += "1337"
+		uiLayoutInfo["label"] += fmt.Sprint(1337 + sessionInfo.qrCodeRequests)
 		uiLayoutInfo["content"] = "https://ubuntu.com"
+		sessionInfo.qrCodeRequests++
 	}
 
 	// Store selected mode
@@ -589,7 +593,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
