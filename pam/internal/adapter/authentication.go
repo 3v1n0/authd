@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,15 +34,20 @@ var (
 	errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff0000"))
 )
 
+var isAuthReq atomic.Uint32
+
 // sendIsAuthenticated sends the authentication challenges or wait request to the brokers.
 // The event will contain the returned value from the broker.
 func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID string,
 	authData *authd.IARequest_AuthenticationData, challenge *string) tea.Cmd {
 	return func() tea.Msg {
+		reqN := isAuthReq.Add(1)
+		log.Infof(context.TODO(), "send isAuth %v for ctx %p err? %v", reqN, ctx, ctx.Err())
 		res, err := client.IsAuthenticated(ctx, &authd.IARequest{
 			SessionId:          sessionID,
 			AuthenticationData: authData,
 		})
+		log.Infof(context.TODO(), "IsAuthenticated %v returned!!! (%v, %v)", reqN, res, err)
 		if err != nil {
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				// Note that this error is only the client-side error, so being here doesn't
@@ -225,11 +231,12 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		})
 
 	case isAuthenticatedRequested:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 
 		authTracker := m.authTracker
 
 		ctx, cancel := context.WithCancel(context.Background())
+		log.Infof(context.TODO(), "%p cancel func set to %p (for ctx %p)", m, cancel, ctx)
 		cancelFunc := func() {
 			// Very very ugly, but we need to ensure that IsAuthenticated call has been delivered
 			// to the broker before calling broker's cancelIsAuthenticated or that cancel request may happen
@@ -258,7 +265,7 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		}
 
 	case isAuthenticatedRequestedSend:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 		// no challenge value, pass it as is
 		plainTextChallenge, err := msg.encryptChallengeIfPresent(m.encryptionKey)
 		if err != nil {
@@ -268,11 +275,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		return *m, sendIsAuthenticated(msg.ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item}, plainTextChallenge)
 
 	case isAuthenticatedCancelled:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 		return *m, m.cancelIsAuthenticated()
 
 	case isAuthenticatedResultReceived:
-		log.Debugf(context.TODO(), "%#v", msg)
+		log.Infof(context.TODO(), "%#v", msg)
 
 		// Resets challenge if the authentication wasn't successful.
 		defer func() {
@@ -476,9 +483,15 @@ func (authData *isAuthenticatedRequestedSend) encryptChallengeIfPresent(publicKe
 	return &challenge.Challenge, nil
 }
 
+var reqs atomic.Uint32
+
 // wait waits for the current authentication to be completed.
 func (at *authTracker) wait() {
+	reqN := reqs.Add(1)
+	log.Info(context.TODO(), "Request isAuth", reqN)
+	defer func() { log.Info(context.TODO(), "Returning isAuth ", reqN, "ret!!") }()
 	at.cond.L.Lock()
+	log.Info(context.TODO(), "Request isAuth is IN!", reqN)
 	defer at.cond.L.Unlock()
 
 	for at.cancelFunc != nil {
@@ -489,7 +502,11 @@ func (at *authTracker) wait() {
 // waitAndStart waits for the current authentication to be completed and
 // marks the authentication as in progress.
 func (at *authTracker) waitAndStart(cancelFunc func()) {
+	reqN := reqs.Add(1)
+	log.Info(context.TODO(), "Request isAuth", reqN)
+	defer func() { log.Info(context.TODO(), "Returning isAuth ", reqN, "ret!!") }()
 	at.cond.L.Lock()
+	log.Info(context.TODO(), "Request isAuth is IN!", reqN)
 	defer at.cond.L.Unlock()
 
 	for at.cancelFunc != nil {

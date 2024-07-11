@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -491,8 +492,15 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 	return uiLayoutInfo, nil
 }
 
+var reqs atomic.Uint32
+
 // IsAuthenticated evaluates the provided authenticationData and returns the authentication status for the user.
 func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access, data string, err error) {
+	reqN := reqs.Add(1)
+	fmt.Println("Request isAuth", reqN)
+	defer func() {
+		fmt.Println("Returning isAuth", reqN, "ret:", access, data, err)
+	}()
 	sessionInfo, err := b.sessionInfo(sessionID)
 	if err != nil {
 		return "", "", err

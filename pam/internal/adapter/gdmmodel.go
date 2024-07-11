@@ -140,6 +140,7 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 			}))
 
 		case *gdm.EventData_ReselectAuthMode:
+			log.Infof(context.TODO(), "reselect mode! #%v", res)
 			commands = append(commands, sendEvent(reselectAuthMode{}))
 
 		case *gdm.EventData_IsAuthenticatedCancelled:
