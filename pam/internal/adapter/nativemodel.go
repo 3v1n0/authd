@@ -68,6 +68,12 @@ var errNotAnInteger = errors.New("parsed value is not an integer")
 func (m *nativeModel) Init() tea.Cmd {
 	m.currentStage = proto.Stage(-1)
 
+	list, err2 := m.pamMTx.GetEnvList()
+	log.Debug(context.TODO(), "Native model, pam envs", list, err2)
+
+	user, err2 := m.pamMTx.GetItem(pam.User)
+	log.Debug(context.TODO(), "Native model, user ", user, err2)
+
 	var err error
 	m.serviceName, err = m.pamMTx.GetItem(pam.Service)
 	if err != nil {

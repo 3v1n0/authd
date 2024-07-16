@@ -43,6 +43,8 @@ type UIModel struct {
 	PamMTx pam.ModuleTransaction
 	// Client is the [authd.PAMClient] handle used to communicate with authd.
 	Client authd.PAMClient
+	// NssClient is the [authd.NSSClient] handle used to communicate with authd.
+	NssClient authd.NSSClient
 	// PamClientType is the kind of the PAM client we're handling.
 	ClientType PamClientType
 	// SessionMode is the mode of the session invoked by the module.
@@ -175,7 +177,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Got user and brokers? Time to auto or manually select.
-		return m, AutoSelectForUser(m.Client, m.username())
+		return m, AutoSelectForUser(m.Client, m.NssClient, m.username())
 
 	case BrokerSelected:
 		log.Debugf(context.TODO(), "%#v", msg)

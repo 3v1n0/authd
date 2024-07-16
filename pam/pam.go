@@ -237,7 +237,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 	if mode == authd.SessionMode_PASSWD && flags&pam.PrelimCheck != 0 {
 		log.Debug(context.TODO(), "ChangeAuthTok, preliminary check")
-		c, closeConn, err := newClient(parsedArgs)
+		c, _, closeConn, err := newClient(parsedArgs)
 		if err != nil {
 			log.Debugf(context.TODO(), "%s", err)
 			return fmt.Errorf("%w: %w", pam.ErrTryAgain, err)
@@ -297,7 +297,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 		teaOpts = append(teaOpts, modeOpts...)
 	}
 
-	client, closeConn, err := newClient(parsedArgs)
+	client, nssClient, closeConn, err := newClient(parsedArgs)
 	if err != nil {
 		log.Debug(context.TODO(), err)
 		if err := showPamMessage(mTx, pam.ErrorMsg, err.Error()); err != nil {
@@ -310,6 +310,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 	appState := adapter.UIModel{
 		PamMTx:      mTx,
 		Client:      client,
+		NssClient:   nssClient,
 		ClientType:  pamClientType,
 		SessionMode: mode,
 	}
@@ -410,7 +411,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 		return pam.ErrIgnore
 	}
 
-	client, closeConn, err := newClient(parsedArgs)
+	client, _, closeConn, err := newClient(parsedArgs)
 	if err != nil {
 		log.Debugf(context.TODO(), "%s", err)
 		return pam.ErrAuthinfoUnavail
@@ -434,12 +435,12 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 }
 
 // newClient returns a new GRPC client ready to emit requests.
-func newClient(args map[string]string) (client authd.PAMClient, close func(), err error) {
+func newClient(args map[string]string) (client authd.PAMClient, nssClient authd.NSSClient, close func(), err error) {
 	conn, err := grpc.NewClient("unix://"+getSocketPath(args), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not connect to authd: %v", err)
+		return nil, nil, nil, fmt.Errorf("could not connect to authd: %v", err)
 	}
-	return authd.NewPAMClient(conn), func() { conn.Close() }, nil
+	return authd.NewPAMClient(conn), authd.NewNSSClient(conn), func() { conn.Close() }, nil
 }
 
 // getSocketPath returns the socket path to connect to which can be overridden manually.

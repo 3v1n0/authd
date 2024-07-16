@@ -178,8 +178,17 @@ func (m *brokerSelectionModel) Blur() {
 }
 
 // AutoSelectForUser requests if any previous broker was used by this user to automatically selects it.
-func AutoSelectForUser(client authd.PAMClient, username string) tea.Cmd {
+func AutoSelectForUser(client authd.PAMClient, nssClient authd.NSSClient, username string) tea.Cmd {
 	return func() tea.Msg {
+		// _, err := nssClient.GetPasswdByName(context.TODO(), &authd.GetPasswdByNameRequest{
+		// 	Name:           username,
+		// 	ShouldPreCheck: true,
+		// })
+		// if err != nil {
+		// 	log.Infof(context.TODO(), "can't get user info for %q: %v", username, err)
+		// 	return selectBroker(brokers.LocalBrokerName)()
+		// }
+
 		r, err := client.GetPreviousBroker(context.TODO(),
 			&authd.GPBRequest{
 				Username: username,
