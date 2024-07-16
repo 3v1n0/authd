@@ -369,6 +369,51 @@ func TestStartAndEndSession(t *testing.T) {
 	require.Error(t, err, "Second EndSession should have removed the broker for the session, but did not")
 }
 
+func TestUsePreCheck(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		// exists bool
+		user              string
+		configuredBrokers []string
+
+		wantErr bool
+	}{
+		"Successfully finds preset user": {
+			user: "user-pre-check",
+		},
+
+		"Error when user is empty": {wantErr: true},
+		"Error when no valid broker is configured": {
+			configuredBrokers: []string{"invalid"},
+			wantErr:           true,
+		},
+		"Error when user does not exist": {
+			user:    "user-integration-not-pre-check",
+			wantErr: true,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			brokersConfPath := t.TempDir()
+			newBrokerForTests(t, brokersConfPath, "")
+			m, err := brokers.NewManager(context.Background(), brokersConfPath, tc.configuredBrokers)
+			require.NoError(t, err, "Setup: could not create manager")
+
+			err = m.UserPreCheck(context.TODO(), tc.user)
+			if tc.wantErr {
+				require.ErrorContains(t, err, fmt.Sprintf(`user "%s`, tc.user),
+					"UserPreCheck should return an error")
+				return
+			}
+
+			require.NoError(t, err, "UserPreCheck should not fail")
+		})
+	}
+}
+
 func TestMain(m *testing.M) {
 	// Start system bus mock.
 	cleanup, err := testutils.StartSystemBusMock()

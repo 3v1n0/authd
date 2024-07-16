@@ -182,6 +182,25 @@ func (m *Manager) EndSession(sessionID string) error {
 	return nil
 }
 
+// UserPreCheck checks if the provided username is handled by at least one broker.
+func (m *Manager) UserPreCheck(ctx context.Context, username string) error {
+	// Check if the user exists in at least one broker.
+	for id, b := range m.brokers {
+		// The local broker is not a real broker, so we skip it.
+		if id == LocalBrokerName {
+			continue
+		}
+
+		if err := b.UserPreCheck(ctx, username); err != nil {
+			continue
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("user %q is not known by any broker", username)
+}
+
 // brokerFromID returns the broker matching this brokerID.
 func (m *Manager) brokerFromID(id string) (broker *Broker, err error) {
 	broker, exists := m.brokers[id]

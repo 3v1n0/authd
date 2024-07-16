@@ -4,7 +4,6 @@ package nss
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/ubuntu/authd"
 	"github.com/ubuntu/authd/internal/brokers"
@@ -50,7 +49,7 @@ func (s Service) GetPasswdByName(ctx context.Context, req *authd.GetPasswdByName
 	}
 
 	// If the user is not found in the local cache, we check if it exists in at least one broker.
-	if err := s.userPreCheck(ctx, req.GetName()); err != nil {
+	if err := s.brokerManager.UserPreCheck(ctx, req.GetName()); err != nil {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
@@ -154,22 +153,6 @@ func (s Service) GetShadowEntries(ctx context.Context, req *authd.Empty) (*authd
 	}
 
 	return &r, nil
-}
-
-// userPreCheck checks if the user exists in at least one broker.
-func (s Service) userPreCheck(ctx context.Context, username string) error {
-	// Check if the user exists in at least one broker.
-	for _, b := range s.brokerManager.AvailableBrokers() {
-		// The local broker is not a real broker, so we skip it.
-		if b.ID == brokers.LocalBrokerName {
-			continue
-		}
-		if err := b.UserPreCheck(ctx, username); err != nil {
-			continue
-		}
-		return nil
-	}
-	return fmt.Errorf("user %q is not known by any broker", username)
 }
 
 // nssPasswdFromUsersPasswd returns a PasswdEntry from users.UserEntry.
