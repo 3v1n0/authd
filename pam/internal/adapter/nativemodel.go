@@ -179,6 +179,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			return m, maybeSendPamError(err)
 		}
 		return m.startAsyncOp(func() tea.Cmd {
+			log.Debug(context.TODO(), "Pre checking user...1")
 			return m.maybePreCheckUser(user, sendEvent(nativeBrokerSelection{}))
 		})
 
@@ -406,6 +407,7 @@ func (m nativeModel) userSelection() tea.Cmd {
 		return maybeSendPamError(err)
 	}
 
+	log.Debug(context.TODO(), "Pre checking user...2")
 	return m.maybePreCheckUser(user, sendEvent(userSelected{user}))
 }
 
@@ -800,6 +802,7 @@ func (m nativeModel) goBackCommand() tea.Cmd {
 				sendEvent(nativeBrokerSelection{}),
 			)
 		}
+		// FIXME: Do not allow going back to user selection if user was pre-selected!
 		return tea.Sequence(
 			sendEvent(ChangeStage{proto.Stage_userSelection}),
 			sendEvent(nativeUserSelection{}),
