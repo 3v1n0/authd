@@ -52,6 +52,7 @@ func TestNativeAuthenticate(t *testing.T) {
 		"Authenticate user and accept password reset":                          {tape: "optional_password_reset_accept"},
 		"Authenticate user switching auth mode":                                {tape: "switch_auth_mode"},
 		"Authenticate user switching username":                                 {tape: "switch_username"},
+		"Authenticate user switching preset username":                          {tape: "switch_preset_username", pamUser: "user-integration-pam-preset"},
 		"Authenticate user switching to local broker":                          {tape: "switch_local_broker"},
 		"Authenticate user and add it to local group":                          {tape: "local_group"},
 		"Authenticate user on ssh service":                                     {tape: "simple_ssh_auth", pamUser: "user-integration-pre-check-ssh-service", pamServiceName: "sshd"},
