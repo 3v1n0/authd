@@ -308,6 +308,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		}
 
 	case isAuthenticatedCancelled:
+		m.uiLayout = nil
 		return m, sendEvent(nativeGoBack{})
 	}
 
@@ -841,9 +842,6 @@ func (m nativeModel) goBackCommand() (nativeModel, tea.Cmd) {
 	if m.currentStage >= proto.Stage_authModeSelection {
 		m.selectedAuthMode = ""
 	}
-	if m.currentStage >= proto.Stage_challenge {
-		m.uiLayout = nil
-	}
 	if m.currentStage == proto.Stage_authModeSelection {
 		m.authModes = nil
 	}
@@ -870,7 +868,17 @@ func (m nativeModel) canGoBack() bool {
 	if m.hasUserSelection {
 		return m.currentStage > proto.Stage_userSelection
 	}
-	return m.currentStage > proto.Stage_brokerSelection
+	return m.previousStage() > proto.Stage_userSelection
+}
+
+func (m nativeModel) previousStage() pam_proto.Stage {
+	if m.currentStage > proto.Stage_authModeSelection && len(m.authModes) > 1 {
+		return proto.Stage_authModeSelection
+	}
+	if m.currentStage > proto.Stage_brokerSelection && len(m.availableBrokers) > 1 {
+		return proto.Stage_brokerSelection
+	}
+	return proto.Stage_userSelection
 }
 
 func sendAuthWaitCommand() tea.Cmd {
