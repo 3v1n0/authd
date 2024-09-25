@@ -139,6 +139,17 @@ func (m *gdmModel) pollGdm() tea.Cmd {
 				break
 			}
 			m.waitingAuth = false
+			// return tea.Sequence(
+			// 	sendEvent(gdmIsAuthenticatedResultReceived{
+			// 		access: brokers.AuthDenied,
+			// 		msg:    fmt.Sprintf(`{"message": %s}`, `"AUTH MSG: FAKE failure in authenticating"`),
+			// 	}),
+			// 	// tea.Tick(5*time.Second, func(time.Time) tea.Msg { return nil }),
+			// 	sendEvent(pamError{status: pam.ErrAuth, msg: "FAKE failure in authenticating"}),
+			// )
+			// return sendEvent(pamError{
+			// 	status: pam.ErrSystem, msg: "THIS IS A FAKE FAILUREEEEEEEEEEEEE",
+			// })
 			if res.IsAuthenticatedRequested == nil || res.IsAuthenticatedRequested.AuthenticationData == nil {
 				return sendEvent(pamError{
 					status: pam.ErrSystem, msg: "missing auth requested",

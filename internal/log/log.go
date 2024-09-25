@@ -38,6 +38,7 @@ var (
 
 	// SetLevel sets the standard logger level.
 	SetLevel = func(level Level) (oldLevel Level) {
+		slog.Debug("Setting level", level)
 		logLevelMu.Lock()
 		defer func() {
 			logLevelMu.Unlock()
@@ -51,6 +52,7 @@ var (
 
 	// SetOutput sets the log output.
 	SetOutput = func(out io.Writer) {
+		slog.Debug("Setting output", out)
 		hasCustomOutput.Store(&out)
 		slog.SetDefault(slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{
 			Level: GetLevel(),

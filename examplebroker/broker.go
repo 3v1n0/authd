@@ -89,9 +89,9 @@ type userInfoBroker struct {
 var (
 	exampleUsersMu = sync.RWMutex{}
 	exampleUsers   = map[string]userInfoBroker{
-		"user1":                 {Password: "goodpass"},
-		"user2":                 {Password: "goodpass"},
-		"user3":                 {Password: "goodpass"},
+		"user1":                 {Password: "goodpass1"},
+		"user2":                 {Password: "goodpass2"},
+		"user3":                 {Password: "goodpass3"},
 		"user-mfa":              {Password: "goodpass"},
 		"user-mfa-with-reset":   {Password: "goodpass"},
 		"user-needs-reset":      {Password: "goodpass"},
