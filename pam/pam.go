@@ -150,7 +150,7 @@ func initLogging(args map[string]string, flags pam.Flags) (func(), error) {
 	}
 
 	disableTerminalLogging := func() {
-		if log.IsLevelEnabled(log.DebugLevel) {
+		if log.IsLevelEnabled(context.TODO(), log.DebugLevel) {
 			return
 		}
 		if term.IsTerminal(int(os.Stdin.Fd())) {
