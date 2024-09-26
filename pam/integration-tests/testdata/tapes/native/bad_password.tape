@@ -1,6 +1,3 @@
-Output bad_password.txt
-Output bad_password.gif # If we don't specify a .gif output, it will create a default out.gif file.
-
 # Configuration header to standardize the output.
 # Does not work with the "Source" command.
 Set Width 800
