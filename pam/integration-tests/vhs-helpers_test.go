@@ -2,10 +2,14 @@ package main_test
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -20,6 +24,15 @@ type tapeData struct {
 	Outputs  []string
 	Settings map[string]any
 }
+
+var (
+	defaultSleepValues = map[string]time.Duration{
+		"AUTHD_SLEEP_DEFAULT": 300 * time.Millisecond,
+		"AUTHD_SLEEP_LONG":    1 * time.Second,
+	}
+
+	vhsSleepRegex = regexp.MustCompile(`(?m)\$\{(AUTHD_SLEEP_[A-Z]+)\}(\s?([*/]+)\s?([\d.]+))?.*$`)
+)
 
 func newTapeData(tapeName string, settings ...tapeSetting) tapeData {
 	m := map[string]any{
@@ -97,7 +110,9 @@ func prepareTape(t *testing.T, td tapeData, tapesDir, outputPath string) string 
 	tapeData, err := os.ReadFile(filepath.Join(
 		currentDir, "testdata", "tapes", tapesDir, td.Name+".tape"))
 	require.NoError(t, err, "Setup: read tape file %s", td.Name)
-	tapeData = []byte(fmt.Sprintf("%s\n%s", td, tapeData))
+
+	tapeString := sanitizeSleepTime(t, string(tapeData))
+	tapeData = []byte(fmt.Sprintf("%s\n%s", td, tapeString))
 
 	tapePath := filepath.Join(outputPath, td.Name)
 	err = os.WriteFile(tapePath, tapeData, 0600)
@@ -110,4 +125,35 @@ func prepareTape(t *testing.T, td tapeData, tapesDir, outputPath string) string 
 	t.Cleanup(func() { saveArtifactsForDebug(t, artifacts) })
 
 	return tapePath
+}
+
+func sanitizeSleepTime(t *testing.T, tapeString string) string {
+	t.Helper()
+
+	for _, m := range vhsSleepRegex.FindAllStringSubmatch(tapeString, -1) {
+		fullMatch, sleepKind, op, arg := m[0], m[1], m[3], m[4]
+		sleepValue, ok := defaultSleepValues[sleepKind]
+		require.True(t, ok, "Setup: unknown sleep kind: %q", sleepKind)
+		actualSleep := sleepValue.Milliseconds()
+
+		// We don't need to support math that is complex enough to use proper parsers as go.ast
+		if arg != "" {
+			parsedArg, err := strconv.ParseFloat(arg, 32)
+			require.NoError(t, err, "Setup: Cannot parse expression %q: %q is not a float", fullMatch, arg)
+
+			switch op {
+			case "*":
+				actualSleep = int64(math.Round(float64(actualSleep) * parsedArg))
+			case "/":
+				require.NotZero(t, parsedArg, "Setup: Division by zero")
+				actualSleep = int64(math.Round(float64(actualSleep) / parsedArg))
+			default:
+				require.Empty(t, op, "Setup: Unhandled operator %q", op)
+			}
+		}
+
+		replaceRegex := regexp.MustCompile(fmt.Sprintf(`(?m)%s$`, regexp.QuoteMeta(fullMatch)))
+		tapeString = replaceRegex.ReplaceAllString(tapeString, fmt.Sprintf("%dms", actualSleep))
+	}
+	return tapeString
 }
