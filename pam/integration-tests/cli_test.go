@@ -25,14 +25,12 @@ func TestCLIAuthenticate(t *testing.T) {
 	// If vhs is installed with "go install", we need to add GOPATH to PATH.
 	pathEnv := prependBinToPath(t)
 
-	currentDir, err := os.Getwd()
-	require.NoError(t, err, "Setup: Could not get current directory for the tests")
-
 	clientPath := t.TempDir()
 	cliEnv := prepareClientTest(t, clientPath)
 
 	tests := map[string]struct {
-		tape string
+		tape         string
+		tapeSettings []tapeSetting
 
 		currentUserNotRoot bool
 		termEnv            string
@@ -44,10 +42,10 @@ func TestCLIAuthenticate(t *testing.T) {
 		"Authenticate user with mfa":                                           {tape: "mfa_auth"},
 		"Authenticate user with form mode with button":                         {tape: "form_with_button"},
 		"Authenticate user with qr code":                                       {tape: "qr_code", pamUser: "user-integration-qr-code"},
-		"Authenticate user with qr code in a TTY":                              {tape: "qr_code", pamUser: "user-integration-qr-code-tty", termEnv: "linux"},
-		"Authenticate user with qr code in a TTY session":                      {tape: "qr_code", pamUser: "user-integration-qr-code-tty-session", termEnv: "xterm-256color", sessionEnv: "tty"},
-		"Authenticate user with qr code in screen":                             {tape: "qr_code", pamUser: "user-integration-qr-code-screen", termEnv: "screen"},
-		"Authenticate user with qr code after many regenerations":              {tape: "qr_code_quick_regenerate"},
+		"Authenticate user with qr code in a TTY":                              {tape: "qr_code", tapeSettings: []tapeSetting{{"Height", 650}}, pamUser: "user-integration-qr-code-tty", termEnv: "linux"},
+		"Authenticate user with qr code in a TTY session":                      {tape: "qr_code", tapeSettings: []tapeSetting{{"Height", 650}}, pamUser: "user-integration-qr-code-tty-session", termEnv: "xterm-256color", sessionEnv: "tty"},
+		"Authenticate user with qr code in screen":                             {tape: "qr_code", tapeSettings: []tapeSetting{{"Height", 650}}, pamUser: "user-integration-qr-code-screen", termEnv: "screen"},
+		"Authenticate user with qr code after many regenerations":              {tape: "qr_code_quick_regenerate", tapeSettings: []tapeSetting{{"Height", 650}}},
 		"Authenticate user and reset password while enforcing policy":          {tape: "mandatory_password_reset"},
 		"Authenticate user with mfa and reset password while enforcing policy": {tape: "mfa_reset_pwquality_auth"},
 		"Authenticate user and offer password reset":                           {tape: "optional_password_reset_skip"},
@@ -80,21 +78,17 @@ func TestCLIAuthenticate(t *testing.T) {
 			require.NoError(t, err, "Setup: symlinking the pam client")
 
 			cliLog := prepareCLILogging(t)
-			t.Cleanup(func() {
-				saveArtifactsForDebug(t, []string{
-					filepath.Join(outDir, tc.tape+".gif"),
-					filepath.Join(outDir, tc.tape+".txt"),
-					cliLog,
-				})
-			})
+			t.Cleanup(func() { saveArtifactsForDebug(t, []string{cliLog}) })
 
 			gpasswdOutput := filepath.Join(outDir, "gpasswd.output")
 			groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
 			socketPath := runAuthd(t, gpasswdOutput, groupsFile, !tc.currentUserNotRoot)
 
 			const socketPathEnv = "AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK"
+			td := newTapeData(tc.tape, tc.tapeSettings...)
+			tapePath := prepareTape(t, td, "cli", outDir)
 			// #nosec:G204 - we control the command arguments in tests
-			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", "cli", tc.tape+".tape"))
+			cmd := exec.Command("env", "vhs", tapePath)
 			cmd.Env = append(testutils.AppendCovEnv(cmd.Env), cliEnv...)
 			cmd.Env = append(cmd.Env,
 				pathEnv,
@@ -115,18 +109,7 @@ func TestCLIAuthenticate(t *testing.T) {
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, "Failed to run tape %q: %v: %s", tc.tape, err, out)
 
-			tmp, err := os.ReadFile(filepath.Join(outDir, tc.tape+".txt"))
-			require.NoError(t, err, "Could not read output file of tape %q", tc.tape)
-
-			// We need to format the output a little bit, since the txt file can have some noise at the beginning.
-			got := string(tmp)
-			splitTmp := strings.Split(got, "\n")
-			for i, str := range splitTmp {
-				if strings.Contains(str, " ./pam_authd login socket=$") {
-					got = strings.Join(splitTmp[i:], "\n")
-					break
-				}
-			}
+			got := td.ExpectedOutput(t, outDir)
 			got = permissionstestutils.IdempotentPermissionError(got)
 			want := testutils.LoadWithUpdateFromGolden(t, got)
 			require.Equal(t, want, got, "Output of tape %q does not match golden file", tc.tape)
@@ -154,11 +137,9 @@ func TestCLIChangeAuthTok(t *testing.T) {
 	// If vhs is installed with "go install", we need to add GOPATH to PATH.
 	pathEnv := prependBinToPath(t)
 
-	currentDir, err := os.Getwd()
-	require.NoError(t, err, "Setup: Could not get current directory for the tests")
-
 	tests := map[string]struct {
-		tape string
+		tape         string
+		tapeSettings []tapeSetting
 
 		currentUserNotRoot bool
 	}{
@@ -187,16 +168,12 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			}
 
 			cliLog := prepareCLILogging(t)
-			t.Cleanup(func() {
-				saveArtifactsForDebug(t, []string{
-					filepath.Join(outDir, tc.tape+".gif"),
-					filepath.Join(outDir, tc.tape+".txt"),
-					cliLog,
-				})
-			})
+			t.Cleanup(func() { saveArtifactsForDebug(t, []string{cliLog}) })
 
+			td := newTapeData(tc.tape, tc.tapeSettings...)
+			tapePath := prepareTape(t, td, "cli", outDir)
 			// #nosec:G204 - we control the command arguments in tests
-			cmd := exec.Command("env", "vhs", filepath.Join(currentDir, "testdata", "tapes", "cli", tc.tape+".tape"))
+			cmd := exec.Command("env", "vhs", tapePath)
 			cmd.Env = append(testutils.AppendCovEnv(cmd.Env), cliEnv...)
 			cmd.Env = append(cmd.Env, pathEnv,
 				fmt.Sprintf("%s=%s", socketPathEnv, socketPath),
@@ -207,18 +184,7 @@ func TestCLIChangeAuthTok(t *testing.T) {
 			out, err := cmd.CombinedOutput()
 			require.NoError(t, err, "Failed to run tape %q: %v: %s", tc.tape, err, out)
 
-			tmp, err := os.ReadFile(filepath.Join(outDir, tc.tape+".txt"))
-			require.NoError(t, err, "Could not read output file of tape %q", tc.tape)
-
-			// We need to format the output a little bit, since the txt file can have some noise at the beginning.
-			got := string(tmp)
-			splitTmp := strings.Split(got, "\n")
-			for i, str := range splitTmp {
-				if strings.Contains(str, " ./pam_authd passwd socket=$") {
-					got = strings.Join(splitTmp[i:], "\n")
-					break
-				}
-			}
+			got := td.ExpectedOutput(t, outDir)
 			got = permissionstestutils.IdempotentPermissionError(got)
 			want := testutils.LoadWithUpdateFromGolden(t, got)
 			require.Equal(t, want, got, "Output of tape %q does not match golden file", tc.tape)
