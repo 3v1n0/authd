@@ -99,6 +99,10 @@ paths:
 	opts.env = append(opts.env, os.Environ()...)
 	cmd.Env = AppendCovEnv(opts.env)
 
+	if IsAsan() {
+		cmd.Env = append(cmd.Env, "ASAN_OPTIONS=detect_leaks=0")
+	}
+
 	// This is the function that is called by CommandContext when the context is cancelled.
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(os.Signal(syscall.SIGTERM))
@@ -149,6 +153,9 @@ func BuildDaemon(extraArgs ...string) (execPath string, cleanup func(), err erro
 	}
 	if IsRace() {
 		cmd.Args = append(cmd.Args, "-race")
+	}
+	if IsAsan() {
+		cmd.Args = append(cmd.Args, "-asan")
 	}
 	cmd.Args = append(cmd.Args, extraArgs...)
 	cmd.Args = append(cmd.Args, "-o", execPath, "./cmd/authd")
