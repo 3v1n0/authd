@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/internal/testutils"
 	localgroupstestutils "github.com/ubuntu/authd/internal/users/localgroups/testutils"
-	"github.com/ubuntu/authd/pam/internal/pam_test"
 )
 
 var daemonPath string
@@ -262,7 +261,7 @@ func buildPAMTestClient(execPath string) (cleanup func(), err error) {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
-	if pam_test.IsAddressSanitizerActive() {
+	if testutils.IsAsan() {
 		// -asan is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-asan")
 	}
@@ -283,7 +282,7 @@ func buildPAMClient(t *testing.T) string {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
-	if pam_test.IsAddressSanitizerActive() {
+	if testutils.IsAsan() {
 		// -asan is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-asan")
 	}
