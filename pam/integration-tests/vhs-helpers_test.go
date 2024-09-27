@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,9 @@ var (
 	}
 
 	vhsSleepRegex = regexp.MustCompile(`(?m)\$\{?(AUTHD_SLEEP_[A-Z]+)\}?(\s?([*/]+)\s?([\d.]+))?.*$`)
+
+	sleepMultiplier     float64
+	sleepMultiplierOnce sync.Once
 )
 
 func newTapeData(tapeName string, settings ...tapeSetting) tapeData {
@@ -128,6 +132,44 @@ func prepareTape(t *testing.T, td tapeData, tapesDir, outputPath string) string 
 	return tapePath
 }
 
+/*
+--- FAIL: TestCLIAuthenticate/Authenticate_user_and_offer_password_reset (39.04s)
+    --- FAIL: TestCLIAuthenticate/Deny_authentication_if_user_does_not_exist (15.62s)
+    --- FAIL: TestCLIAuthenticate/Authenticate_user_with_qr_code (69.69s)
+    --- FAIL: TestCLIAuthenticate/Authenticate_user_with_qr_code_in_screen (70.04s)
+    --- FAIL: TestCLIAuthenticate/Authenticate_user_with_qr_code_in_a_TTY_session (68.47s)
+    --- FAIL: TestCLIAuthenticate/Authenticate_user_with_qr_code_after_many_regenerations (100.60s)
+    --- FAIL: TestCLIAuthenticate/Authenticate_user_with_qr_code_in_a_TTY (68.63s)
+    --- FAIL: TestCLIAuthenticate/Authenticate_user_with_mfa (91.49s)
+FAIL
+
+*/
+
+// func testSleepMultiplier() float64 {
+// 	// sleepMultiplierOnce.Do(func() {
+// 	// 	sleepMultiplier = 1
+// 	// 	v := os.Getenv("AUTHD_PAM_TESTS_SLEEP_MULTIPLIER")
+// 	// 	if v == "" {
+// 	// 		return
+// 	// 	}
+// 	// 	var err error
+// 	// 	sleepMultiplier, err = strconv.ParseFloat(v, 64)
+// 	// 	if err != nil {
+// 	// 		panic(err)
+// 	// 	}
+// 	// })
+
+// 	if pam_test.IsAddressSanitizerActive() {
+// 		return testutils.SleepMultiplier() * 1.5
+// 	}
+
+// 	// if testutils.IsRace() {
+// 	// 	return testutils.SleepMultiplier() * 4
+// 	// }
+
+// 	return testutils.SleepMultiplier()
+// }
+
 func sanitizeSleepTime(t *testing.T, tapeString string) string {
 	t.Helper()
 
@@ -156,5 +198,6 @@ func sanitizeSleepTime(t *testing.T, tapeString string) string {
 		replaceRegex := regexp.MustCompile(fmt.Sprintf(`(?m)%s$`, regexp.QuoteMeta(fullMatch)))
 		tapeString = replaceRegex.ReplaceAllString(tapeString, fmt.Sprintf("%dms", actualSleep))
 	}
+	// fmt.Println(tapeString)
 	return tapeString
 }
