@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"runtime/debug"
@@ -42,7 +43,9 @@ func haveBuildFlag(flag string) bool {
 	}
 
 	flag = "-" + flag
+	fmt.Println("BuidlFlags", b.Settings)
 	for _, s := range b.Settings {
+		fmt.Println("Key", s.Key)
 		if s.Key != flag {
 			continue
 		}

@@ -232,7 +232,9 @@ jobs:
           GO_TESTS_TIMEOUT: 30m
         run: |
           # Use `-dwarflocationlists` to give ASAN a better time to unwind the stack trace
-          go test -C ./pam/internal -asan -gcflags=all="-N -l" -timeout ${GO_TESTS_TIMEOUT} -test.v ./...
+          go test -C ./pam/internal -asan -gcflags=all="-N -l" -c
+          pushd 
+          -timeout ${GO_TESTS_TIMEOUT} -v ./...
 
           pushd ./pam/integration-tests
           go test -asan -gcflags=all="-N -l" -timeout ${GO_TESTS_TIMEOUT} -c

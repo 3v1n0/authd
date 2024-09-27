@@ -54,6 +54,7 @@ func buildCPAMModule(t *testing.T, sources []string, pkgConfigDeps []string, cFl
 	if testutils.IsAsan() {
 		cmd.Args = append(cmd.Args, "-fsanitize=address,undefined")
 	}
+	// FIXME: We can't use the thread sanitizer in the library or we'll get an EOM error
 	// if testutils.IsRace() {
 	// 	cmd.Args = append(cmd.Args, "-fsanitize=thread")
 	// }

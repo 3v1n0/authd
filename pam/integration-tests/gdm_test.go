@@ -875,6 +875,7 @@ func buildPAMModule(t *testing.T) string {
 		// -cover is a "positional flag", so it needs to come right after the "build" command.
 		cmd.Args = append(cmd.Args, "-cover")
 	}
+	// FIXME: We can't use the thread sanitizer in the library or we'll get an EOM error
 	// if testutils.IsRace() {
 	// 	cmd.Args = append(cmd.Args, "-race")
 	// }
