@@ -5,8 +5,6 @@ Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
-Escape
-Backspace
 Type "user1"
 Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
