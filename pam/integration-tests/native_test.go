@@ -151,7 +151,28 @@ func TestNativeChangeAuthTok(t *testing.T) {
 
 	// If vhs is installed with "go install", we need to add GOPATH to PATH.
 	pathEnv := prependBinToPath(t)
+	/*
+			   --- FAIL: TestNativeChangeAuthTok (5.12s)
+			       --- FAIL: TestNativeChangeAuthTok/Exit_authd_if_local_broker_is_selected (11.79s)
+			       --- FAIL: TestNativeChangeAuthTok/Prevent_change_password_if_auth_fails (19.55s)
+			       --- FAIL: TestNativeChangeAuthTok/Prevent_change_password_if_user_does_not_exist (11.89s)
+			       --- FAIL: TestNativeChangeAuthTok/Exit_authd_if_user_sigints (12.95s)
+			       --- FAIL: TestNativeChangeAuthTok/Prevent_change_password_if_current_user_is_not_root_as_can't_authenticate (16.08s)
+			       --- FAIL: TestNativeChangeAuthTok/Retry_if_new_password_is_same_of_previous (30.56s)
+			       --- FAIL: TestNativeChangeAuthTok/Retry_if_password_confirmation_is_not_the_same (36.61s)
+			       --- FAIL: TestNativeChangeAuthTok/Retry_if_new_password_does_not_match_quality_criteria (39.41s)
+			       --- FAIL: TestNativeChangeAuthTok/Change_password_successfully_and_authenticate_with_new_one (40.58s)
+			       --- PASS: TestNativeChangeAuthTok/Retry_if_new_password_is_rejected_by_broker (66.59s)
+			       --- FAIL: TestNativeChangeAuthTok/Change_passwd_after_MFA_auth (64.86s)
 
+				   --- FAIL: TestNativeChangeAuthTok/Prevent_change_password_if_user_does_not_exist (13.13s)
+		    --- FAIL: TestNativeChangeAuthTok/Exit_authd_if_user_sigints (13.44s)
+		    --- PASS: TestNativeChangeAuthTok/Exit_authd_if_local_broker_is_selected (15.17s)
+		    --- FAIL: TestNativeChangeAuthTok/Prevent_change_password_if_current_user_is_not_root_as_can't_authenticate (16.06s)
+		    --- FAIL: TestNativeChangeAuthTok/Prevent_change_password_if_auth_fails (20.82s)
+
+
+	*/
 	tests := map[string]struct {
 		tape         string
 		tapeSettings []tapeSetting

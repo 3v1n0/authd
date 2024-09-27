@@ -58,10 +58,6 @@ Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG}
-Show
-
-Hide
 Sleep ${AUTHD_SLEEP_LONG} * 5
 Show
 
