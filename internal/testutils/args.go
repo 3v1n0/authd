@@ -1,20 +1,24 @@
 package testutils
 
 import (
+	"math"
 	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
-	isAsan        bool
-	isAsanOnce    sync.Once
-	isRace        bool
-	isRaceOnce    sync.Once
-	isVerbose     bool
-	isVerboseOnce sync.Once
+	isAsan              bool
+	isAsanOnce          sync.Once
+	isRace              bool
+	isRaceOnce          sync.Once
+	isVerbose           bool
+	isVerboseOnce       sync.Once
+	sleepMultiplier     float64
+	sleepMultiplierOnce sync.Once
 )
 
 // IsVerbose returns whether the tests are running in verbose mode.
@@ -62,4 +66,32 @@ func IsAsan() bool {
 func IsRace() bool {
 	isRaceOnce.Do(func() { isRace = haveBuildFlag("race") })
 	return isRace
+}
+
+// SleepMultiplier returns the sleep multiplier to be used in tests.
+func SleepMultiplier() float64 {
+	sleepMultiplierOnce.Do(func() {
+		sleepMultiplier = 1
+		if v := os.Getenv("AUTHD_TESTS_SLEEP_MULTIPLIER"); v != "" {
+			var err error
+			sleepMultiplier, err = strconv.ParseFloat(v, 64)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		if IsAsan() {
+			sleepMultiplier *= 1.5
+		}
+		if IsRace() {
+			sleepMultiplier *= 4
+		}
+	})
+
+	return sleepMultiplier
+}
+
+// SleepDuration returns the sleep duration taking the multiplier in account.
+func SleepDuration(in time.Duration) time.Duration {
+	return time.Duration(math.Round(float64(in) * SleepMultiplier()))
 }

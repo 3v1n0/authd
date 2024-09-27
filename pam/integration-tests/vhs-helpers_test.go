@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	permissionstestutils "github.com/ubuntu/authd/internal/services/permissions/testutils"
+	"github.com/ubuntu/authd/internal/testutils"
 )
 
 type tapeSetting struct {
@@ -154,7 +155,7 @@ func evaluateTapeVariables(t *testing.T, tapeString string) string {
 
 		replaceRegex := regexp.MustCompile(fmt.Sprintf(`(?m)%s$`, regexp.QuoteMeta(fullMatch)))
 		tapeString = replaceRegex.ReplaceAllString(tapeString,
-			fmt.Sprintf("%dms", sleep.Milliseconds()))
+			fmt.Sprintf("%dms", testutils.SleepDuration(sleep).Milliseconds()))
 	}
 
 	return tapeString
