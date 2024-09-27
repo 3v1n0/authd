@@ -78,6 +78,9 @@ func SleepMultiplier() float64 {
 			if err != nil {
 				panic(err)
 			}
+			if sleepMultiplier <= 0 {
+				panic("Negative or 0 sleep multiplier is not supported")
+			}
 		}
 
 		if IsAsan() {
