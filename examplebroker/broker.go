@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ubuntu/authd/internal/testutils"
 	"golang.org/x/exp/slices"
 )
 
@@ -556,6 +557,8 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		return AuthRetry, fmt.Sprintf(`{"message": "could not decode challenge: %v"}`, err), nil
 	}
 
+	defaultWaitDuration := testutils.SleepDuration(2 * time.Second)
+
 	// Note that the "wait" authentication can be cancelled and switch to another mode with a challenge.
 	// Take into account the cancellation.
 	switch sessionInfo.currentAuthMode {
@@ -586,7 +589,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Send notification to phone1 and wait on server signal to return if OK or not
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(defaultWaitDuration):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -598,7 +601,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// This one is failing remotely as an example
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(defaultWaitDuration):
 			return AuthDenied, `{"message": "Timeout reached"}`, nil
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
@@ -611,7 +614,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 
 		// simulate direct exchange with the FIDO device
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(defaultWaitDuration):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -622,7 +625,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 		}
 		// Simulate connexion with remote server to check that the correct code was entered
 		select {
-		case <-time.After(2 * time.Second):
+		case <-time.After(defaultWaitDuration):
 		case <-ctx.Done():
 			return AuthCancelled, "", nil
 		}
@@ -661,7 +664,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 			// we are simulating clicking on the url signal received by the broker
 			// this can be cancelled to resend a challenge
 			select {
-			case <-time.After(10 * time.Second):
+			case <-time.After(testutils.SleepDuration(10 * time.Second)):
 			case <-ctx.Done():
 				return AuthCancelled, "", nil
 			}

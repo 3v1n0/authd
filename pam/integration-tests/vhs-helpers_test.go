@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd/internal/testutils"
 )
 
 type tapeSetting struct {
@@ -134,7 +135,7 @@ func sanitizeSleepTime(t *testing.T, tapeString string) string {
 		fullMatch, sleepKind, op, arg := m[0], m[1], m[3], m[4]
 		sleepValue, ok := defaultSleepValues[sleepKind]
 		require.True(t, ok, "Setup: unknown sleep kind: %q", sleepKind)
-		actualSleep := sleepValue.Milliseconds()
+		actualSleep := testutils.SleepDuration(sleepValue).Milliseconds()
 
 		// We don't need to support math that is complex enough to use proper parsers as go.ast
 		if arg != "" {
