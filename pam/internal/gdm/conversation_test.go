@@ -10,7 +10,6 @@ import (
 	"github.com/msteinert/pam/v2"
 	"github.com/stretchr/testify/require"
 	authd "github.com/ubuntu/authd"
-	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 )
 
@@ -235,7 +234,7 @@ func TestDataConversationFunc(t *testing.T) {
 		"Error on invalid protocol": {
 			mayHitLeakSanitizer: true,
 			inBinReq: func() pam.BinaryConvRequester {
-				if testutils.IsAsan() {
+				if pam_test.IsAddressSanitizerActive() {
 					return nil
 				}
 				invalidData := allocateJSONProtoMessage()
@@ -249,7 +248,7 @@ func TestDataConversationFunc(t *testing.T) {
 		"Error on unexpected JSON": {
 			mayHitLeakSanitizer: true,
 			inBinReq: func() pam.BinaryConvRequester {
-				if testutils.IsAsan() {
+				if pam_test.IsAddressSanitizerActive() {
 					return nil
 				}
 				req, err := NewBinaryJSONProtoRequest([]byte("null"))
@@ -273,7 +272,7 @@ func TestDataConversationFunc(t *testing.T) {
 			t.Parallel()
 			t.Cleanup(pam_test.MaybeDoLeakCheck)
 
-			if testutils.IsAsan() && tc.mayHitLeakSanitizer {
+			if pam_test.IsAddressSanitizerActive() && tc.mayHitLeakSanitizer {
 				t.Skip("This test may cause false positive detection of leaks, so we ignore it")
 			}
 
