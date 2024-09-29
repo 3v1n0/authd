@@ -33,7 +33,7 @@ var (
 		"AUTHD_SLEEP_LONG":    1 * time.Second,
 	}
 
-	vhsSleepRegex = regexp.MustCompile(`(?m)\$\{?(AUTHD_SLEEP_[A-Z]+)\}?(\s?([*/]+)\s?([\d.]+))?.*$`)
+	vhsSleepRegex = regexp.MustCompile(`(?m)\$\{?(AUTHD_SLEEP_[A-Z_]+)\}?(\s?([*/]+)\s?([\d.]+))?.*$`)
 )
 
 func newTapeData(tapeName string, settings ...tapeSetting) tapeData {
