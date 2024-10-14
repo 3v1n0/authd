@@ -6,6 +6,8 @@ include /usr/share/rustc/architecture.mk
 # The package name for authd, used only locally to avoid repetitions
 AUTHD_GO_PACKAGE := $(shell grep-dctrl -s XS-Go-Import-Path -n - ./debian/control)
 
+AUTHD_GO_VERSION := $(shell grep-dctrl -s Build-Depends -n - ./debian/control | sed -n "s,.*\bgolang-\([0-9.]\+\)\b.*,\1,p")
+
 export GOFLAGS := -ldflags=-X=$(AUTHD_GO_PACKAGE)/internal/consts.Version=$(shell dpkg-parsechangelog -S Version) --mod=vendor -buildmode=pie
 
 export DEB_BUILD_MAINT_OPTIONS := optimize=-lto
