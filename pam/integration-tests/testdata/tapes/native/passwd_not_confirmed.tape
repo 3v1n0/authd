@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user-integration-wrong-confirmation"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show
@@ -33,9 +30,6 @@ Show
 
 Hide
 Type "badpass"
-Show
-
-Hide
 Enter
 Wait /Enter your new password:/
 Show
@@ -48,9 +42,6 @@ Show
 
 Hide
 Type "authd2404"
-Show
-
-Hide
 Enter
 Wait
 Show

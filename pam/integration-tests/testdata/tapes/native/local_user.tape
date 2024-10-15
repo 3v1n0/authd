@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "root"
-Show
-
-Hide
 Enter
 Wait
 Show

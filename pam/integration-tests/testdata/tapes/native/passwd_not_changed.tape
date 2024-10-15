@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user-integration-same-new-password"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show
@@ -27,9 +24,6 @@ Show
 
 Hide
 Type "goodpass"
-Show
-
-Hide
 Enter
 Wait /Enter your new password:/
 Show
@@ -42,9 +36,6 @@ Show
 
 Hide
 Type "authd2404"
-Show
-
-Hide
 Enter
 Wait
 Show

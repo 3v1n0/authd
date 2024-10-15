@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user-integration-sigint"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show

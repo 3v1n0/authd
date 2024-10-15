@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user-local-broker"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show

@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user1"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show
@@ -33,9 +30,6 @@ Show
 
 Hide
 Type "authd2404"
-Show
-
-Hide
 Enter
 Wait
 Show
@@ -48,9 +42,6 @@ Show
 
 Hide
 Type "user1"
-Show
-
-Hide
 Enter
 Wait /Gimme your password:/
 Show

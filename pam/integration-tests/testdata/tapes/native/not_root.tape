@@ -4,9 +4,4 @@ Enter
 Wait
 Show
 
-Hide
-Enter
-Wait
-Show
-
 Sleep ${AUTHD_SLEEP_DEFAULT}

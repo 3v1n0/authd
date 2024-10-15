@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user-integration-invalid-new-password"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show
@@ -63,9 +60,6 @@ Show
 
 Hide
 Type "user-integration-invalid-new-password"
-Show
-
-Hide
 Enter
 Wait /Gimme your password:/
 Show

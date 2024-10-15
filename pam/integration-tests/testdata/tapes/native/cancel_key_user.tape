@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "r"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show

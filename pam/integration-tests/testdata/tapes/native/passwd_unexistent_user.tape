@@ -6,9 +6,6 @@ Show
 
 Hide
 Type "user-unexistent"
-Show
-
-Hide
 Enter
 Wait /Select broker:/
 Show

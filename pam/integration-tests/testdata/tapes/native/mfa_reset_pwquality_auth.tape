@@ -15,9 +15,6 @@ Show
 
 Hide
 Type "goodpass"
-Show
-
-Hide
 Enter
 Wait /Plug your fido device and press with your thumb:/
 Show
@@ -60,18 +57,12 @@ Show
 
 Hide
 Type "authd2404"
-Show
-
-Hide
 Enter
 Wait /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "authd2404"
-Show
-
-Hide
 Enter
 Wait
 Show

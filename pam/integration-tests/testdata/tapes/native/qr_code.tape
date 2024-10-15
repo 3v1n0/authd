@@ -55,9 +55,6 @@ Show
 Hide
 Type "1"
 Enter
-Show
-
-Hide
 Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_QRCODE_WAIT} * 1.2
 Show
 
