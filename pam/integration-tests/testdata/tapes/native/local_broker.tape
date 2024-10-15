@@ -1,13 +1,13 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Select broker:/
 Show
 
 Hide
 Type "1"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT} * 3
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

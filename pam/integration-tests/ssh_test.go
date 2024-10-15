@@ -137,7 +137,10 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		"Authenticate user switching to local broker": {
 			tape:                "switch_local_broker",
 			wantNotLoggedInUser: true,
-			tapeSettings:        []tapeSetting{{vhsHeight, 900}},
+			tapeSettings: []tapeSetting{
+				{vhsHeight, 900},
+				{vhsWaitPattern, "/Password:/"},
+			},
 		},
 		"Authenticate user and add it to local group": {
 			tape:            "local_group",
@@ -154,12 +157,16 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 			tape:                "local_user_preset",
 			user:                "root",
 			wantNotLoggedInUser: true,
-			tapeSettings:        []tapeSetting{{vhsHeight, 200}},
+			tapeSettings: []tapeSetting{
+				{vhsHeight, 200},
+				{vhsWaitPattern, "/Password:/"},
+			},
 		},
 
 		"Deny authentication if max attempts reached": {
 			tape:                "max_attempts",
 			wantNotLoggedInUser: true,
+			tapeSettings:        []tapeSetting{{vhsWaitPattern, "/Select broker:/"}},
 		},
 		"Deny authentication if user does not exist": {
 			tape:                "unexistent_user",
@@ -185,12 +192,14 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		"Exit authd if local broker is selected": {
 			tape:                "local_broker",
 			wantNotLoggedInUser: true,
+			tapeSettings:        []tapeSetting{{vhsWaitPattern, "/Password:/"}},
 		},
 		"Exit if user is not pre-checked on ssh service": {
 			tape:                "local_ssh",
 			user:                "user-integration-ssh-service",
 			pamServiceName:      "sshd",
 			wantNotLoggedInUser: true,
+			tapeSettings:        []tapeSetting{{vhsWaitPattern, "/Password:/"}},
 		},
 		"Exit authd if user sigints": {
 			tape:                "sigint",

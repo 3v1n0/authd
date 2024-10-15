@@ -1,65 +1,68 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Select broker:/
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} / 2
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /1 - Password authentication/
 Show
 
 Hide
 Type "1"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT} * 2
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}/2 /Plug your fido device and press with your thumb/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /1 - Password authentication/
 Show
 
 Hide
 Type "1"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}/2 /Plug your fido device and press with your thumb/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /2 - Send URL to /
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Unlock your phone \+33... or accept request on web interface/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} * 1.2
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}*1.2 /Plug your fido device and press with your thumb/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} * 1.2
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}*1.2
 Show
 
 Hide

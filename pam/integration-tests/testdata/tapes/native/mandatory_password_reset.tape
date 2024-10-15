@@ -1,31 +1,31 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Select broker:/
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} / 2
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "authd2404"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "authd2404"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

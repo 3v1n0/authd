@@ -1,7 +1,7 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Select broker:/
 Show
 
 Hide
@@ -10,73 +10,70 @@ Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "goodpass"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT} * 2
+Wait /Plug your fido device and press with your thumb:/
 Show
 
 # Wait for MFA auth to happen
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} * 1.2
+Wait /Select action:/
 Show
 
 Hide
 Type "1"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}*1.2 /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep ${AUTHD_SLEEP_LONG}
+Wait /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "password"
 Enter
-Sleep ${AUTHD_SLEEP_LONG}
+Wait /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep ${AUTHD_SLEEP_LONG}
+Wait /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "1234"
 Enter
-Sleep ${AUTHD_SLEEP_LONG}
+Wait /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "authd2404"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG} / 2
+Wait /Enter your new password \(3 days until mandatory\):/
 Show
 
 Hide
 Type "authd2404"
-Sleep ${AUTHD_SLEEP_LONG} / 2
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

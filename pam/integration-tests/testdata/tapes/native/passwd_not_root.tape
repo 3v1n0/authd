@@ -1,12 +1,12 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Username:$/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 3
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

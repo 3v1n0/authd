@@ -1,43 +1,44 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Select broker:/
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} / 2
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait+Screen /8 - Authentication code/
+Wait /Select authentication mode:/
 Show
 
 Hide
 Type "8"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select action:/
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} / 2
+Wait /Select action:/
 Show
 
 Hide
 Type "1"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your one time credential:/
 Show
 
 Hide
 Type "temporary pass00"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

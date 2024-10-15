@@ -1,23 +1,22 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Username:$/
 Show
 
 Hide
 Type "user-local-broker"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select broker:/
 Show
 
 Hide
 Type "1"
 Enter
-Sleep ${AUTHD_SLEEP_LONG}
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

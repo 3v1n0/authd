@@ -1,75 +1,74 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Username:$/
 Show
 
 Hide
 Type "user-integration-bad-password"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select broker:/
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait /Enter your new password:/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "1234"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "12345678"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "authd2404"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "123456789"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
-Show
-
-Hide
-Type "authd2404"
-Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your new password:/
 Show
 
 Hide
 Type "authd2404"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait /Enter your new password:/
+Show
+
+Hide
+Type "authd2404"
+Enter
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

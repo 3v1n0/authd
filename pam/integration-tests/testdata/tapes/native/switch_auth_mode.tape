@@ -1,127 +1,135 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Select broker:/
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} / 2
+Wait /Gimme your password:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT} * 3
+Wait /Select authentication mode:/
+Wait+Screen /2 - Send URL to /
 Show
 
 Hide
 Type "2"
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} / 3
+Wait /enter the code:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT} / 2
+Wait /Select authentication mode:/
+Wait+Screen /3 - Use your fido device foo/
 Show
 
 Hide
 Type "3"
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} / 3
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}/2 /Plug your fido device and press with your thumb:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /4 - Use your phone \+33\.\.\./
 Show
 
 Hide
 Type "4"
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} / 3
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}/2 /Unlock your phone \+33... or accept request on web interface:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /5 - Use your phone \+1\.\.\./
 Show
 
 Hide
 Type "5"
 Enter
-Sleep ${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} / 3
+Wait@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT}/2 /Unlock your phone \+1... or accept request on web interface:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /6 - Pin code/
 Show
 
 Hide
 Type "6"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your pin code:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /7 - Use a QR code/
 Show
 
 Hide
 Type "7"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select action:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /8 - Authentication code/
 Show
 
 Hide
 Type "8"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select action:/
 Show
 
 Hide
 Type "r"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
 Show
 
 Hide
 Type "invalid-selection"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
 Show
 
 Hide
 Type "-1"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Select authentication mode:/
+Wait+Screen /6 - Pin code/
 Show
 
 Hide
 Type "6"
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Enter your pin code:/
 Show
 
 Hide
 Type "4242"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}
