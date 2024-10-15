@@ -63,7 +63,7 @@ var (
 		authdSleepExampleBrokerQrcodeWait: 4 * time.Second,
 	}
 
-	vhsSleepRegex = regexp.MustCompile(`(?m)\$\{?(AUTHD_SLEEP_[A-Z_]+)\}?(\s?([*/]+)\s?([\d.]+))?.*$`)
+	vhsSleepRegex = regexp.MustCompile(`(?m)\$\{?(AUTHD_SLEEP_[A-Z_]+)\}?(\s?([*/]+)\s?([\d.]+))?(.*)$`)
 )
 
 func newTapeData(tapeName string, settings ...tapeSetting) tapeData {
@@ -253,7 +253,7 @@ func evaluateTapeVariables(t *testing.T, tapeString string, td tapeData) string 
 	}
 
 	for _, m := range vhsSleepRegex.FindAllStringSubmatch(tapeString, -1) {
-		fullMatch, sleepKind, op, arg := m[0], m[1], m[3], m[4]
+		fullMatch, sleepKind, op, arg, rest := m[0], m[1], m[3], m[4], m[5]
 		sleep, ok := (*sleepValues)[sleepKind]
 		require.True(t, ok, "Setup: unknown sleep kind: %q", sleepKind)
 
@@ -275,7 +275,7 @@ func evaluateTapeVariables(t *testing.T, tapeString string, td tapeData) string 
 
 		replaceRegex := regexp.MustCompile(fmt.Sprintf(`(?m)%s$`, regexp.QuoteMeta(fullMatch)))
 		tapeString = replaceRegex.ReplaceAllString(tapeString,
-			fmt.Sprintf("%dms", sleepDuration(sleep).Milliseconds()))
+			fmt.Sprintf("%dms%s", sleepDuration(sleep).Milliseconds(), rest))
 	}
 
 	if td.Command == "" {
