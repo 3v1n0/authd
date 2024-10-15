@@ -325,7 +325,7 @@ func (m nativeModel) checkForPromptReplyValidity(reply string) error {
 }
 
 func (m nativeModel) startStringConv(style pam.Style, format string, args ...any) (pam.StringConvResponse, error) {
-	if len(format) > 0 && IsSSHSession(m.pamMTx) {
+	if (style != pam.PromptEchoOff) && len(format) > 0 && IsSSHSession(m.pamMTx) {
 		// SSH shows the prompt message just after the user name, making our
 		// UI not to look as expected, so move it to the next line.
 		format = "\n" + format
