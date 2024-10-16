@@ -87,7 +87,7 @@ func (tt vhsTestType) tapesPath(t *testing.T) string {
 
 var (
 	defaultSleepValues = map[string]time.Duration{
-		authdSleepDefault: 300 * time.Millisecond,
+		authdSleepDefault: 100 * time.Millisecond,
 		authdSleepFinal:   60 * time.Millisecond,
 		authdSleepLong:    1 * time.Second,
 		// Keep these in sync with example broker default wait times
