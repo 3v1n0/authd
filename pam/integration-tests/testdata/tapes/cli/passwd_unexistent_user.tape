@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-unexistent"
+Wait /Username: user-unexistent$/
 Show
 
 Hide

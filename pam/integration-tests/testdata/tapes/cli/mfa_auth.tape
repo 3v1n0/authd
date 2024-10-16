@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-mfa"
+Wait /Username: user-mfa$/
 Show
 
 Hide

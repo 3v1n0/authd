@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-integration-remember-mode"
+Wait /Username: user-integration-remember-mode$/
 Show
 
 Hide
@@ -43,6 +44,7 @@ Show
 
 Hide
 Type "user-integration-remember-mode"
+Wait /Username: user-integration-remember-mode$/
 Show
 
 Hide

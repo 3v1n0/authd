@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-integration-qrcode-static-regenerate"
+Wait /Username: user-integration-qrcode-static-regenerate$/
 Show
 
 Hide

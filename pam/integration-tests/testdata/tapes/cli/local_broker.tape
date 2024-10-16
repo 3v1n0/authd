@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-local-broker"
+Wait /Username: user-local-broker$/
 Show
 
 Hide

@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-integration-sigint"
+Wait /Username: user-integration-sigint$/
 Show
 
 Hide

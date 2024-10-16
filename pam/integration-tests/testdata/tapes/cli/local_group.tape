@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-local-groups"
+Wait /Username: user-local-groups$/
 Show
 
 Hide

@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-mfa-with-reset"
+Wait /Username: user-mfa-with-reset$/
 Show
 
 Hide

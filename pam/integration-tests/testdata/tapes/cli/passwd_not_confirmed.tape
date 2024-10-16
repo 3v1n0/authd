@@ -6,6 +6,7 @@ Show
 
 Hide
 Type "user-integration-wrong-confirmation"
+Wait /Username: user-integration-wrong-confirmation$/
 Show
 
 Hide
