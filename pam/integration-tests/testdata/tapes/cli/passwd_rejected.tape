@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user-integration-invalid-new-password"
-Wait /Username: user-integration-invalid-new-password$/
+Wait+Screen /Username: user-integration-invalid-new-password\n/
 Show
 
 Hide
@@ -75,7 +75,7 @@ Show
 
 Hide
 Type "user-integration-invalid-new-password"
-Wait /Username: user-integration-invalid-new-password$/
+Wait+Screen /Username: user-integration-invalid-new-password\n/
 Show
 
 Hide

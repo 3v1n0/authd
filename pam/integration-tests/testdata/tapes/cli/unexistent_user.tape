@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user-unexistent"
-Wait /Username: user-unexistent$/
+Wait+Screen /Username: user-unexistent\n/
 Show
 
 Hide

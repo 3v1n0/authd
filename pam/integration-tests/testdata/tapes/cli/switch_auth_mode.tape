@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user-integration-switch-mode"
-Wait /Username: user-integration-switch-mode$/
+Wait+Screen /Username: user-integration-switch-mode\n/
 Show
 
 Hide
