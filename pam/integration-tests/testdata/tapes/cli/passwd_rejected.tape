@@ -2,6 +2,7 @@ Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
 Wait /Username: user name$/
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
@@ -29,6 +30,7 @@ Wait
 Show
 
 Hide
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "noble2404"
 Show
 
@@ -36,6 +38,7 @@ Hide
 Enter
 Wait+Screen /Confirm password:/
 Wait
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "noble2404"
 Show
 
@@ -46,6 +49,7 @@ Wait /new password does not match criteria/
 Show
 
 Hide
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "authd2404"
 Show
 
@@ -53,6 +57,7 @@ Hide
 Enter
 Wait+Screen /Confirm password:/
 Wait
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "authd2404"
 Show
 
@@ -71,6 +76,7 @@ Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
 Wait /Username: user name$/
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
@@ -92,6 +98,7 @@ Wait
 Show
 
 Hide
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "noble2404"
 Show
 
@@ -99,6 +106,7 @@ Hide
 Enter
 Wait+Screen /Confirm password:/
 Wait
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "noble2404"
 Show
 
@@ -109,6 +117,7 @@ Wait /new password does not match criteria/
 Show
 
 Hide
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "goodpass"
 Show
 
@@ -116,6 +125,7 @@ Hide
 Enter
 Wait+Screen /Confirm password:/
 Wait
+Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "goodpass"
 Show
 
