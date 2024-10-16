@@ -56,7 +56,7 @@ type tapeData struct {
 
 var (
 	defaultSleepValues = map[string]time.Duration{
-		authdSleepDefault: 300 * time.Millisecond,
+		authdSleepDefault: 100 * time.Millisecond,
 		authdSleepLong:    1 * time.Second,
 		// Keep these in sync with example broker default wait times
 		authdSleepExampleBrokerMfaWait:    4 * time.Second,
