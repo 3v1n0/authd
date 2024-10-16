@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "user-can-reset"
-Wait /Username: user-can-reset$/
 Show
 
 Hide

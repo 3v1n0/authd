@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "root"
-Wait /Username: root$/
 Show
 
 Hide

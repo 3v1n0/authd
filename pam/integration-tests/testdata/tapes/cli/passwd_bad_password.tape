@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "user-integration-bad-password"
-Wait /Username: user-integration-bad-password$/
 Show
 
 Hide

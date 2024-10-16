@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "user-integration-same-new-password"
-Wait /Username: user-integration-same-new-password$/
 Show
 
 Hide

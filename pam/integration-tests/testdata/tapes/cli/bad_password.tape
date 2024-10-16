@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "user-needs-reset"
-Wait /Username: user-needs-reset$/
 Show
 
 Hide

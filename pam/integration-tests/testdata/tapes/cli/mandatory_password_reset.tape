@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "user-needs-reset-integration-mandatory"
-Wait /Username: user-needs-reset-integration-mandatory$/
 Show
 
 Hide

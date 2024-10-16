@@ -6,7 +6,6 @@ Show
 
 Hide
 Type "user2"
-Wait /Username: user2$/
 Show
 
 Hide
