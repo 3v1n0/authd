@@ -1,29 +1,31 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Username: user name$/
 Show
 
 Hide
-Escape
-Backspace
 Type "user-integration-sigint"
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Username: user-integration-sigint$/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait+Screen /Select your provider/
+Wait+Screen /2. ExampleBroker/
 Show
 
 Hide
 Type "2"
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait+Screen /Gimme your password/
+Wait
 Show
 
 Hide
 Ctrl+C
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait+Screen /\nPAM ChangeAuthTok\(\)/
+Wait+Screen /\nPAM AcctMgmt\(\)/
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}

@@ -1,79 +1,82 @@
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
-Sleep ${AUTHD_SLEEP_COMMAND}
+Wait /Username: user name$/
 Show
 
 Hide
-Escape
-Backspace
 Type "user-needs-reset"
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait /Username: user-needs-reset$/
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait+Screen /Select your provider/
+Wait+Screen /2. ExampleBroker/
 Show
 
 Hide
 Type "2"
-Sleep ${AUTHD_SLEEP_DEFAULT}
+Wait+Screen /Gimme your password/
+Wait
 Show
 
 Hide
 Type "goodpass"
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait+Screen /New password:/
+Wait
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Enter
+Wait+Screen /New password:\n>\n/
 Show
 
 Hide
 Type "1234"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Enter
+Wait+Screen /New password:\n>\n/
 Show
 
 Hide
 Type "12345678"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Enter
+Wait+Screen /New password:\n>\n/
 Show
 
 Hide
 Type "authd2404"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Enter
+Wait+Screen /Confirm password:/
+Wait
 Show
 
 Hide
 Type "123456789"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait+Screen /New password:\n>\n/
 Show
 
 Hide
 Type "authd2404"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Enter
+Wait+Screen /Confirm password:/
+Wait
 Show
 
 Hide
 Type "authd2404"
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
 Enter
-Sleep ${AUTHD_SLEEP_LONG} * 2
+Wait+Screen /\nPAM Authenticate\(\)/
+Wait+Screen /\nPAM AcctMgmt\(\)/
+Wait
 Show
 
 Sleep ${AUTHD_SLEEP_DEFAULT}
