@@ -345,11 +345,11 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 
 // Focus focuses this model.
 func (m *authenticationModel) Focus() tea.Cmd {
-	m.focused = true
-
 	if m.currentModel == nil {
 		return nil
 	}
+
+	m.focused = true
 	return m.currentModel.Focus()
 }
 
@@ -414,6 +414,9 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 // View renders a text view of the authentication UI.
 func (m authenticationModel) View() string {
 	if m.currentModel == nil {
+		return ""
+	}
+	if !m.Focused() {
 		return ""
 	}
 	contents := []string{m.currentModel.View()}

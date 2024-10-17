@@ -128,6 +128,14 @@ func (m userSelectionModel) Update(msg tea.Msg) (userSelectionModel, tea.Cmd) {
 	return m, cmd
 }
 
+// View renders a text view of the user selection UI.
+func (m userSelectionModel) View() string {
+	if !m.Focused() {
+		return ""
+	}
+	return m.Model.View()
+}
+
 // Enabled returns whether the interactive user selection is enabled.
 func (m userSelectionModel) Enabled() bool {
 	return m.enabled
