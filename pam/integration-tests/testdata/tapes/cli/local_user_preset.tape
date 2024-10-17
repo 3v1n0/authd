@@ -6,8 +6,4 @@ Wait+Screen /\nPAM AcctMgmt\(\)/
 Wait
 Show
 
-Hide
-Enter
-Show
-
 Sleep ${AUTHD_SLEEP_DEFAULT}
