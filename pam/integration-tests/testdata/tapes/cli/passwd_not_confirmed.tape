@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user-integration-wrong-confirmation"
-Wait /Username: user-integration-wrong-confirmation$/
+Wait+Screen /Username: user-integration-wrong-confirmation\n/
 Show
 
 Hide

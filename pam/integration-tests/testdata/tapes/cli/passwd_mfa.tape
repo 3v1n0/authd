@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user-mfa"
-Wait /Username: user-mfa$/
+Wait+Screen /Username: user-mfa\n/
 Show
 
 Hide

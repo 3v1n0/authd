@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "root"
-Wait /Username: root$/
+Wait+Screen /Username: root\n/
 Show
 
 Hide

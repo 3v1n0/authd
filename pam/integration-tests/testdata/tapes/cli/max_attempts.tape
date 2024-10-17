@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user-integration-max-attempts"
-Wait /Username: user-integration-max-attempts$/
+Wait+Screen /Username: user-integration-max-attempts\n/
 Show
 
 Hide

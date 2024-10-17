@@ -6,7 +6,7 @@ Show
 
 Hide
 Type "user1"
-Wait /Username: user1$/
+Wait+Screen /Username: user1\n/
 Show
 
 Hide
