@@ -36,6 +36,12 @@ Wait
 Show
 
 Hide
+Type "clear"
+Enter
+Wait
+Show
+
+Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
 Wait /Select action:/

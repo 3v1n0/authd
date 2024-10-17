@@ -68,10 +68,13 @@ Wait+Screen /\nPAM AcctMgmt\(\)/
 Wait
 Show
 
-Sleep ${AUTHD_SLEEP_LONG}
+Hide
+Type "clear"
+Enter
+Wait
+Show
 
 # Repeat again, to check that we can use still use another new password
-
 Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter

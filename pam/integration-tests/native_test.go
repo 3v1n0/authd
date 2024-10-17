@@ -159,7 +159,6 @@ func TestNativeAuthenticate(t *testing.T) {
 
 		"Remember last successful broker and mode": {
 			tape:          "remember_broker_and_mode",
-			tapeSettings:  []tapeSetting{{vhsHeight, 800}},
 			clientOptions: clientOptions{PamUser: "user-integration-remember-mode"},
 		},
 		"Autoselect local broker for local user": {
@@ -304,8 +303,7 @@ func TestNativeChangeAuthTok(t *testing.T) {
 		},
 
 		"Retry if new password is rejected by broker": {
-			tape:         "passwd_rejected",
-			tapeSettings: []tapeSetting{{vhsHeight, 700}},
+			tape: "passwd_rejected",
 		},
 		"Retry if new password is same of previous": {
 			tape: "passwd_not_changed",

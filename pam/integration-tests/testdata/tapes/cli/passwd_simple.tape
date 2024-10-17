@@ -50,6 +50,12 @@ Wait
 Show
 
 Hide
+Type "clear"
+Enter
+Wait
+Show
+
+Hide
 Type "${AUTHD_TEST_TAPE_LOGIN_COMMAND}"
 Enter
 Wait /Username: user name$/

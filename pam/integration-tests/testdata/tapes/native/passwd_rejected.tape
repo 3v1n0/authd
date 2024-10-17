@@ -50,6 +50,12 @@ Enter
 Wait
 Show
 
+Hide
+Type "clear"
+Enter
+Wait
+Show
+
 # Repeat again, to check that we can use still use another new password
 
 Hide
