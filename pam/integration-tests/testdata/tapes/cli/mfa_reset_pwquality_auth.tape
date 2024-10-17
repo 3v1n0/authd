@@ -2,7 +2,6 @@ Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
 Wait /Username: user name$/
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
@@ -23,7 +22,6 @@ Wait
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "goodpass"
 Show
 
@@ -39,7 +37,6 @@ Wait+Screen@${AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT} * 1.2 /New password:\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "goodpass"
 Show
 
@@ -49,7 +46,6 @@ Wait+Screen /New password:\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "password"
 Show
 
@@ -59,7 +55,6 @@ Wait+Screen /New password:\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "goodpass"
 Show
 
@@ -69,7 +64,6 @@ Wait+Screen /New password:\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "1234"
 Show
 
@@ -79,7 +73,6 @@ Wait+Screen /New password:\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "authd2404"
 Show
 
@@ -89,7 +82,6 @@ Wait+Screen /Confirm password:\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "authd2404"
 Show
 

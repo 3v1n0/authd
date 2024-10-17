@@ -2,7 +2,6 @@ Hide
 Type "${AUTHD_TEST_TAPE_COMMAND} invalid_flag=foo bar"
 Enter
 Wait /Username: user name$/
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide

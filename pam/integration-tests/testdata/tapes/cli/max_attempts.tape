@@ -2,7 +2,6 @@ Hide
 Type "${AUTHD_TEST_TAPE_COMMAND}"
 Enter
 Wait /Username: user name$/
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Show
 
 Hide
@@ -23,7 +22,6 @@ Wait
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "wrongpass"
 Enter
 Wait /invalid password/
@@ -31,7 +29,6 @@ Wait+Screen /Gimme your password\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "wrongpass"
 Enter
 Wait /invalid password/
@@ -39,7 +36,6 @@ Wait+Screen /Gimme your password\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "wrongpass"
 Enter
 Wait /invalid password/
@@ -47,7 +43,6 @@ Wait+Screen /Gimme your password\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "wrongpass"
 Enter
 Wait /invalid password/
@@ -55,7 +50,6 @@ Wait+Screen /Gimme your password\n>\n/
 Show
 
 Hide
-Sleep ${AUTHD_SLEEP_DEFAULT}
 Type "wrongpass"
 Enter
 Wait+Screen /invalid password/
