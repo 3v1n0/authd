@@ -1,6 +1,8 @@
 package adapter
 
 import (
+	"slices"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -123,6 +125,10 @@ func (m formModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders a text view of the form.
 func (m formModel) View() string {
+	if !m.Focused() {
+		return ""
+	}
+
 	fields := []string{m.label}
 
 	for _, fm := range m.focusableModels {
@@ -148,4 +154,16 @@ func (m formModel) Blur() {
 		return
 	}
 	m.focusableModels[m.focusIndex].Blur()
+}
+
+// Focused returns whether if this model is focused.
+func (m formModel) Focused() bool {
+	if len(m.focusableModels) == 0 {
+		// We consider the model being focused in this case, since there's nothing
+		// to interact with, but we want to be able to draw.
+		return true
+	}
+	return slices.ContainsFunc(m.focusableModels, func(ac authenticationComponent) bool {
+		return ac.Focused()
+	})
 }

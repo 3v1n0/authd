@@ -107,6 +107,7 @@ type authenticationComponent interface {
 	Update(msg tea.Msg) (tea.Model, tea.Cmd)
 	View() string
 	Focus() tea.Cmd
+	Focused() bool
 	Blur()
 }
 
