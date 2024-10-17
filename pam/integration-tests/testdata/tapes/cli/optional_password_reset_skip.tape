@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-can-reset"
-Wait+Screen /Username: user-can-reset\n/
+Wait /Username: user-can-reset$/
 Show
 
 Hide

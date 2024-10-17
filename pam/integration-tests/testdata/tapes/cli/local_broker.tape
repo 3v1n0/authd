@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-local-broker"
-Wait+Screen /Username: user-local-broker\n/
+Wait /Username: user-local-broker$/
 Show
 
 Hide

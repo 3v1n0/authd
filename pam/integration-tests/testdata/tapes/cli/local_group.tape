@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-local-groups"
-Wait+Screen /Username: user-local-groups\n/
+Wait /Username: user-local-groups$/
 Show
 
 Hide

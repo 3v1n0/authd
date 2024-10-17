@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-integration-sigint"
-Wait+Screen /Username: user-integration-sigint\n/
+Wait /Username: user-integration-sigint$/
 Show
 
 Hide

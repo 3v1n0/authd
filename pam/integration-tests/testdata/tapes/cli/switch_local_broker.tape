@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-integration-switch-broker"
-Wait+Screen /Username: user-integration-switch-broker\n/
+Wait /Username: user-integration-switch-broker$/
 Show
 
 Hide

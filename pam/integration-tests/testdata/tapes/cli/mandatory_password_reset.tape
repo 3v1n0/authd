@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-needs-reset-integration-mandatory"
-Wait+Screen /Username: user-needs-reset-integration-mandatory\n/
+Wait /Username: user-needs-reset-integration-mandatory$/
 Show
 
 Hide

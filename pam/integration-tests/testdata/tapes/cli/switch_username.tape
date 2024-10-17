@@ -8,7 +8,7 @@ Show
 Hide
 Escape
 Type "user-integration-switch-username"
-Wait+Screen /Username: user-integration-switch-username\n/
+Wait /Username: user-integration-switch-username$/
 Show
 
 Hide
@@ -20,7 +20,7 @@ Hide
 Escape
 Wait /Username: user-integration-switch-username$/
 Backspace 15
-Wait+Screen /Username: user-integration-\n/
+Wait /Username: user-integration-$$/
 Type "username-switched"
 Show
 

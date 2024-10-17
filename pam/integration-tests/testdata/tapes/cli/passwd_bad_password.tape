@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-integration-bad-password"
-Wait+Screen /Username: user-integration-bad-password\n/
+Wait /Username: user-integration-bad-password$/
 Show
 
 Hide

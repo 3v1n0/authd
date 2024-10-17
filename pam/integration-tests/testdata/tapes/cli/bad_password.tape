@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-needs-reset"
-Wait+Screen /Username: user-needs-reset\n/
+Wait /Username: user-needs-reset$/
 Show
 
 Hide

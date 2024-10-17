@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user1"
-Wait+Screen /Username: user1\n/
+Wait /Username: user1$/
 Show
 
 Hide

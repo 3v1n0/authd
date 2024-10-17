@@ -7,7 +7,7 @@ Show
 
 Hide
 Type "user-mfa-with-reset"
-Wait+Screen /Username: user-mfa-with-reset\n/
+Wait /Username: user-mfa-with-reset$/
 Show
 
 Hide
