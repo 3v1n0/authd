@@ -48,7 +48,7 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		t.Skip("Skipping tests with external dependencies as requested")
 	}
 
-	if uv := getUbuntuVersion(t); uv == 0 || uv >= 2404 {
+	if uv := getUbuntuVersion(t); uv == 0 || uv < 2404 {
 		require.Empty(t, os.Getenv("GITHUB_REPOSITORY"),
 			"Golden files needs to be updated to ensure CI runs on Ubuntu %v")
 		t.Skipf("Skipping SSH tests since they require new golden files for Ubuntu %v", uv)
