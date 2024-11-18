@@ -5,9 +5,12 @@ on:
     paths:
       - '.github/dependabot.yml'
 
+env:
+  UBUNTU_LATEST_RUNNER: ubuntu-24.04
+
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
     steps:
       - uses: actions/checkout@v4
       - uses: marocchino/validate-dependabot@v3

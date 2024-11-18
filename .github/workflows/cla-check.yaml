@@ -1,10 +1,13 @@
 name: Check if CLA is signed
 on: [pull_request_target]
 
+env:
+  UBUNTU_LATEST_RUNNER: ubuntu-24.04
+
 jobs:
   cla-check:
     name: Check if CLA is signed
-    runs-on: ubuntu-latest
+    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
     steps:
       - name: Check if CLA signed
         uses: canonical/has-signed-canonical-cla@v1

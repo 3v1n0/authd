@@ -3,10 +3,13 @@
 name: Sync GitHub issues to Jira
 on: [issues, issue_comment]
 
+env:
+  UBUNTU_LATEST_RUNNER: ubuntu-24.04
+
 jobs:
   sync-issues:
     name: Sync issues to Jira
-    runs-on: ubuntu-latest
+    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
     steps:
       - uses: canonical/sync-issues-github-jira@v1
         with:

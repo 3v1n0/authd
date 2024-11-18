@@ -2,9 +2,12 @@ name: Git Checks
 
 on: [pull_request]
 
+env:
+  UBUNTU_LATEST_RUNNER: ubuntu-24.04
+
 jobs:
   block-fixup:
-    runs-on: ubuntu-latest
+    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
 
     steps:
     - uses: actions/checkout@v4
