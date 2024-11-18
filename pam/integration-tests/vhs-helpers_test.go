@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd"
 	permissionstestutils "github.com/ubuntu/authd/internal/services/permissions/testutils"
 	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
@@ -321,4 +322,37 @@ func evaluateTapeVariables(t *testing.T, tapeString string, td tapeData) string 
 	}
 
 	return tapeString
+}
+
+func requireRunnerResultForUser(t *testing.T, sessionMode authd.SessionMode, user, goldenContent string) {
+	t.Helper()
+
+	var msgFormat string
+	switch sessionMode {
+	case authd.SessionMode_AUTH:
+		msgFormat = pam_test.RunnerResultActionAuthenticateFormat
+	case authd.SessionMode_PASSWD:
+		msgFormat = pam_test.RunnerResultActionChangeAuthTokFormat
+	default:
+		t.Errorf("Unsupported mode %s", sessionMode)
+	}
+
+	sessionMsg := fmt.Sprintf(msgFormat, user)
+	if user == "" {
+		sessionMsg = strings.ReplaceAll(msgFormat, "%q", "")
+	}
+
+	goldenLines := strings.Split(goldenContent, "\n")
+	goldenContent = strings.Join(goldenLines[max(0, len(goldenLines)-50):], "\n")
+
+	require.Contains(t, goldenContent, sessionMsg,
+		"Golden file does not include required value, consider increasing the terminal size")
+	require.Contains(t, goldenContent, pam_test.RunnerResultActionAcctMgmt,
+		"Golden file does not include required value, consider increasing the terminal size")
+}
+
+func requireRunnerResult(t *testing.T, sessionMode authd.SessionMode, goldenContent string) {
+	t.Helper()
+
+	requireRunnerResultForUser(t, sessionMode, "", goldenContent)
 }
