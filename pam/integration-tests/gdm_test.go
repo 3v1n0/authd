@@ -670,6 +670,7 @@ func TestGdmModule(t *testing.T) {
 		"Error (ignored) on local broker causes fallback error": {
 			brokerName: brokers.LocalBrokerName,
 			wantPamInfoMessages: []string{
+				"The return value should be ignored by PAM dispatch",
 				"auth=incomplete",
 			},
 			wantError:       pam_test.ErrIgnore,

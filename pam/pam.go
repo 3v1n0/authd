@@ -100,9 +100,13 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 	}
 
 	style := pam.ErrorMsg
-	switch retStatus.(type) {
-	case adapter.PamIgnore, adapter.PamSuccess:
+	switch rs := retStatus.(type) {
+	case adapter.PamSuccess:
 		style = pam.TextInfo
+	case adapter.PamReturnError:
+		if rs.Status() == pam.ErrIgnore {
+			style = pam.TextInfo
+		}
 	}
 
 	if err := showPamMessage(mTx, style, msg); err != nil {
@@ -343,13 +347,6 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 			return err
 		}
 		return nil
-
-	case adapter.PamIgnore:
-		// localBrokerID is only set on pamIgnore if the user has chosen local broker.
-		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.LocalBrokerID); err != nil {
-			return err
-		}
-		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
 
 	case adapter.PamReturnError:
 		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
