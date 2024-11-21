@@ -19,7 +19,7 @@ env:
 jobs:
   update-rust-packaging:
     name: Update packaging related Rust files
-    runs-on: ${{ vars.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     steps:
       - name: Install dependencies
         env:
