@@ -2,9 +2,9 @@ name: Update translations and Rust packaging related files in main
 on:
   push:
     branches:
-      - main
-    paths-ignore:
-      - debian/control
+      - "*"
+    # paths-ignore:
+    #   - debian/control
 concurrency: auto-update
 
 permissions:
