@@ -20,10 +20,10 @@ jobs:
   update-rust-packaging:
     name: Update packaging related Rust files
     runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Install dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
         run: |
           apt update
           apt install cargo dh-cargo git jq
