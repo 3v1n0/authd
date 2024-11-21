@@ -19,7 +19,7 @@ env:
 jobs:
   update-rust-packaging:
     name: Update packaging related Rust files
-    runs-on: ${UBUNTU_LATEST_RUNNER}
+    runs-on: ubuntu-24.04
     steps:
       - name: Install dependencies
         env:
