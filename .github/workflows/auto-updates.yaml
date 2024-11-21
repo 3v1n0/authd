@@ -20,17 +20,13 @@ jobs:
   update-rust-packaging:
     name: Update packaging related Rust files
     runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
-    # Right now, ubuntu 22.04 does not have the dh-cargo-vendored-sources script that is needed to
-    # run this job, so we need to run it inside a rolling container to get the latest version possible.
-    # This should be updated as soon as the dh-cargo version with the mentioned script gets ported to
-    # 22.04 or ubuntu-latest changes to a more recent version.
-    container:
-      image: ubuntu:rolling
     steps:
       - name: Install dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          DEBIAN_FRONTEND=noninteractive apt update
-          DEBIAN_FRONTEND=noninteractive apt install -y cargo dh-cargo git jq
+          apt update
+          apt install cargo dh-cargo git jq
       - uses: actions/checkout@v4
         with:
           ref: main
