@@ -31,7 +31,7 @@ env:
 jobs:
   go-sanity:
     name: "Go: Code sanity"
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     steps:
       - name: Install dependencies
         run: |
@@ -68,7 +68,7 @@ jobs:
 
   rust-sanity:
     name: "Rust: Code sanity"
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     steps:
       - name: Install dependencies
         run: |
@@ -82,7 +82,7 @@ jobs:
 
   c-sanity:
     name: "C Code sanity"
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     env:
       CFLAGS: "-Werror"
     steps:

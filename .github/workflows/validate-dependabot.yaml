@@ -10,7 +10,7 @@ env:
 
 jobs:
   validate:
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     steps:
       - uses: actions/checkout@v4
       - uses: marocchino/validate-dependabot@v3

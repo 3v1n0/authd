@@ -9,7 +9,7 @@ env:
 jobs:
   sync-issues:
     name: Sync issues to Jira
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     steps:
       - uses: canonical/sync-issues-github-jira@v1
         with:

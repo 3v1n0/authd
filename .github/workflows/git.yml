@@ -7,7 +7,7 @@ env:
 
 jobs:
   block-fixup:
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
 
     steps:
     - uses: actions/checkout@v4

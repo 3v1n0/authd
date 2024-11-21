@@ -7,7 +7,7 @@ env:
 jobs:
   cla-check:
     name: Check if CLA is signed
-    runs-on: ${{ env.UBUNTU_LATEST_RUNNER }}
+    runs-on: ${UBUNTU_LATEST_RUNNER}
     steps:
       - name: Check if CLA signed
         uses: canonical/has-signed-canonical-cla@v1
