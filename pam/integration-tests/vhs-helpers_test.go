@@ -36,6 +36,7 @@ const (
 
 	authdSleepDefault                 = "AUTHD_SLEEP_DEFAULT"
 	authdSleepLong                    = "AUTHD_SLEEP_LONG"
+	authdSleepFinal                   = "AUTHD_SLEEP_FINAL"
 	authdSleepCommand                 = "AUTHD_SLEEP_COMMAND"
 	authdSleepExampleBrokerMfaWait    = "AUTHD_SLEEP_EXAMPLE_BROKER_MFA_WAIT"
 	authdSleepExampleBrokerQrcodeWait = "AUTHD_SLEEP_EXAMPLE_BROKER_QRCODE_WAIT"
@@ -83,6 +84,7 @@ func (tt vhsTestType) tapesPath(t *testing.T) string {
 var (
 	defaultSleepValues = map[string]time.Duration{
 		authdSleepDefault: 300 * time.Millisecond,
+		authdSleepFinal:   60 * time.Millisecond,
 		authdSleepCommand: 400 * time.Millisecond,
 		authdSleepLong:    1 * time.Second,
 		// Keep these in sync with example broker default wait times
@@ -299,7 +301,12 @@ func (td tapeData) PrepareTape(t *testing.T, testType vhsTestType, outputPath st
 	require.NoError(t, err, "Setup: read tape file %s", td.Name)
 
 	tapeString := evaluateTapeVariables(t, string(tape), td)
-	tape = []byte(fmt.Sprintf("%s\n%s", td, tapeString))
+	tape = []byte(strings.Join([]string{
+		td.String(),
+		tapeString,
+		fmt.Sprintf("Sleep %dms",
+			sleepDuration(defaultSleepValues[authdSleepFinal]).Milliseconds()),
+	}, "\n"))
 
 	tapePath := filepath.Join(outputPath, td.Name)
 	err = os.WriteFile(tapePath, tape, 0600)
