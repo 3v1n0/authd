@@ -258,7 +258,7 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 				"-o", "UserKnownHostsFile=" + knownHost,
 			}, " ")
 			td.Variables = tc.tapeVariables
-			td.RunVhs(t, "ssh", outDir, nil)
+			td.RunVhs(t, vhsTestTypeSSH, outDir, nil)
 			got := sanitizeGoldenFile(t, td, outDir)
 			want := testutils.LoadWithUpdateFromGolden(t, got)
 
