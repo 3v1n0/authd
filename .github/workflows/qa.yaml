@@ -236,8 +236,8 @@ jobs:
           max_mem=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 * 9/10))
           soft_max_mem=$((${max_mem} * 7/10))
 
-          echo LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=95% -p MemoryMax=${max_mem}M -p MemoryHigh=${soft_max_mem}M --user"
-
+          LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=95% -p MemoryMax=${max_mem}M -p MemoryHigh=${soft_max_mem}M --user"
+          echo "LIMIT_RESOURCES_CMD=${LIMIT_RESOURCES_CMD}" | tee -a ${GITHUB_ENV}
 
       - name: Prepare tests artifacts path
         run: |
