@@ -233,6 +233,7 @@ jobs:
           sudo mkswap /tmp/swap
           sudo swapon /tmp/swap
 
+          # Check how much space we have now
           free -h
           df -h /
 
