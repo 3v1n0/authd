@@ -201,7 +201,7 @@ jobs:
         with:
           crate: grcov
 
-      - name: Reduce chromium browser usage
+      - name: Build command to limit resource usages
         shell: bash
         run: |
           set -eu
