@@ -10,9 +10,6 @@ on:
 env:
   DEBIAN_FRONTEND: noninteractive
   GO_TESTS_TIMEOUT: 20m
-  # Prevents github to stop the job, we've 16GB of RAM, so let's limit the go usage at least.
-  # See: https://docs.github.com/en/actions/writing-workflows/choosing-where-your-workflow-runs/choosing-the-runner-for-a-job#choosing-github-hosted-runners
-  #GOMEMLIMIT: 5120MiB
 
   apt_deps: >-
     libpam-dev
@@ -202,41 +199,23 @@ jobs:
           crate: grcov
 
       - name: Build command to limit resource usages
+        # Prevents github to stop the job, we've 16GB of RAM, so let's limit the go usage at least.
+        # See: https://docs.github.com/en/actions/writing-workflows/choosing-where-your-workflow-runs/choosing-the-runner-for-a-job#choosing-github-hosted-runners
+        # This only applies to the coverage case for now, since it's the only one affected so far.
+        if: matrix.test == 'coverage'
         shell: bash
         run: |
           set -eu
 
-          # sudo apt install -y cgroup-tools
-
-          # # Only allow to use only N-1 of available cores.
-          # cpu_period_us=100000
-          # cpu_quota=$((($(grep -w -c processor /proc/cpuinfo)-1)*${cpu_period_us}))
-
-          # # Only use 90% of the available memory. Original value is in Kb.
-          # max_mem=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 * 9/10))
-          # soft_max_mem=$((${soft_max_mem} * 7/10))
-
-          # cat <<EOF | sudo tee /etc/cgconfig.conf
-          # group limited {
-          #     cpu {
-          #         cpu.cfs_period_us = ${cpu_period_us};
-          #         cpu.cfs_quota_us = ${cpu_quota};
-          #     }
-          #     memory {
-          #         memory.limit_in_bytes = "${max_mem}M";
-          #         memory.soft_limit_in_bytes = "${soft_max_mem}M";
-          #     }
-          # }
-
-          # echo "*:chromium-browser       cpu,memory       limited" |
-          #   tee /etc/cgrules.conf
-          # EOF
-
           # Only use 90% of the available memory. Original value is in Kb.
-          max_mem=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 * 9/10))
-          soft_max_mem=$((${max_mem} * 7/10))
+          mem_total_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
+          max_mem_mb=$((${mem_total_mb} * 9/10))
+          soft_max_mem_mb=$((${mem_total_mb} * 7/10))
 
-          LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=95% -p MemoryMax=${max_mem}M -p MemoryHigh=${soft_max_mem}M --user"
+          # Only allow to use a fraction of the CPU resources.
+          cpu_quota=95%
+
+          LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=${cpu_quota} -p MemoryMax=${max_mem_mb}M -p MemoryHigh=${soft_max_mem_mb}M --user"
           echo "LIMIT_RESOURCES_CMD=${LIMIT_RESOURCES_CMD}" | tee -a ${GITHUB_ENV}
 
           # Verify that it works
