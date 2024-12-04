@@ -136,6 +136,19 @@ jobs:
         run: |
           sudo apt update
 
+          # Disable installing of locales and manpages
+          cat <<"EOF" | sudo tee /etc/dpkg/dpkg.cfg.d/01_nodoc
+          # Delete locales
+          path-exclude=/usr/share/locale/*
+
+          # Delete man pages
+          path-exclude=/usr/share/man/*
+
+          # Delete docs
+          path-exclude=/usr/share/doc/*
+          path-include=/usr/share/doc/*/copyright
+          EOF
+
           # The integration tests build the NSS crate, so we need the cargo build dependencies in order to run them.
           sudo apt install -y ${{ env.apt_deps }} ${{ env.protobuf_compilers}} ${{ env.test_apt_deps }}
       - name: Install PAM and GLib debug symbols
