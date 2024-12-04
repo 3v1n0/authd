@@ -199,7 +199,7 @@ jobs:
           crate: grcov
 
       - name: Build command to limit resource usages
-        # Prevents github to stop the job, we've 16GB of RAM, so let's limit the go usage at least.
+        # Prevents github to stop the job, we've 16GB of RAM, so let's limit it.
         # See: https://docs.github.com/en/actions/writing-workflows/choosing-where-your-workflow-runs/choosing-the-runner-for-a-job#choosing-github-hosted-runners
         # This only applies to the coverage case for now, since it's the only one affected so far.
         if: matrix.test == 'coverage'
@@ -213,7 +213,7 @@ jobs:
           soft_max_mem_mb=$((${mem_total_mb} * 7/10))
 
           # Only allow to use a fraction of the CPU resources.
-          cpu_quota=95%
+          cpu_quota=99%
 
           LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=${cpu_quota} -p MemoryMax=${max_mem_mb}M -p MemoryHigh=${soft_max_mem_mb}M --user"
           echo "LIMIT_RESOURCES_CMD=${LIMIT_RESOURCES_CMD}" | tee -a ${GITHUB_ENV}
