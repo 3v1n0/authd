@@ -239,6 +239,9 @@ jobs:
           LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=95% -p MemoryMax=${max_mem}M -p MemoryHigh=${soft_max_mem}M --user"
           echo "LIMIT_RESOURCES_CMD=${LIMIT_RESOURCES_CMD}" | tee -a ${GITHUB_ENV}
 
+          # Verify that it works
+          ${LIMIT_RESOURCES_CMD} env bash -c 'echo yes'
+
       - name: Prepare tests artifacts path
         run: |
           set -eu
