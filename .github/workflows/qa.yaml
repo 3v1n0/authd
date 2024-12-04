@@ -216,8 +216,12 @@ jobs:
           # Only allow to use a fraction of the CPU resources.
           cpu_quota=99%
 
-          LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=${cpu_quota} -p MemoryMax=${max_mem_mb}M -p MemoryHigh=${soft_max_mem_mb}M --user"
-          echo "LIMIT_RESOURCES_CMD=${LIMIT_RESOURCES_CMD}" | tee -a ${GITHUB_ENV}
+          LIMIT_RESOURCES_CMD=(systemd-run --scope)
+          LIMIT_RESOURCES_CMD+=(-p CPUQuota="${cpu_quota}")
+          LIMIT_RESOURCES_CMD+=(-p MemoryMax="${max_mem_mb}M")
+          LIMIT_RESOURCES_CMD+=(-p MemoryHigh="${soft_max_mem_mb}"M)
+          LIMIT_RESOURCES_CMD+=(--user)
+          echo "LIMIT_RESOURCES_CMD=${LIMIT_RESOURCES_CMD[@]}" | tee -a ${GITHUB_ENV}
 
           # Verify that it works
           ${LIMIT_RESOURCES_CMD} env bash -c 'echo yes'
