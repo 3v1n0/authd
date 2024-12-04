@@ -230,7 +230,7 @@ jobs:
           free_space_gb=$(($(stat -f --format="%a*%S" /tmp) / 1024 / 1024 / 1024))
           sudo fallocate -l $((${free_space_gb} * 8/10))G /tmp/swap
           sudo chmod 600 /tmp/swap
-          mkswap /tmp/swap
+          sudo mkswap /tmp/swap
           sudo swapon /tmp/swap
 
           free -h
