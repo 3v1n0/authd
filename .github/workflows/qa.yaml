@@ -12,7 +12,7 @@ env:
   GO_TESTS_TIMEOUT: 20m
   # Prevents github to stop the job, we've 16GB of RAM, so let's limit the go usage at least.
   # See: https://docs.github.com/en/actions/writing-workflows/choosing-where-your-workflow-runs/choosing-the-runner-for-a-job#choosing-github-hosted-runners
-  GOMEMLIMIT: 5120MiB
+  #GOMEMLIMIT: 5120MiB
 
   apt_deps: >-
     libpam-dev
@@ -187,6 +187,45 @@ jobs:
         uses: baptiste0928/cargo-install@v3
         with:
           crate: grcov
+
+      - name: Reduce chromium browser usage
+        shell: bash
+        run: |
+          set -eu
+
+          # sudo apt install -y cgroup-tools
+
+          # # Only allow to use only N-1 of available cores.
+          # cpu_period_us=100000
+          # cpu_quota=$((($(grep -w -c processor /proc/cpuinfo)-1)*${cpu_period_us}))
+
+          # # Only use 90% of the available memory. Original value is in Kb.
+          # max_mem=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 * 9/10))
+          # soft_max_mem=$((${soft_max_mem} * 7/10))
+
+          # cat <<EOF | sudo tee /etc/cgconfig.conf
+          # group limited {
+          #     cpu {
+          #         cpu.cfs_period_us = ${cpu_period_us};
+          #         cpu.cfs_quota_us = ${cpu_quota};
+          #     }
+          #     memory {
+          #         memory.limit_in_bytes = "${max_mem}M";
+          #         memory.soft_limit_in_bytes = "${soft_max_mem}M";
+          #     }
+          # }
+
+          # echo "*:chromium-browser       cpu,memory       limited" |
+          #   tee /etc/cgrules.conf
+          # EOF
+
+          # Only use 90% of the available memory. Original value is in Kb.
+          max_mem=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024 * 9/10))
+          soft_max_mem=$((${soft_max_mem} * 7/10))
+
+          echo LIMIT_RESOURCES_CMD="systemd-run --scope -p CPUQuota=95% -p MemoryMax=${max_mem}M -p MemoryHigh=${soft_max_mem}M --user"
+
+
       - name: Prepare tests artifacts path
         run: |
           set -eu
@@ -214,7 +253,7 @@ jobs:
           # Overriding the default coverage directory is not an exported flag of go test (yet), so
           # we need to override it using the test.gocoverdir flag instead.
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
-          go test -json -timeout ${GO_TESTS_TIMEOUT} -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" | \
+          ${LIMIT_RESOURCES_CMD} go test -json -timeout ${GO_TESTS_TIMEOUT} -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" | \
             gotestfmt --logfile "${AUTHD_TEST_ARTIFACTS_PATH}/gotestfmt.cover.log"
 
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
