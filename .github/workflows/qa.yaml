@@ -213,11 +213,11 @@ jobs:
           max_mem_mb=$((${mem_total_mb} * 9/10))
           soft_max_mem_mb=$((${mem_total_mb} * 7/10))
 
-          # Only allow to use a fraction of the CPU resources.
-          cpu_quota=99%
+          # # Only allow to use a fraction of the CPU resources.
+          # cpu_quota=99%
 
           systemd_run_cmd=(systemd-run --scope)
-          systemd_run_cmd+=(-p CPUQuota="${cpu_quota}")
+          # systemd_run_cmd+=(-p CPUQuota="${cpu_quota}")
           systemd_run_cmd+=(-p MemoryMax="${max_mem_mb}M")
           systemd_run_cmd+=(-p MemoryHigh="${soft_max_mem_mb}"M)
           systemd_run_cmd+=(--user)
