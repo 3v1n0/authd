@@ -227,8 +227,8 @@ jobs:
           # ${systemd_run_cmd[@]} env bash -c 'echo yes'
 
           # Fill some free space with a swap file
-          free_space_gb=$(($(stat -f --format="%a*%S" /tmp) / 1024 / 1024 / 1024))
-          sudo fallocate -l $((${free_space_gb} * 8/10))G /tmp/swap
+          free_space_mb=$(($(stat -f --format="%a*%S" /tmp) / 1024 / 1024))
+          sudo fallocate -l $((${free_space_mb} * 8/10))M /tmp/swap
           sudo chmod 600 /tmp/swap
           sudo mkswap /tmp/swap
           sudo swapon /tmp/swap
