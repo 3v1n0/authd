@@ -208,23 +208,30 @@ jobs:
         run: |
           set -eu
 
-          # Only use 90% of the available memory. Original value is in Kb.
-          mem_total_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
-          max_mem_mb=$((${mem_total_mb} * 9/10))
-          soft_max_mem_mb=$((${mem_total_mb} * 7/10))
+          # # Only use 90% of the available memory. Original value is in Kb.
+          # mem_total_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
+          # max_mem_mb=$((${mem_total_mb} * 9/10))
+          # soft_max_mem_mb=$((${mem_total_mb} * 7/10))
 
-          # # Only allow to use a fraction of the CPU resources.
-          # cpu_quota=99%
+          # # # Only allow to use a fraction of the CPU resources.
+          # # cpu_quota=99%
 
-          systemd_run_cmd=(systemd-run --scope)
-          # systemd_run_cmd+=(-p CPUQuota="${cpu_quota}")
-          systemd_run_cmd+=(-p MemoryMax="${max_mem_mb}M")
-          systemd_run_cmd+=(-p MemoryHigh="${soft_max_mem_mb}"M)
-          systemd_run_cmd+=(--user)
-          echo "LIMIT_RESOURCES_CMD=${systemd_run_cmd[@]}" | tee -a ${GITHUB_ENV}
+          # systemd_run_cmd=(systemd-run --scope)
+          # # systemd_run_cmd+=(-p CPUQuota="${cpu_quota}")
+          # systemd_run_cmd+=(-p MemoryMax="${max_mem_mb}M")
+          # systemd_run_cmd+=(-p MemoryHigh="${soft_max_mem_mb}"M)
+          # systemd_run_cmd+=(--user)
+          # echo "LIMIT_RESOURCES_CMD=${systemd_run_cmd[@]}" | tee -a ${GITHUB_ENV}
 
-          # Verify that it works
-          ${systemd_run_cmd[@]} env bash -c 'echo yes'
+          # # Verify that it works
+          # ${systemd_run_cmd[@]} env bash -c 'echo yes'
+
+          # Free space
+          free_space_gb=$(($(stat -f --format="%a*%S" /tmp) / 1024 / 1024 / 1024))
+          fallocate -l $((${free_space_gb} * 9/10))G /tmp/swap
+          mkswap /tmp/swap
+          chmod 600 /tmp/swap
+          sudo swapon /tmp/swap
 
       - name: Prepare tests artifacts path
         run: |
@@ -253,7 +260,7 @@ jobs:
           # Overriding the default coverage directory is not an exported flag of go test (yet), so
           # we need to override it using the test.gocoverdir flag instead.
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
-          ${LIMIT_RESOURCES_CMD} go test -json -timeout ${GO_TESTS_TIMEOUT} -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" | \
+          go test -json -timeout ${GO_TESTS_TIMEOUT} -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" | \
             gotestfmt --logfile "${AUTHD_TEST_ARTIFACTS_PATH}/gotestfmt.cover.log"
 
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
