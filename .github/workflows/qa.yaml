@@ -206,7 +206,7 @@ jobs:
         if: matrix.test == 'coverage'
         shell: bash
         run: |
-          set -eu
+          set -euo pipefail
 
           # # Only use 90% of the available memory. Original value is in Kb.
           # mem_total_mb=$(($(awk '/MemTotal/ {print $2}' /proc/meminfo) / 1024))
@@ -226,12 +226,14 @@ jobs:
           # # Verify that it works
           # ${systemd_run_cmd[@]} env bash -c 'echo yes'
 
-          # Free space
+          # Fill some free space with a swap file
           free_space_gb=$(($(stat -f --format="%a*%S" /tmp) / 1024 / 1024 / 1024))
-          fallocate -l $((${free_space_gb} * 9/10))G /tmp/swap
+          sudo fallocate -l $((${free_space_gb} * 8/10))G /tmp/swap
+          sudo chmod 600 /tmp/swap
           mkswap /tmp/swap
-          chmod 600 /tmp/swap
           sudo swapon /tmp/swap
+
+          free -h
 
       - name: Prepare tests artifacts path
         run: |
