@@ -40,19 +40,8 @@ jobs:
   run-autopkgtests:
     name: Run autopkgtests
     needs: build-deb-package
-    runs-on: ubuntu-latest
-
-    container:
-      image: ubuntu:devel
 
     steps:
-    - name: Prepare container
-      run: |
-        set -eu
-
-        echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90aptyes
-        apt update
-
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
@@ -62,15 +51,32 @@ jobs:
       run: |
         apt install autopkgtest
 
-    - name: Create test user
-      run: |
-        apt install adduser
-        adduser --disabled-password --gecos "" tester
-
     - name: Run autopkgtests
-      run: |
-        mv -v ./*-debian-source/* .
-        mv -v ./*-debian-packages/* .
-        autopkgtest --apt-pocket proposed --apt-upgrade --no-built-binaries --user=tester \
-          *_${{ needs.build-deb-package.outputs.pkg-version }}*.deb \
-          ${{ needs.build-deb-package.outputs.pkg-name }}_${{ needs.build-deb-package.outputs.pkg-version }}_source.changes -- null
+      uses: kohlerdominik/docker-run-action@v2.0.0
+      with:
+        image: ubuntu:${{ env.UBUNTU_VERSION }}
+        volumes:
+          ${{ env.GITHUB_ACTION_PATH }}:${{ env.GITHUB_ACTION_PATH }}
+          ${{ github.workspace }}:${{ github.workspace }}
+        workdir: ${{ github.workspace }}
+        run: |
+          echo "::group::Update tester instance and install dependencies"
+          set -eu
+
+          echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90aptyes
+          apt update
+          echo "::endgroup::"
+
+          echo "::group::Create test user"
+          apt install adduser
+          adduser --disabled-password --gecos "" tester
+          echo "::endgroup::"
+
+          mv -v ./*-debian-source/* .
+          mv -v ./*-debian-packages/* .
+
+          echo "::group::Run autopkgtests"
+          autopkgtest --apt-pocket proposed --apt-upgrade --no-built-binaries --user=tester \
+            *_${{ needs.build-deb-package.outputs.pkg-version }}*.deb \
+            ${{ needs.build-deb-package.outputs.pkg-name }}_${{ needs.build-deb-package.outputs.pkg-version }}_source.changes -- null
+          echo "::endgroup::"
