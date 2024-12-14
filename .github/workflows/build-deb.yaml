@@ -36,8 +36,7 @@ jobs:
             libssl-dev
           extra-source-build-script:
             set -x
-            CARGO_HOME="$(mktemp -d -t cargo-home-XXXXXX)"
-            export CARGO_HOME
+            export CARGO_HOME="$(mktemp -d -t cargo-home-XXXXXX)"
             export PATH="${CARGO_HOME}:${PATH}"
             cargo install cargo-vendor-filterer
 
