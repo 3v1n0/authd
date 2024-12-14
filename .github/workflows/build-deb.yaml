@@ -33,6 +33,7 @@ jobs:
           extra-source-build-deps: |
             ca-certificates
             git
+            libssl-dev
           extra-source-build-script:
             cargo install cargo-vendor-filterer
 
