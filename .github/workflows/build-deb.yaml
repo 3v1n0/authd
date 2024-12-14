@@ -51,7 +51,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        apt install autopkgtest
+        
 
     - name: Run autopkgtests
       uses: kohlerdominik/docker-run-action@v2.0.0
@@ -62,7 +62,7 @@ jobs:
           ${{ github.workspace }}:${{ github.workspace }}
         workdir: ${{ github.workspace }}
         run: |
-          echo "::group::Update tester instance and install dependencies"
+          echo "::group::Update tester instance"
           set -eu
 
           echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90aptyes
@@ -72,6 +72,10 @@ jobs:
           echo "::group::Create test user"
           apt install adduser
           adduser --disabled-password --gecos "" tester
+          echo "::endgroup::"
+
+          echo "::group::Install dependencies"
+          apt install autopkgtest
           echo "::endgroup::"
 
           mv -v ./*-debian-source/* .
