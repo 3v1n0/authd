@@ -49,10 +49,6 @@ jobs:
       with:
         run-id: ${{ needs.build-deb-package.outputs.run-id }}
 
-    - name: Install dependencies
-      run: |
-        
-
     - name: Run autopkgtests
       uses: kohlerdominik/docker-run-action@v2.0.0
       with:
