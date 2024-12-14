@@ -35,10 +35,7 @@ jobs:
             git
             libssl-dev
           extra-source-build-script: |
-            CARGO_HOME="$(mktemp -d -t cargo-home-XXXXXX)"
-            export CARGO_HOME
-            export PATH="${CARGO_HOME}/bin:${PATH}"
-            cargo install cargo-vendor-filterer
+            cargo install --root=/usr cargo-vendor-filterer
 
   run-autopkgtests:
     name: Run autopkgtests
