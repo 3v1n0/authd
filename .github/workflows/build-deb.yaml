@@ -40,6 +40,7 @@ jobs:
   run-autopkgtests:
     name: Run autopkgtests
     needs: build-deb-package
+    runs-on: ubuntu-latest
 
     steps:
     - name: Download artifacts
