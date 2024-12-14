@@ -36,6 +36,7 @@ jobs:
             libssl-dev
           extra-source-build-script: |
             cargo install --root=/usr cargo-vendor-filterer
+            command -v cargo-vendor-filterer
 
   run-autopkgtests:
     name: Run autopkgtests
