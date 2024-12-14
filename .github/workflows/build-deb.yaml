@@ -10,7 +10,6 @@ env:
   TERM: dumb
   DEBIAN_FRONTEND: noninteractive
   DEBCONF_NONINTERACTIVE_SEEN: true
-  UBUNTU_VERSION: devel
 
 jobs:
   build-deb-package:
@@ -28,7 +27,7 @@ jobs:
       - name: Build debian packages and sources
         uses: 3v1n0/desktop-engineering/gh-actions/common/build-debian@source-prepare-command
         with:
-          docker-image: ubuntu:${{ env.UBUNTU_VERSION }}
+          docker-image: ubuntu:devel
           extra-source-build-deps: |
             ca-certificates
             git
@@ -41,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
 
     container:
-      image: ubuntu:${{ env.UBUNTU_VERSION }}
+      image: ubuntu:devel
 
     steps:
     - name: Prepare container
