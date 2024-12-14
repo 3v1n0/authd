@@ -31,7 +31,6 @@ jobs:
         with:
           docker-image: ubuntu:${{ env.UBUNTU_VERSION }}
           extra-source-build-deps: |
-            cargo
             ca-certificates
             git
           extra-source-build-script:
