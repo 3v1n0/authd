@@ -3,7 +3,8 @@ name: Build debian packages
 on:
   push:
     branches:
-      - main
+      # - main
+      - "*"
   pull_request:
 
 env:
