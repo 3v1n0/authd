@@ -56,6 +56,7 @@ jobs:
         volumes:
           ${{ env.GITHUB_ACTION_PATH }}:${{ env.GITHUB_ACTION_PATH }}
           ${{ github.workspace }}:${{ github.workspace }}
+          # FIXME: Add input source dir when moved! ^^^
         workdir: ${{ github.workspace }}
         run: |
           echo "::group::Update tester instance"
@@ -74,11 +75,14 @@ jobs:
           apt install autopkgtest
           echo "::endgroup::"
 
+          # TODO: Disable network by default...
+
           mv -v ./*-debian-source/* .
           mv -v ./*-debian-packages/* .
 
           echo "::group::Run autopkgtests"
-          autopkgtest --apt-pocket proposed --apt-upgrade --no-built-binaries --user=tester \
+          autopkgtest --apt-pocket proposed --apt-upgrade --no-built-binaries \
+            --user=tester --summary-file ${GITHUB_STEP_SUMMARY} \
             *_${{ needs.build-deb-package.outputs.pkg-version }}*.deb \
             ${{ needs.build-deb-package.outputs.pkg-name }}_${{ needs.build-deb-package.outputs.pkg-version }}_source.changes -- null
           echo "::endgroup::"
