@@ -46,7 +46,7 @@ func (r *temporaryGroupRecords) GroupByID(gid uint32) (types.GroupEntry, error) 
 		return types.GroupEntry{}, NoDataFoundError{}
 	}
 
-	return r.groupEntry(group), nil
+	return groupEntry(group), nil
 }
 
 // GroupByName returns the group information for the given group name.
@@ -62,7 +62,7 @@ func (r *temporaryGroupRecords) GroupByName(name string) (types.GroupEntry, erro
 	return r.GroupByID(gid)
 }
 
-func (r *temporaryGroupRecords) groupEntry(group groupRecord) types.GroupEntry {
+func groupEntry(group groupRecord) types.GroupEntry {
 	return types.GroupEntry{Name: group.name, GID: group.gid, Passwd: group.passwd}
 }
 

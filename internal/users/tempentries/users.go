@@ -45,7 +45,7 @@ func (r *temporaryUserRecords) userByID(uid uint32) (types.UserEntry, error) {
 		return types.UserEntry{}, NoDataFoundError{}
 	}
 
-	return r.userEntry(user), nil
+	return userEntry(user), nil
 }
 
 // UserByName returns the user information for the given user name.
@@ -61,7 +61,7 @@ func (r *temporaryUserRecords) userByName(name string) (types.UserEntry, error) 
 	return r.userByID(uid)
 }
 
-func (r *temporaryUserRecords) userEntry(user userRecord) types.UserEntry {
+func userEntry(user userRecord) types.UserEntry {
 	// TODO: Should we set the GID to something else than 0 (i.e. the GID of the root primary group)?
 	return types.UserEntry{
 		Name:  user.name,
