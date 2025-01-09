@@ -82,33 +82,7 @@ func (r *TemporaryRecords) RegisterUser(name string) (uid uint32, cleanup func()
 	if err == nil {
 		// There is a pre-auth user with the same login name. Now that the user authenticated successfully, we can
 		// replace the pre-auth user with a temporary user.
-		var tmpID string
-		tmpID, cleanup, err = r.addTemporaryUser(user.UID, name)
-		if err != nil {
-			return 0, nil, fmt.Errorf("could not add temporary user record: %w", err)
-		}
-
-		// Remove the pre-auth user from the pre-auth user records.
-		r.deletePreAuthUser(user.UID)
-
-		// Check if the UID and name are unique.
-		unique, err := r.temporaryUserRecords.uniqueNameAndUID(name, user.UID, tmpID)
-		if err != nil {
-			err = fmt.Errorf("checking UID and name uniqueness: %w", err)
-			if cleanupErr := cleanup(); cleanupErr != nil {
-				err = errors.Join(err, cleanupErr)
-			}
-			return 0, nil, err
-		}
-		if !unique {
-			err = fmt.Errorf("UID (%d) or name (%q) from pre-auth user are not unique", user.UID, name)
-			if cleanupErr := cleanup(); cleanupErr != nil {
-				err = errors.Join(err, cleanupErr)
-			}
-			return 0, nil, err
-		}
-
-		return user.UID, cleanup, nil
+		return r.replacePreAuthUser(user, name)
 	}
 
 	// Generate a UID until we find a unique one
@@ -148,4 +122,35 @@ func (r *TemporaryRecords) RegisterUser(name string) (uid uint32, cleanup func()
 
 	log.Debugf(context.Background(), "Added temporary record for user %q with UID %d", name, uid)
 	return uid, cleanup, nil
+}
+
+// replacePreAuthUser replaces a pre-auth user with a temporary user with the same name and UID.
+func (r *TemporaryRecords) replacePreAuthUser(user types.UserEntry, name string) (uid uint32, cleanup func() error, err error) {
+	var tmpID string
+	tmpID, cleanup, err = r.addTemporaryUser(user.UID, name)
+	if err != nil {
+		return 0, nil, fmt.Errorf("could not add temporary user record: %w", err)
+	}
+
+	// Remove the pre-auth user from the pre-auth user records.
+	r.deletePreAuthUser(user.UID)
+
+	// Check if the UID and name are unique.
+	unique, err := r.temporaryUserRecords.uniqueNameAndUID(name, user.UID, tmpID)
+	if err != nil {
+		err = fmt.Errorf("checking UID and name uniqueness: %w", err)
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
+		return 0, nil, err
+	}
+	if !unique {
+		err = fmt.Errorf("UID (%d) or name (%q) from pre-auth user are not unique", user.UID, name)
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
+		return 0, nil, err
+	}
+
+	return user.UID, cleanup, nil
 }
