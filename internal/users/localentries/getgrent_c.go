@@ -39,7 +39,7 @@ var getgrentMutex sync.Mutex
 func getGroupEntry() (*C.struct_group, error) {
 	errnoMutex.Lock()
 	defer errnoMutex.Unlock()
-	
+
 	C.unset_errno()
 	cGroup := C.getgrent()
 	if cGroup == nil {
@@ -92,6 +92,9 @@ var ErrGroupNotFound = errors.New("group not found")
 
 // GetGroupByName returns the group with the given name.
 func GetGroupByName(name string) (Group, error) {
+	errnoMutex.Lock()
+	defer errnoMutex.Unlock()
+
 	C.unset_errno()
 	cGroup := C.getgrnam(C.CString(name))
 	if cGroup == nil {
