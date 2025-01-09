@@ -212,7 +212,8 @@ func nssPasswdFromUsersPasswd(u types.UserEntry) *authd.PasswdEntry {
 // nssGroupFromUsersGroup returns a GroupEntry from users.GroupEntry.
 func nssGroupFromUsersGroup(g types.GroupEntry) *authd.GroupEntry {
 	return &authd.GroupEntry{
-		Name:    g.Name,
+		Name: g.Name,
+		// We set the passwd field here because we use it to store the identifier of a temporary group record
 		Passwd:  g.Passwd,
 		Gid:     g.GID,
 		Members: g.Users,
