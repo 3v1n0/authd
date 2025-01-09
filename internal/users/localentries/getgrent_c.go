@@ -10,15 +10,14 @@ package localentries
 #include <errno.h>
 #include <string.h>
 
-void unset_errno(void) {
+static void unset_errno(void) {
   errno = 0;
 }
 
-int get_errno(void) {
+static int get_errno(void) {
   return errno;
 }
 */
-//#cgo LDFLAGS: -Wl,--allow-multiple-definition
 import "C"
 
 import (
