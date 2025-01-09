@@ -1,6 +1,4 @@
 // Package localentries provides functions to access the local user and group database.
-//
-//nolint:dupl // The tests fail if we remove the duplicate C code.
 package localentries
 
 /*

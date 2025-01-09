@@ -1,6 +1,4 @@
 // Package localentries provides functions to access local passwd entries.
-//
-//nolint:dupl // The tests fail if we remove the duplicate C code.
 package localentries
 
 /*
