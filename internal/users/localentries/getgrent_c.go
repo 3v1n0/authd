@@ -39,6 +39,7 @@ var getgrentMutex sync.Mutex
 func getGroupEntry() (*C.struct_group, error) {
 	errnoMutex.Lock()
 	defer errnoMutex.Unlock()
+	
 	C.unset_errno()
 	cGroup := C.getgrent()
 	if cGroup == nil {
