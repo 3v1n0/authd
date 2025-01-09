@@ -3,7 +3,8 @@
 //nolint:dupl // The tests fail if we remove the duplicate C code.
 package localentries
 
-/* #include <stdlib.h>
+/*
+#include <stdlib.h>
 #include <pwd.h>
 #include <grp.h>
 #include <errno.h>
