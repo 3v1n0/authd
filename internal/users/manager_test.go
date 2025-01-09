@@ -607,5 +607,5 @@ func ptrUint32(v uint32) *uint32 {
 
 func TestMain(m *testing.M) {
 	log.SetLevel(log.DebugLevel)
-	os.Exit(m.Run())
+	m.Run()
 }
