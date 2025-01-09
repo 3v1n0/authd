@@ -62,8 +62,8 @@ func (r *TemporaryRecords) UserByName(name string) (types.UserEntry, error) {
 // Returns the generated UID and a cleanup function that should be called to remove the temporary user once the user was
 // added to the database.
 func (r *TemporaryRecords) RegisterUser(name string) (uid uint32, cleanup func() error, err error) {
-	r.temporaryUserRecords.registerMutex.Lock()
-	defer r.temporaryUserRecords.registerMutex.Unlock()
+	r.temporaryUserRecords.registerMu.Lock()
+	defer r.temporaryUserRecords.registerMu.Unlock()
 
 	// Check if there is a temporary  user with the same login name.
 	_, err = r.temporaryUserRecords.userByName(name)

@@ -31,30 +31,30 @@ type preAuthUser struct {
 }
 
 type preAuthUserRecords struct {
-	idGenerator   IDGenerator
-	registerMutex sync.Mutex
-	rwMutex       sync.RWMutex
-	users         map[uint32]preAuthUser
-	uidByName     map[string]uint32
-	uidByLogin    map[string]uint32
-	numUsers      int
+	idGenerator IDGenerator
+	registerMu  sync.Mutex
+	rwMu        sync.RWMutex
+	users       map[uint32]preAuthUser
+	uidByName   map[string]uint32
+	uidByLogin  map[string]uint32
+	numUsers    int
 }
 
 func newPreAuthUserRecords(idGenerator IDGenerator) *preAuthUserRecords {
 	return &preAuthUserRecords{
-		idGenerator:   idGenerator,
-		registerMutex: sync.Mutex{},
-		rwMutex:       sync.RWMutex{},
-		users:         make(map[uint32]preAuthUser),
-		uidByName:     make(map[string]uint32),
-		uidByLogin:    make(map[string]uint32),
+		idGenerator: idGenerator,
+		registerMu:  sync.Mutex{},
+		rwMu:        sync.RWMutex{},
+		users:       make(map[uint32]preAuthUser),
+		uidByName:   make(map[string]uint32),
+		uidByLogin:  make(map[string]uint32),
 	}
 }
 
 // UserByID returns the user information for the given user ID.
 func (r *preAuthUserRecords) userByID(uid uint32) (types.UserEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	user, ok := r.users[uid]
 	if !ok {
@@ -66,8 +66,8 @@ func (r *preAuthUserRecords) userByID(uid uint32) (types.UserEntry, error) {
 
 // UserByName returns the user information for the given user name.
 func (r *preAuthUserRecords) userByName(name string) (types.UserEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	uid, ok := r.uidByName[name]
 	if !ok {
@@ -78,8 +78,8 @@ func (r *preAuthUserRecords) userByName(name string) (types.UserEntry, error) {
 }
 
 func (r *preAuthUserRecords) userByLogin(loginName string) (types.UserEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	uid, ok := r.uidByLogin[loginName]
 	if !ok {
@@ -116,8 +116,8 @@ func (r *preAuthUserRecords) RegisterPreAuthUser(loginName string) (uint32, erro
 		return 0, errors.New("username is too long (max 256 characters)")
 	}
 
-	r.registerMutex.Lock()
-	defer r.registerMutex.Unlock()
+	r.registerMu.Lock()
+	defer r.registerMu.Unlock()
 
 	if r.numUsers >= MaxPreAuthUsers {
 		return 0, errors.New("maximum number of pre-auth users reached, login for new users via SSH is disabled until authd is restarted")
@@ -184,8 +184,8 @@ func (r *preAuthUserRecords) isUniqueUID(uid uint32, tmpName string) (bool, erro
 //
 // It returns the generated name and a cleanup function to remove the temporary user record.
 func (r *preAuthUserRecords) addPreAuthUser(uid uint32, loginName string) (name string, cleanup func(), err error) {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
+	r.rwMu.Lock()
+	defer r.rwMu.Unlock()
 
 	// Generate a 64 character (32 bytes in hex) random ID which we store in the name field of the temporary user
 	// record to be able to identify it in isUniqueUID.
@@ -208,8 +208,8 @@ func (r *preAuthUserRecords) addPreAuthUser(uid uint32, loginName string) (name 
 
 // deletePreAuthUser deletes the temporary user with the given UID.
 func (r *preAuthUserRecords) deletePreAuthUser(uid uint32) {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
+	r.rwMu.Lock()
+	defer r.rwMu.Unlock()
 
 	user, ok := r.users[uid]
 	if !ok {

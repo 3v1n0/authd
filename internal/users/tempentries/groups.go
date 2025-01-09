@@ -19,27 +19,27 @@ type groupRecord struct {
 }
 
 type temporaryGroupRecords struct {
-	idGenerator   IDGenerator
-	registerMutex sync.Mutex
-	rwMutex       sync.RWMutex
-	groups        map[uint32]groupRecord
-	gidByName     map[string]uint32
+	idGenerator IDGenerator
+	registerMu  sync.Mutex
+	rwMu        sync.RWMutex
+	groups      map[uint32]groupRecord
+	gidByName   map[string]uint32
 }
 
 func newTemporaryGroupRecords(idGenerator IDGenerator) *temporaryGroupRecords {
 	return &temporaryGroupRecords{
-		idGenerator:   idGenerator,
-		registerMutex: sync.Mutex{},
-		rwMutex:       sync.RWMutex{},
-		groups:        make(map[uint32]groupRecord),
-		gidByName:     make(map[string]uint32),
+		idGenerator: idGenerator,
+		registerMu:  sync.Mutex{},
+		rwMu:        sync.RWMutex{},
+		groups:      make(map[uint32]groupRecord),
+		gidByName:   make(map[string]uint32),
 	}
 }
 
 // GroupByID returns the group information for the given group ID.
 func (r *temporaryGroupRecords) GroupByID(gid uint32) (types.GroupEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	group, ok := r.groups[gid]
 	if !ok {
@@ -51,8 +51,8 @@ func (r *temporaryGroupRecords) GroupByID(gid uint32) (types.GroupEntry, error) 
 
 // GroupByName returns the group information for the given group name.
 func (r *temporaryGroupRecords) GroupByName(name string) (types.GroupEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	gid, ok := r.gidByName[name]
 	if !ok {
@@ -71,8 +71,8 @@ func (r *temporaryGroupRecords) groupEntry(group groupRecord) types.GroupEntry {
 // Returns the generated GID and a cleanup function that should be called to remove the temporary group once the group
 // was added to the database.
 func (r *temporaryGroupRecords) RegisterGroup(name string) (gid uint32, cleanup func() error, err error) {
-	r.registerMutex.Lock()
-	defer r.registerMutex.Unlock()
+	r.registerMu.Lock()
+	defer r.registerMu.Unlock()
 
 	// Check if there is already a temporary group with this name
 	_, err = r.GroupByName(name)
@@ -143,8 +143,8 @@ func (r *temporaryGroupRecords) uniqueNameAndGID(name string, gid uint32, tmpID 
 }
 
 func (r *temporaryGroupRecords) addTemporaryGroup(gid uint32, name string) (tmpID string, cleanup func() error, err error) {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
+	r.rwMu.Lock()
+	defer r.rwMu.Unlock()
 
 	// Generate a 64 character (32 bytes in hex) random ID which we store in the passwd field of the temporary group
 	// record to be able to identify it in isUniqueGID.
@@ -163,8 +163,8 @@ func (r *temporaryGroupRecords) addTemporaryGroup(gid uint32, name string) (tmpI
 }
 
 func (r *temporaryGroupRecords) deleteTemporaryGroup(gid uint32) error {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
+	r.rwMu.Lock()
+	defer r.rwMu.Unlock()
 
 	group, ok := r.groups[gid]
 	if !ok {

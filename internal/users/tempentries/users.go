@@ -18,27 +18,27 @@ type userRecord struct {
 }
 
 type temporaryUserRecords struct {
-	idGenerator   IDGenerator
-	registerMutex sync.Mutex
-	rwMutex       sync.RWMutex
-	users         map[uint32]userRecord
-	uidByName     map[string]uint32
+	idGenerator IDGenerator
+	registerMu  sync.Mutex
+	rwMu        sync.RWMutex
+	users       map[uint32]userRecord
+	uidByName   map[string]uint32
 }
 
 func newTemporaryUserRecords(idGenerator IDGenerator) *temporaryUserRecords {
 	return &temporaryUserRecords{
-		idGenerator:   idGenerator,
-		registerMutex: sync.Mutex{},
-		rwMutex:       sync.RWMutex{},
-		users:         make(map[uint32]userRecord),
-		uidByName:     make(map[string]uint32),
+		idGenerator: idGenerator,
+		registerMu:  sync.Mutex{},
+		rwMu:        sync.RWMutex{},
+		users:       make(map[uint32]userRecord),
+		uidByName:   make(map[string]uint32),
 	}
 }
 
 // UserByID returns the user information for the given user ID.
 func (r *temporaryUserRecords) userByID(uid uint32) (types.UserEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	user, ok := r.users[uid]
 	if !ok {
@@ -50,8 +50,8 @@ func (r *temporaryUserRecords) userByID(uid uint32) (types.UserEntry, error) {
 
 // UserByName returns the user information for the given user name.
 func (r *temporaryUserRecords) userByName(name string) (types.UserEntry, error) {
-	r.rwMutex.RLock()
-	defer r.rwMutex.RUnlock()
+	r.rwMu.RLock()
+	defer r.rwMu.RUnlock()
 
 	uid, ok := r.uidByName[name]
 	if !ok {
@@ -97,8 +97,8 @@ func (r *temporaryUserRecords) uniqueNameAndUID(name string, uid uint32, tmpID s
 // addTemporaryUser adds a temporary user with a random name and the given UID. It returns the generated name.
 // If the UID is already registered, it returns a errUserAlreadyExists.
 func (r *temporaryUserRecords) addTemporaryUser(uid uint32, name string) (tmpID string, cleanup func() error, err error) {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
+	r.rwMu.Lock()
+	defer r.rwMu.Unlock()
 
 	// Generate a 64 character (32 bytes in hex) random ID which we store in the gecos field of the temporary user
 	// record to be able to identify it in isUniqueUID.
@@ -118,8 +118,8 @@ func (r *temporaryUserRecords) addTemporaryUser(uid uint32, name string) (tmpID 
 
 // deleteTemporaryUser deletes the temporary user with the given UID.
 func (r *temporaryUserRecords) deleteTemporaryUser(uid uint32) error {
-	r.rwMutex.Lock()
-	defer r.rwMutex.Unlock()
+	r.rwMu.Lock()
+	defer r.rwMu.Unlock()
 
 	user, ok := r.users[uid]
 	if !ok {
