@@ -9,6 +9,7 @@ package localentries
 #include <grp.h>
 #include <errno.h>
 #include <string.h>
+
 void unset_errno(void) {
   errno = 0;
 }
