@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/ubuntu/authd/internal/errno"
 )
 
 // Passwd represents a passwd entry.
@@ -25,20 +27,18 @@ type Passwd struct {
 var getpwentMutex sync.Mutex
 
 func getPasswdEntry() (*C.struct_passwd, error) {
-	errnoMutex.Lock()
-	defer errnoMutex.Unlock()
-
-	defer unsetErrno()
+	errno.Lock()
+	defer errno.Unlock()
 
 	cPasswd := C.getpwent()
 	if cPasswd != nil {
 		return cPasswd, nil
 	}
 
-	err := getErrno()
+	err := errno.Get()
 	// It's not documented in the man page, but apparently getpwent sets errno to ENOENT when there are no more
 	// entries in the passwd database.
-	if errors.Is(err, errNoEnt) {
+	if errors.Is(err, errno.ErrNoEnt) {
 		return nil, nil
 	}
 	if err != nil {
@@ -83,16 +83,14 @@ var ErrUserNotFound = errors.New("user not found")
 
 // GetPasswdByName returns the user with the given name.
 func GetPasswdByName(name string) (Passwd, error) {
-	errnoMutex.Lock()
-	defer errnoMutex.Unlock()
-
-	defer unsetErrno()
+	errno.Lock()
+	defer errno.Unlock()
 
 	cPasswd := C.getpwnam(C.CString(name))
 	if cPasswd == nil {
-		err := getErrno()
-		if errors.Is(err, errNoEnt) || errors.Is(err, errSrch) ||
-			errors.Is(err, errBadf) || errors.Is(err, errPerm) {
+		err := errno.Get()
+		if errors.Is(err, errno.ErrNoEnt) || errors.Is(err, errno.ErrSrch) ||
+			errors.Is(err, errno.ErrBadf) || errors.Is(err, errno.ErrPerm) {
 			return Passwd{}, ErrUserNotFound
 		}
 		return Passwd{}, fmt.Errorf("getpwnam: %v", err)
