@@ -28,7 +28,7 @@ func getPasswdEntry() (*C.struct_passwd, error) {
 	errnoMutex.Lock()
 	defer errnoMutex.Unlock()
 
-	unsetErrno()
+	defer unsetErrno()
 
 	cPasswd := C.getpwent()
 	if cPasswd == nil {
@@ -84,7 +84,7 @@ func GetPasswdByName(name string) (Passwd, error) {
 	errnoMutex.Lock()
 	defer errnoMutex.Unlock()
 
-	unsetErrno()
+	defer unsetErrno()
 
 	cPasswd := C.getpwnam(C.CString(name))
 	if cPasswd == nil {
