@@ -3,13 +3,13 @@ name: Build debian packages
 on:
   push:
     branches:
-      - main
+      - "*"
     tags:
       - "*"
   pull_request:
 
 env:
-  UBUNTU_VERSIONS: '["noble", "devel"]'
+  UBUNTU_VERSIONS: ${{ toJSON(["noble", "devel"]) }}
 
 jobs:
   define-versions:
