@@ -9,7 +9,8 @@ on:
   pull_request:
 
 env:
-  UBUNTU_VERSIONS: ${{ toJSON(["noble", "devel"]) }}
+  UBUNTU_VERSIONS: |
+    ["noble", "devel"]
 
 jobs:
   define-versions:
