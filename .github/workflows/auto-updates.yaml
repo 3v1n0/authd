@@ -30,6 +30,8 @@ jobs:
           shell: bash
           environment: |
             DEBIAN_FRONTEND=noninteractive
+            CARGO_VENDOR_DIR=${{ github.workspace }}/vendor_rust
+            CARGO_PATH=/usr/share/cargo/bin/cargo
           run: |
             echo "::group::Install dependencies"
             set -eu
@@ -40,13 +42,13 @@ jobs:
             apt install -y dh-cargo cargo-vendor-filterer
             echo "::endgroup::"
 
-            echo "::Vendor the dependencies"
-            export CARGO_VENDOR_DIR=${PWD}/vendor_rust
-            export CARGO_PATH=/usr/share/cargo/bin/cargo
+            echo "::group::Vendor the dependencies"
+            # export CARGO_VENDOR_DIR=${PWD}/vendor_rust
+            # export CARGO_PATH=/usr/share/cargo/bin/cargo
             sh +x debian/vendor-rust.sh
             echo "::endgroup::"
 
-            echo "::Update XS-Vendored-Sources-Rust"
+            echo "::group::Update XS-Vendored-Sources-Rust"
             VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
             OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
             if [ -z "$OUTPUT" ]; then
