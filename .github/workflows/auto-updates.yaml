@@ -43,11 +43,11 @@ jobs:
 
             set +x
 
-            # FIXME:
-            apt install -y wget
-            wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb \
-              https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo-tools_31ubuntu4_all.deb
-            dpkg -i ./dh-cargo_31ubuntu4_all.deb ./dh-cargo-tools_31ubuntu4_all.deb
+            # FIXME: drop this when it lands...
+            # apt install -y wget
+            # wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb \
+            #   https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo-tools_31ubuntu4_all.deb
+            # dpkg -i ./dh-cargo_31ubuntu4_all.deb ./dh-cargo-tools_31ubuntu4_all.deb
 
             echo "::group::Vendor the dependencies"
             # export CARGO_VENDOR_DIR=${PWD}/vendor_rust
@@ -61,6 +61,7 @@ jobs:
             OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
             if [ -z "$OUTPUT" ]; then
               if [ "${cmd_status}" -ne 0 ]; then
+                # dh-cargo-vendored-sources failed because of other reason, so let's fail with it!
                 echo "dh-cargo-vendored-sources failed:"
                 echo "${VENDORED_SOURCES}"
                 exit "${cmd_status}"
