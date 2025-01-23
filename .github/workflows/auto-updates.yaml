@@ -41,6 +41,8 @@ jobs:
             apt install -y dh-cargo cargo-vendor-filterer
             echo "::endgroup::"
 
+            set +x
+
             # FIXME:
             # apt install -y wget
             # wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb
