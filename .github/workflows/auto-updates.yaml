@@ -35,13 +35,13 @@ jobs:
             set -eu
 
             apt update -y
-            apt install -y dh-cargo cargo-vendor-filterer git jq
+            apt install -y dh-cargo cargo-vendor-filterer
             echo "::endgroup::"
 
             echo "::Vendor the dependencies"
             export CARGO_VENDOR_DIR=${PWD}/vendor_rust
             export CARGO_PATH=/usr/share/cargo/bin/cargo
-            debian/vendor-rust.sh
+            sh +x debian/vendor-rust.sh
             echo "::endgroup::"
 
             echo "::Update XS-Vendored-Sources-Rust"
