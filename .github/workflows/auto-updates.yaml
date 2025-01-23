@@ -2,7 +2,7 @@ name: Update translations and Rust packaging related files in main
 on:
   push:
     branches:
-      - main
+      - "*"
     paths-ignore:
       - debian/control
 concurrency: auto-update
@@ -18,33 +18,60 @@ jobs:
     name: Update packaging related Rust files
     runs-on: ubuntu-24.04 # ubuntu-latest-runner
     steps:
-      - name: Install dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt update
-          sudo apt install cargo dh-cargo git jq
       - uses: actions/checkout@v4
         with:
           ref: main
       - name: Vendor the dependencies
-        run: |
-          cargo vendor vendor_rust/
-      - name: Update XS-Vendored-Sources-Rust
-        shell: bash
-        run: |
-          set -eu
+        uses: kohlerdominik/docker-run-action@v2.0.0
+        with:
+          image: ${{ inputs.docker-image }}
+          volumes: ${{ github.workspace }}:${{ github.workspace }}
+          shell: bash
+          environment: |
+            DEBIAN_FRONTEND=noninteractive
+          run: |
+            echo "::group::Install dependencies"
+            set -eu
 
-          export CARGO_VENDOR_DIR=vendor_rust/
-          VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
-          OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
-          if [ -z "$OUTPUT" ]; then
-            echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
-            exit 0
-          fi
-          sed -i "s/^XS-Vendored-Sources-Rust:.*/$OUTPUT/" debian/control
+            sudo apt update
+            sudo apt install dh-cargo cargo-vendor-filterer git jq
+            echo "::endgroup::"
 
-          echo "modified=true" >> $GITHUB_ENV
+            echo "::Vendor the dependencies"
+            export CARGO_VENDOR_DIR=${PWD}/vendor_rust
+            debian/vendor-rust.sh
+            echo "::endgroup::"
+
+            echo "::Update XS-Vendored-Sources-Rust"
+            VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
+            OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
+            if [ -z "$OUTPUT" ]; then
+              echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
+              exit 0
+            fi
+            sed -i "s/^XS-Vendored-Sources-Rust:.*/$OUTPUT/" debian/control
+
+            echo "modified=true" >> "${GITHUB_ENV}"
+            echo "::endgroup::"
+
+      # - name: Vendor the dependencies
+      #   run: |
+      #     cargo vendor vendor_rust/
+      # - name: Update XS-Vendored-Sources-Rust
+      #   shell: bash
+      #   run: |
+      #     set -eu
+
+      #     export CARGO_VENDOR_DIR=vendor_rust/
+      #     VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
+      #     OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
+      #     if [ -z "$OUTPUT" ]; then
+      #       echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
+      #       exit 0
+      #     fi
+      #     sed -i "s/^XS-Vendored-Sources-Rust:.*/$OUTPUT/" debian/control
+
+      #     echo "modified=true" >> $GITHUB_ENV
       - name: Create Pull Request
         if: ${{ env.modified == 'true' }}
         uses: peter-evans/create-pull-request@v7
