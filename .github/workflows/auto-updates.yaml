@@ -40,6 +40,7 @@ jobs:
 
             echo "::Vendor the dependencies"
             export CARGO_VENDOR_DIR=${PWD}/vendor_rust
+            export CARGO_PATH=/usr/share/cargo/bin/cargo
             debian/vendor-rust.sh
             echo "::endgroup::"
 
