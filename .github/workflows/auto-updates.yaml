@@ -24,7 +24,7 @@ jobs:
       - name: Vendor the dependencies
         uses: kohlerdominik/docker-run-action@v2.0.0
         with:
-          image: ${{ inputs.docker-image }}
+          image: ubuntu:devel
           volumes: ${{ github.workspace }}:${{ github.workspace }}
           shell: bash
           environment: |
