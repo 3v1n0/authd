@@ -26,6 +26,7 @@ jobs:
         with:
           image: ubuntu:devel
           volumes: ${{ github.workspace }}:${{ github.workspace }}
+          workdir: ${{ github.workspace }}
           shell: bash
           environment: |
             DEBIAN_FRONTEND=noninteractive
