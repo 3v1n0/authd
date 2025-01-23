@@ -35,9 +35,7 @@ jobs:
             CARGO_PATH=/usr/share/cargo/bin/cargo
           run: |
             echo "::group::Install dependencies"
-            set -eu
-
-            set -x
+            set -euo pipefail
 
             apt update -y
             apt install -y dh-cargo cargo-vendor-filterer
