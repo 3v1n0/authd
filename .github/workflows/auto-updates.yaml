@@ -20,7 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          # FIXME: US!
+          # ref: main
       - name: Vendor the dependencies
         uses: kohlerdominik/docker-run-action@v2.0.0
         with:
