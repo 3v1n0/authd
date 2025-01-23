@@ -33,8 +33,8 @@ jobs:
             echo "::group::Install dependencies"
             set -eu
 
-            sudo apt update
-            sudo apt install dh-cargo cargo-vendor-filterer git jq
+            apt update
+            apt install dh-cargo cargo-vendor-filterer git jq
             echo "::endgroup::"
 
             echo "::Vendor the dependencies"
