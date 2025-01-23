@@ -42,8 +42,9 @@ jobs:
             echo "::endgroup::"
 
             # FIXME:
-            wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb
-            apt install -y ./dh-cargo_31ubuntu4_all.deb
+            # apt install -y wget
+            # wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb
+            # apt install -y ./dh-cargo_31ubuntu4_all.deb
 
             echo "::group::Vendor the dependencies"
             # export CARGO_VENDOR_DIR=${PWD}/vendor_rust
