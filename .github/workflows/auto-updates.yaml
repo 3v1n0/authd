@@ -56,9 +56,16 @@ jobs:
             echo "::endgroup::"
 
             echo "::group::Update XS-Vendored-Sources-Rust"
-            VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources)
+            VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
+            cmd_status=${PIPESTATUS[0]}
             OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
             if [ -z "$OUTPUT" ]; then
+              if [ "${cmd_status}" -ne 0 ]; then
+                echo "dh-cargo-vendored-sources failed:"
+                echo "${VENDORED_SOURCES}"
+                exit "${cmd_status}"
+              fi
+
               echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
               exit 0
             fi
