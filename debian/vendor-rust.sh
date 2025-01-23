@@ -1,5 +1,5 @@
 #!/bin/sh
-set -e
+set -eu
 
 CARGO_HOME=${DEB_CARGO_HOME:-$(mktemp --tmpdir -d -t "cargo-home-XXXXXX")}
 export CARGO_HOME
