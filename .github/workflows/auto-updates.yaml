@@ -60,13 +60,15 @@ jobs:
               || cmd_status=$?
             OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
             if [ -z "$OUTPUT" ]; then
+              if [ "${cmd_status}" -ne 0 ]; then
+                # dh-cargo-vendored-sources failed because of other reason, so let's fail with it!
+                echo "dh-cargo-vendored-sources failed:"
+                echo "${VENDORED_SOURCES}"
+                exit "${cmd_status}"
+              fi
+
               echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
               exit 0
-            elif [ "${cmd_status}" -ne 0 ]; then
-              # dh-cargo-vendored-sources failed because of other reason, so let's fail with it!
-              echo "dh-cargo-vendored-sources failed:"
-              echo "${VENDORED_SOURCES}"
-              exit "${cmd_status}"
             fi
             sed -i "s/^XS-Vendored-Sources-Rust:.*/$OUTPUT/" debian/control
 
