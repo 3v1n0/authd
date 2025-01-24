@@ -60,39 +60,19 @@ jobs:
             cmd_status=${PIPESTATUS[0]}
             OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
             if [ -z "$OUTPUT" ]; then
-              if [ "${cmd_status}" -ne 0 ]; then
-                # dh-cargo-vendored-sources failed because of other reason, so let's fail with it!
-                echo "dh-cargo-vendored-sources failed:"
-                echo "${VENDORED_SOURCES}"
-                exit "${cmd_status}"
-              fi
-
               echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
               exit 0
+            elif [ "${cmd_status}" -ne 0 ]; then
+              # dh-cargo-vendored-sources failed because of other reason, so let's fail with it!
+              echo "dh-cargo-vendored-sources failed:"
+              echo "${VENDORED_SOURCES}"
+              exit "${cmd_status}"
             fi
             sed -i "s/^XS-Vendored-Sources-Rust:.*/$OUTPUT/" debian/control
 
             echo "modified=true" >> "${GITHUB_ENV}"
             echo "::endgroup::"
 
-      # - name: Vendor the dependencies
-      #   run: |
-      #     cargo vendor vendor_rust/
-      # - name: Update XS-Vendored-Sources-Rust
-      #   shell: bash
-      #   run: |
-      #     set -eu
-
-      #     export CARGO_VENDOR_DIR=vendor_rust/
-      #     VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
-      #     OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
-      #     if [ -z "$OUTPUT" ]; then
-      #       echo "XS-Vendored-Sources-Rust is up to date. No change is needed.";
-      #       exit 0
-      #     fi
-      #     sed -i "s/^XS-Vendored-Sources-Rust:.*/$OUTPUT/" debian/control
-
-      #     echo "modified=true" >> $GITHUB_ENV
       - name: Create Pull Request
         if: ${{ env.modified == 'true' }}
         uses: peter-evans/create-pull-request@v7
