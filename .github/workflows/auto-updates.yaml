@@ -44,10 +44,10 @@ jobs:
             set -x
 
             # FIXME: drop this when it lands...
-            # apt install -y wget
-            # wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb \
-            #   https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo-tools_31ubuntu4_all.deb
-            # dpkg -i ./dh-cargo_31ubuntu4_all.deb ./dh-cargo-tools_31ubuntu4_all.deb
+            apt install -y wget
+            wget https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo_31ubuntu4_all.deb \
+              https://launchpad.net/ubuntu/+source/dh-cargo/31ubuntu4/+build/30122553/+files/dh-cargo-tools_31ubuntu4_all.deb
+            dpkg -i ./dh-cargo_31ubuntu4_all.deb ./dh-cargo-tools_31ubuntu4_all.deb
 
             echo "::group::Vendor the dependencies"
             # export CARGO_VENDOR_DIR=${PWD}/vendor_rust
