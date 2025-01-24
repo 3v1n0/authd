@@ -52,8 +52,7 @@ jobs:
             cargo install --locked --root=/usr \
               cargo-vendor-filterer@${{ env.CARGO_VENDOR_FILTERER_VERSION }}
             command -v cargo-vendor-filterer
-          lintian: |
-            ${{ contains(needs.check-modified-files.outputs.list, 'debian/') && '' || 'skip' }}
+          lintian: ${{ contains(needs.check-modified-files.outputs.list, 'debian/') && '' || 'skip' }}
 
   check-modified-files:
     name: Check modified files
