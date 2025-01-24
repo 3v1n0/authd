@@ -57,6 +57,7 @@ jobs:
 
             echo "::group::Update XS-Vendored-Sources-Rust"
             VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1 || true)
+            echo "${PIPESTATUS[@]}"
             cmd_status=${PIPESTATUS[0]}
             OUTPUT=$(echo "$VENDORED_SOURCES" | grep ^XS-Vendored-Sources-Rust: || true)
             if [ -z "$OUTPUT" ]; then
