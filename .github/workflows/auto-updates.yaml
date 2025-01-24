@@ -41,7 +41,7 @@ jobs:
             apt install -y dh-cargo cargo-vendor-filterer
             echo "::endgroup::"
 
-            set +x
+            set -x
 
             # FIXME: drop this when it lands...
             # apt install -y wget
