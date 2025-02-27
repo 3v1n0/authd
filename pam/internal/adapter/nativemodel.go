@@ -37,6 +37,7 @@ type nativeModel struct {
 	currentStage         proto.Stage
 	busy                 bool
 	userSelectionAllowed bool
+	authSelectionFocused bool
 }
 
 const (
@@ -162,8 +163,8 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 	case nativeStageChangeRequest:
 		var baseCmd tea.Cmd
 		if m.currentStage != msg.Stage {
-			m.currentStage = msg.Stage
-			baseCmd = sendEvent(ChangeStage(msg))
+			// m.currentStage = msg.Stage
+			return m, tea.Sequence(sendEvent(ChangeStage(msg)), sendEvent(msg))
 		}
 
 		switch m.currentStage {
@@ -298,7 +299,13 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		if !m.checkStage(pam_proto.Stage_challenge) {
 			return m, nil
 		}
-		return m, m.startChallenge()
+		if m.busy {
+			// We may receive multiple concurrent requests, but due to the sync nature
+			// of this model, we can't just accept them once we've one in progress already
+			log.Debug(context.TODO(), "Challenge already in progress")
+			return m, nil
+		}
+		return m.startAsyncOp(m.startChallenge)
 
 	case newPasswordCheckResult:
 		if msg.msg != "" {
@@ -327,14 +334,9 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		case auth.Denied:
 			// This is handled by the main authentication model
 			return m, nil
-		case auth.Cancelled:
-			return m, sendEvent(isAuthenticatedCancelled{})
 		default:
 			return m, maybeSendPamError(m.sendError("Access %q is not valid", access))
 		}
-
-	case isAuthenticatedCancelled:
-		return m.goBackCommand()
 	}
 
 	return m, nil
@@ -854,7 +856,6 @@ func (m nativeModel) newPasswordChallenge(previousPassword *string) tea.Cmd {
 func (m nativeModel) goBackCommand() (nativeModel, tea.Cmd) {
 	if m.currentStage >= proto.Stage_challenge && m.uiLayout != nil {
 		m.uiLayout = nil
-		return m, sendEvent(isAuthenticatedCancelled{})
 	}
 	if m.currentStage >= proto.Stage_authModeSelection {
 		m.selectedAuthMode = ""
