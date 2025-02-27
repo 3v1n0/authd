@@ -229,7 +229,7 @@ jobs:
           #TODO: Update when https://go-review.googlesource.com/c/go/+/456595 is merged.
           go test -json -timeout ${GO_TESTS_TIMEOUT} -cover -covermode=set ./... -coverpkg=./... -shuffle=on -args -test.gocoverdir="${raw_cov_dir}" \
             -test.count 5 \
-            -test.failfast -test.run TestNative | \
+            -test.failfast | \
             gotestfmt --logfile "${AUTHD_TEST_ARTIFACTS_PATH}/gotestfmt.cover.log"
 
           # Convert the raw coverage data into textfmt so we can merge the Rust one into it
@@ -251,7 +251,7 @@ jobs:
         run: |
           go test -json -timeout ${GO_TESTS_TIMEOUT} -race ./... \
             -test.count 5 \
-            -test.failfast -test.run TestNative | \
+            -test.failfast | \
             gotestfmt --logfile "${AUTHD_TEST_ARTIFACTS_PATH}/gotestfmt.race.log"
 
       - name: Run PAM tests (with Address Sanitizer)
@@ -282,7 +282,6 @@ jobs:
             -test.v=test2json \
             -test.count 10 \
             -test.failfast \
-            -test.run TestNative \
             -test.timeout ${GO_TESTS_TIMEOUT} | \
           gotestfmt --logfile "${AUTHD_TEST_ARTIFACTS_PATH}/gotestfmt.pam-integration-tests-asan.log" || \
           exit_code=$?
