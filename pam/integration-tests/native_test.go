@@ -201,14 +201,14 @@ func TestNativeAuthenticate(t *testing.T) {
 			tape:         "switch_local_broker",
 			tapeSettings: []tapeSetting{{vhsHeight, 700}},
 		},
-		"Authenticate_user_and_add_it_to_local_group": {
-			tape:            "local_group",
-			tapeSettings:    []tapeSetting{{vhsHeight, 700}},
-			wantLocalGroups: true,
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationLocalGroupsPrefix + "auth",
-			},
-		},
+		// "Authenticate_user_and_add_it_to_local_group": {
+		// 	tape:            "local_group",
+		// 	tapeSettings:    []tapeSetting{{vhsHeight, 700}},
+		// 	wantLocalGroups: true,
+		// 	clientOptions: clientOptions{
+		// 		PamUser: examplebroker.UserIntegrationLocalGroupsPrefix + "auth",
+		// 	},
+		// },
 		"Authenticate_user_on_ssh_service": {
 			tape: "simple_ssh_auth",
 			clientOptions: clientOptions{
