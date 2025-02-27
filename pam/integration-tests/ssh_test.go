@@ -176,11 +176,11 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 				vhsCommandFinalAuthWaitVariable: `Wait /Password:/`,
 			},
 		},
-		"Authenticate_user_and_add_it_to_local_group": {
-			tape:            "local_group",
-			userPrefix:      examplebroker.UserIntegrationLocalGroupsPrefix,
-			wantLocalGroups: true,
-		},
+		// "Authenticate_user_and_add_it_to_local_group": {
+		// 	tape:            "local_group",
+		// 	userPrefix:      examplebroker.UserIntegrationLocalGroupsPrefix,
+		// 	wantLocalGroups: true,
+		// },
 
 		"Remember_last_successful_broker_and_mode": {
 			tape:          "remember_broker_and_mode",

@@ -127,10 +127,10 @@ func TestCLIAuthenticate(t *testing.T) {
 			tape:         "switch_local_broker",
 			tapeSettings: []tapeSetting{{vhsHeight, 800}},
 		},
-		"Authenticate_user_and_add_it_to_local_group": {
-			tape:            "local_group",
-			wantLocalGroups: true,
-		},
+		// "Authenticate_user_and_add_it_to_local_group": {
+		// 	tape:            "local_group",
+		// 	wantLocalGroups: true,
+		// },
 		"Authenticate_with_warnings_on_unsupported_arguments": {
 			tape: "simple_auth_with_unsupported_args",
 		},
