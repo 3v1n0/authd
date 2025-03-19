@@ -69,7 +69,7 @@ jobs:
               command -v cargo-vendor-filterer
             fi
 
-        # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
+      # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
       - name: Parse job outputs
         id: outputs
         run: |
@@ -106,10 +106,29 @@ jobs:
     #    github.event_name == 'release' }}
 
     steps:
+    - name: Compute job variables
+      run: |
+        set -euo pipefail
+
+        # FIXME:;
+        set -x
+
+        json_output='${{ toJSON(needs.build-deb-package-sources.outputs) }}'
+        variables=(
+          pkg-dsc
+          run-id
+        )
+
+        for var in "${variables[@]}" do
+          v=$(echo "$json_output" |
+            jq -r '."'"$var"'-${{ matrix.ubuntu-version }}"')
+          echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
+        done
+
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
-        run-id: ${{ needs.build-deb-package-sources.outputs.run-id }}
+        run-id: ${{ env.run-id }}
         merge-multiple: true
 
     - name: Install dependencies
@@ -131,9 +150,7 @@ jobs:
 
         set -x
 
-        pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
-          jq -r '."pkg-dsc-${{ matrix.ubuntu-version }}"')
-        dpkg-source -x "${pkg_dsc}" sources
+        dpkg-source -x "${{ env.pkg_dsc }}" sources
 
     - name: Commit packaging sources
       run: |
