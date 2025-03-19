@@ -256,7 +256,7 @@ jobs:
       run: |
         set -euo pipefail
 
-# FIXME:;
+        # FIXME:;
         set -x
 
         # variables=(
