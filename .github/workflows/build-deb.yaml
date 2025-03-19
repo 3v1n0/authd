@@ -120,10 +120,14 @@ jobs:
         )
 
         for var in "${variables[@]}" do
-          versioned_var="$var"-'${{ matrix.ubuntu-version }}'
-          v=$(echo "$json_output" | jq -r '."'"${versioned_var}"'"')
+          versioned_var="${var}-${{ matrix.ubuntu-version }}"
+          v=$(echo "${json_output}" | jq -r '."'"${versioned_var}"'"')
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
+
+        # pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
+        #   jq -r '."pkg-dsc-${{ matrix.ubuntu-version }}"')
+        # dpkg-source -x "${pkg_dsc}" sources
 
     - name: Download artifacts
       uses: actions/download-artifact@v4
