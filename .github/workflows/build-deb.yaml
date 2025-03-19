@@ -120,9 +120,8 @@ jobs:
         )
 
         for var in "${variables[@]}" do
-          versioned_var="$var-${{ matrix.ubuntu-version }}"
-          v=$(echo "$json_output" |
-            jq -r '."'"${versioned_var}"'"')
+          versioned_var="$var"-'${{ matrix.ubuntu-version }}'
+          v=$(echo "$json_output" | jq -r '."'"${versioned_var}"'"')
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
