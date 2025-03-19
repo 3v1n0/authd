@@ -264,11 +264,12 @@ jobs:
 
     - name: Compute package sources changes
       run: |
-        pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
-          jq -r ".pkg-dsc-${{ matrix.ubuntu-version }}")
+        pkg_src_changes=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
+          jq -r ".pkg-src-changes-${{ matrix.ubuntu-version }}")
+        echo "pkg_src_changes=${pkg_src_changes}" >> "${GITHUB_ENV}"
 
     - name: Run autopkgtests
       uses: canonical/desktop-engineering/gh-actions/common/run-autopkgtest@main
       with:
         lxd-image: ubuntu:${{ matrix.ubuntu-version }}
-        source-changes: ${{ needs.build-deb-package-sources.outputs.pkg-src-changes }}
+        source-changes: ${{ env.pkg_src_changes }}
