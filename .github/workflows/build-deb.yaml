@@ -41,8 +41,8 @@ jobs:
         ubuntu-version: ${{ fromJSON(needs.define-versions.outputs.ubuntu-versions) }}
     outputs:
       # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
-      run-id-noble: ${{ github.run_id }}
-      run-id-devel: ${{ github.run_id }}
+      run-id-noble: ${{ steps.outputs.outputs.run-id-noble-noble }}
+      run-id-devel: ${{ steps.outputs.outputs.run-id-noble-devel }}
       pkg-src-changes-devel: ${{ steps.outputs.outputs.pkg-src-changes-devel }}
       pkg-src-changes-noble: ${{ steps.outputs.outputs.pkg-src-changes-noble }}
       pkg-dsc-devel:  ${{ steps.outputs.outputs.pkg-dsc-devel }}
@@ -74,6 +74,7 @@ jobs:
         id: outputs
         run: |
           (
+            echo "run-id-${{ matrix.ubuntu-version }}=${{ github.run_id }}"
             echo "pkg-dsc-${{ matrix.ubuntu-version }}=${{ env.PKG_DSC }}"
             echo "pkg-src-changes-${{ matrix.ubuntu-version }}=${{ env.PKG_SOURCE_CHANGES }}"
           ) >> "${GITHUB_OUTPUT}"
