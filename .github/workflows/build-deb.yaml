@@ -41,8 +41,11 @@ jobs:
         ubuntu-version: ${{ fromJSON(needs.define-versions.outputs.ubuntu-versions) }}
     outputs:
       run-id: ${{ github.run_id }}
-      pkg-src-changes: ${{ env.PKG_SOURCE_CHANGES }}
-      pkg-dsc: ${{ env.PKG_DSC }}
+      # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
+      pkg-src-changes-devel: ${{ steps.outputs.outputs.pkg-src-changes-devel }}
+      pkg-src-changes-noble: ${{ steps.outputs.outputs.pkg-src-changes-noble }}
+      pkg-dsc-devel:  ${{ steps.outputs.outputs.pkg-dsc-devel }}
+      pkg-dsc-noble:  ${{ steps.outputs.outputs.pkg-dsc-noble }}
 
     steps:
       - name: Checkout authd code
@@ -64,6 +67,15 @@ jobs:
                 cargo-vendor-filterer@${{ env.CARGO_VENDOR_FILTERER_VERSION }}
               command -v cargo-vendor-filterer
             fi
+
+        # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
+      - name: Parse job outputs
+        id: outputs
+        run: |
+          (
+            echo "pkg-dsc-${{ matrix.ubuntu-version }}=${{ env.PKG_DSC }}"
+            echo "pkg-src-changes-${{ matrix.ubuntu-version }}=${{ env.PKG_SOURCE_CHANGES }}"
+          ) >> "${GITHUB_OUTPUT}"
 
   synchronize-packaging-branches:
     name: Update packaging branch
@@ -115,7 +127,11 @@ jobs:
       run: |
         set -euo pipefail
 
-        dpkg-source -x ${{ needs.build-deb-package-sources.outputs.pkg-dsc }} sources
+        set -x
+
+        pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
+          jq -r ".pkg-dsc-${{ matrix.ubuntu-version }}")
+        dpkg-source -x "${pkg_dsc}" sources
 
     - name: Commit packaging sources
       run: |
@@ -245,6 +261,11 @@ jobs:
       with:
         run-id: ${{ needs.build-deb-package-binaries.outputs.run-id }}
         merge-multiple: true
+
+    - name: Compute package sources changes
+      run: |
+        pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
+          jq -r ".pkg-dsc-${{ matrix.ubuntu-version }}")
 
     - name: Run autopkgtests
       uses: canonical/desktop-engineering/gh-actions/common/run-autopkgtest@main
