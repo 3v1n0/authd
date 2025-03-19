@@ -40,8 +40,9 @@ jobs:
       matrix:
         ubuntu-version: ${{ fromJSON(needs.define-versions.outputs.ubuntu-versions) }}
     outputs:
-      run-id: ${{ github.run_id }}
       # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
+      run-id-noble: ${{ github.run_id }}
+      run-id-devel: ${{ github.run_id }}
       pkg-src-changes-devel: ${{ steps.outputs.outputs.pkg-src-changes-devel }}
       pkg-src-changes-noble: ${{ steps.outputs.outputs.pkg-src-changes-noble }}
       pkg-dsc-devel:  ${{ steps.outputs.outputs.pkg-dsc-devel }}
@@ -130,7 +131,7 @@ jobs:
         set -x
 
         pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
-          jq -r ".pkg-dsc-${{ matrix.ubuntu-version }}")
+          jq -r '."pkg-dsc-${{ matrix.ubuntu-version }}"')
         dpkg-source -x "${pkg_dsc}" sources
 
     - name: Commit packaging sources
@@ -250,6 +251,12 @@ jobs:
     #    github.event_name == 'release' }}
 
     steps:
+    - name: Compute job variables
+      run: |
+        pkg_src_changes=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
+          jq -r '."pkg-src-changes-${{ matrix.ubuntu-version }}"')
+        echo "pkg_src_changes=${pkg_src_changes}" >> "${GITHUB_ENV}"
+
     - name: Download source files
       uses: actions/download-artifact@v4
       with:
@@ -261,12 +268,6 @@ jobs:
       with:
         run-id: ${{ needs.build-deb-package-binaries.outputs.run-id }}
         merge-multiple: true
-
-    - name: Compute package sources changes
-      run: |
-        pkg_src_changes=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
-          jq -r ".pkg-src-changes-${{ matrix.ubuntu-version }}")
-        echo "pkg_src_changes=${pkg_src_changes}" >> "${GITHUB_ENV}"
 
     - name: Run autopkgtests
       uses: canonical/desktop-engineering/gh-actions/common/run-autopkgtest@main
