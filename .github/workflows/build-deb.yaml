@@ -125,10 +125,6 @@ jobs:
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
-        # pkg_dsc=$(echo '${{ toJSON(needs.build-deb-package-sources.outputs) }}' |
-        #   jq -r '."pkg-dsc-${{ matrix.ubuntu-version }}"')
-        # dpkg-source -x "${pkg_dsc}" sources
-
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
