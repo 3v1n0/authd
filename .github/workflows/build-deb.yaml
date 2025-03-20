@@ -155,13 +155,13 @@ jobs:
         set -exuo pipefail
 
         json_output='${{ toJSON(needs.build-deb-package.outputs) }}'
-        outputs=(
-          pkg-dsc
-        )
+        for var in $(echo "${json_output}" | jq -r 'keys | .[]'); do
+          if  [[ "${var}" != *"-${{ matrix.ubuntu-version }}" ]]; then
+            continue;
+          fi
 
-        for var in "${outputs[@]}"; do
-          versioned_var="${var}-${{ matrix.ubuntu-version }}"
-          v=$(echo "${json_output}" | jq -r ".\"${versioned_var}\"")
+          v=$(echo "${json_output}" | jq -r ".\"${var}\"")
+          var="${var%-${{ matrix.ubuntu-version }}}"
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
@@ -238,13 +238,13 @@ jobs:
         set -exuo pipefail
 
         json_output='${{ toJSON(needs.build-deb-package.outputs) }}'
-        outputs=(
-          pkg-src-changes
-        )
+        for var in $(echo "${json_output}" | jq -r 'keys | .[]'); do
+          if  [[ "${var}" != *"-${{ matrix.ubuntu-version }}" ]]; then
+            continue;
+          fi
 
-        for var in "${outputs[@]}"; do
-          versioned_var="${var}-${{ matrix.ubuntu-version }}"
-          v=$(echo "${json_output}" | jq -r ".\"${versioned_var}\"")
+          v=$(echo "${json_output}" | jq -r ".\"${var}\"")
+          var="${var%-${{ matrix.ubuntu-version }}}"
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
