@@ -161,7 +161,7 @@ jobs:
 
         for var in "${outputs[@]}"; do
           versioned_var="${var}-${{ matrix.ubuntu-version }}"
-          v=$(echo "${json_output}" | jq -r "\".${versioned_var}\"")
+          v=$(echo "${json_output}" | jq -r ".\"${versioned_var}\"")
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
@@ -244,7 +244,7 @@ jobs:
 
         for var in "${outputs[@]}"; do
           versioned_var="${var}-${{ matrix.ubuntu-version }}"
-          v=$(echo "${json_output}" | jq -r "\".${versioned_var}\"")
+          v=$(echo "${json_output}" | jq -r ".\"${versioned_var}\"")
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
