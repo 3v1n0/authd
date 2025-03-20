@@ -114,14 +114,13 @@ jobs:
         set -x
 
         json_output='${{ toJSON(needs.build-deb-package-sources.outputs) }}'
-        variables=(
-          pkg-dsc
-          run-id
-        )
+        for var in $(echo "${json_output}" | jq -r 'keys | .[]'); do
+          if  [[ "${var}" != *"-${{ matrix.ubuntu-version }}" ]]; then
+            continue;
+          fi
 
-        for var in "${variables[@]}"; do
-          versioned_var="${var}-${{ matrix.ubuntu-version }}"
-          v=$(echo "${json_output}" | jq -r '."'"${versioned_var}"'"')
+          v=$(echo "${json_output}" | jq -r ".\"${var}\"")
+          var="${var%-${{ matrix.ubuntu-version }}}"
           echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
         done
 
@@ -202,14 +201,13 @@ jobs:
           set -x
 
           json_output='${{ toJSON(needs.build-deb-package-sources.outputs) }}'
-          variables=(
-            pkg-dsc
-            run-id
-          )
+          for var in $(echo "${json_output}" | jq -r 'keys | .[]'); do
+            if  [[ "${var}" != *"-${{ matrix.ubuntu-version }}" ]]; then
+              continue;
+            fi
 
-          for var in "${variables[@]}"; do
-            versioned_var="${var}-${{ matrix.ubuntu-version }}"
-            v=$(echo "${json_output}" | jq -r '."'"${versioned_var}"'"')
+            v=$(echo "${json_output}" | jq -r ".\"${var}\"")
+            var="${var%-${{ matrix.ubuntu-version }}}"
             echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
           done
 
@@ -307,14 +305,15 @@ jobs:
         # done
 
         json_output='${{ toJSON(needs.build-deb-package-sources.outputs) }}'
-        source_run_id=$(echo "$json_output" |
-          jq -r '."pkg-src-changes-${{ matrix.ubuntu-version }}"')
-        pkg_src_changes=$(echo "$json_output" |
-          jq -r '."pkg-src-changes-${{ matrix.ubuntu-version }}"')
+        for var in $(echo "${json_output}" | jq -r 'keys | .[]'); do
+          if  [[ "${var}" != *"-${{ matrix.ubuntu-version }}" ]]; then
+            continue;
+          fi
 
-        json_output='${{ toJSON(needs.build-deb-package-binaries.outputs) }}'
-        binaries_run_id=$(echo "$json_output" |
-          jq -r '."pkg-src-changes-${{ matrix.ubuntu-version }}"')
+          v=$(echo "${json_output}" | jq -r ".\"${var}\"")
+          var="${var%-${{ matrix.ubuntu-version }}}"
+          echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
+        done
 
         # (
         #   echo "run_id=${run_id}"
