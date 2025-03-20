@@ -41,8 +41,8 @@ jobs:
         ubuntu-version: ${{ fromJSON(needs.define-versions.outputs.ubuntu-versions) }}
     outputs:
       # FIXME: Use dynamic outputs when possible: https://github.com/actions/runner/pull/2477
-      run-id-noble: ${{ steps.outputs.outputs.run-id-noble-noble }}
-      run-id-devel: ${{ steps.outputs.outputs.run-id-noble-devel }}
+      run-id-noble: ${{ steps.outputs.outputs.run-id-noble }}
+      run-id-devel: ${{ steps.outputs.outputs.run-id-devel }}
       pkg-src-changes-devel: ${{ steps.outputs.outputs.pkg-src-changes-devel }}
       pkg-src-changes-noble: ${{ steps.outputs.outputs.pkg-src-changes-noble }}
       pkg-dsc-devel:  ${{ steps.outputs.outputs.pkg-dsc-devel }}
@@ -198,17 +198,36 @@ jobs:
       run-id: ${{ github.run_id }}
 
     steps:
+      - name: Compute job variables
+      run: |
+        set -euo pipefail
+
+        # FIXME:;
+        set -x
+
+        json_output='${{ toJSON(needs.build-deb-package-sources.outputs) }}'
+        variables=(
+          pkg-dsc
+          run-id
+        )
+
+        for var in "${variables[@]}"; do
+          versioned_var="${var}-${{ matrix.ubuntu-version }}"
+          v=$(echo "${json_output}" | jq -r '."'"${versioned_var}"'"')
+          echo "${var//-/_}=${v}" >> "${GITHUB_ENV}"
+        done
+
       - name: Download source files
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ needs.build-deb-package-sources.outputs.run-id }}
+          run-id: ${{ env.run_id }}
           merge-multiple: true
 
       - name: Build debian packages
         uses: canonical/desktop-engineering/gh-actions/common/build-debian@main
         with:
           docker-image: ubuntu:${{ matrix.ubuntu-version }}
-          from-sources-file: ${{ needs.build-deb-package-sources.outputs.pkg-dsc }}
+          from-sources-file: ${{ env.pkg_dsc }}
 
   check-modified-files:
     name: Check modified files
