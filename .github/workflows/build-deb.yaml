@@ -135,7 +135,8 @@ jobs:
         set -euo pipefail
 
         sudo apt update -y
-        sudo apt install -y dpkg-dev devscripts
+        sudo apt install -y --no-install-suggests --no-install-recommends \
+          dpkg-dev devscripts
 
     - name: Checkout code
       uses: actions/checkout@v4
