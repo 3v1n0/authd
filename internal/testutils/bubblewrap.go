@@ -120,8 +120,8 @@ func runInBubbleWrap(t *testing.T, withSudo bool, testDataPath string, env []str
 		"--ro-bind", "/etc/security", "/etc/security",
 	}
 
-	if e := os.Getenv("GOCOVERDIR"); e != "" {
-		bwrapArgs = append(bwrapArgs, "--bind", e, e)
+	if coverDir := CoverDirForTests(); coverDir != "" {
+		bwrapArgs = append(bwrapArgs, "--bind", coverDir, coverDir)
 	}
 
 	if os.Geteuid() != 0 && !withSudo {
