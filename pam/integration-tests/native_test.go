@@ -272,10 +272,22 @@ func TestNativeAuthenticate(t *testing.T) {
 			tape:          "local_user",
 			userSelection: true,
 		},
+		"Autoselect_local_broker_for_local_user_on_polkit": {
+			tape:          "local_user",
+			userSelection: true,
+			clientOptions: clientOptions{PamServiceName: "polkit-1"},
+		},
 		"Autoselect_local_broker_for_local_user_preset": {
 			tape: "local_user_preset",
 			clientOptions: clientOptions{
 				PamUser: "root",
+			},
+		},
+		"Autoselect_local_broker_for_local_user_preset_on_polkit": {
+			tape: "local_user_preset",
+			clientOptions: clientOptions{
+				PamServiceName: "polkit-1",
+				PamUser:        "root",
 			},
 		},
 
