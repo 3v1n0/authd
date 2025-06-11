@@ -236,6 +236,13 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			return m, nil
 		}
 
+		if len(m.availableBrokers) < 1 && isSSHSession(m.pamMTx) {
+			return m, sendEvent(pamError{
+				status: pam.ErrCredUnavail,
+				msg:    "No fallback authentication mode is available under SSH by default!",
+			})
+		}
+
 		if len(m.availableBrokers) < 1 {
 			return m, sendEvent(pamError{
 				status: pam.ErrAuthinfoUnavail,
@@ -763,7 +770,20 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 // isLocalBrokerAllowed returns whether the local broker should be enabled.
 // FIXME: This should be up to authd to keep a list of brokers based on service.
 func (m nativeModel) isLocalBrokerAllowed() bool {
-	return ServiceName(m.pamMTx) != polkitServiceName
+	if ServiceName(m.pamMTx) == polkitServiceName {
+		return false
+	}
+
+	if isSSHSession(m.pamMTx) {
+		// We don't enable the local broker by default under SSH for now, since
+		// it can open a security hole, to allow basic password access for
+		// non-authd users.
+		// We may allow controlling this through an option in future, but let's
+		// avoid this until explicitly supported.
+		return false
+	}
+
+	return true
 }
 
 func (m nativeModel) isQrcodeRenderingSupported() bool {
