@@ -50,7 +50,7 @@ type uiModel struct {
 	pamMTx pam.ModuleTransaction
 	// conn is the [grpc.ClientConn] opened with authd daemon.
 	conn *grpc.ClientConn
-	// PamClientType is the kind of the PAM client we're handling.
+	// clientType is the kind of the PAM client we're handling.
 	clientType PamClientType
 	// sessionMode is the mode of the session invoked by the module.
 	sessionMode authd.SessionMode
