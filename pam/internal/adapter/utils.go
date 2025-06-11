@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -14,6 +15,7 @@ import (
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/internal/proto/authd"
 	"github.com/ubuntu/authd/log"
+	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -140,6 +142,8 @@ func maybeSendPamError(err error) tea.Cmd {
 var debugMessageFormatter = defaultSafeMessageFormatter
 
 func defaultSafeMessageFormatter(msg tea.Msg) string {
+	type jsonMarshal struct{ tea.Msg }
+
 	switch msg := msg.(type) {
 	case newPasswordCheck:
 		return fmt.Sprintf("%#v",
@@ -161,29 +165,49 @@ func defaultSafeMessageFormatter(msg tea.Msg) string {
 	case isAuthenticatedRequestedSend:
 		return fmt.Sprintf("%T{%s}", msg,
 			defaultSafeMessageFormatter(msg.isAuthenticatedRequested))
-	case brokersListReceived:
-		var brokers []string
-		for _, b := range msg.brokers {
-			brokers = append(brokers, defaultSafeMessageFormatter(b))
-		}
-		return fmt.Sprintf("%T{%#v}", msg, brokers)
-	case *authd.ABResponse_BrokerInfo:
-		return fmt.Sprintf("%T{Id: %q, Name: %q, Icon: %q}", msg, msg.Id,
-			msg.Name, msg.GetBrandIcon())
 	case UILayoutReceived:
-		return fmt.Sprintf("%T{%#v}", msg, msg.layout)
+		return fmt.Sprintf("%T{layouts:%s}", msg,
+			defaultSafeMessageFormatter(msg.layout))
 	case ChangeStage:
 		return fmt.Sprintf("%T{Stage:%q}", msg, msg.Stage)
 	case StageChanged:
 		return fmt.Sprintf("%T{Stage:%q}", msg, msg.Stage)
 	case nativeStageChangeRequest:
 		return fmt.Sprintf("%T{Stage:%q}", msg, msg.Stage)
+	case brokersListReceived:
+		return fmt.Sprintf("%T{brokers:%s}", msg,
+			defaultSafeMessageFormatter(msg.brokers))
+	case supportedUILayoutsReceived:
+		return fmt.Sprintf("%T{layouts:%s}", msg,
+			defaultSafeMessageFormatter(msg.layouts))
+	case authModesReceived:
+		return fmt.Sprintf("%T{authModes:%s}", msg,
+			defaultSafeMessageFormatter(msg.authModes))
 	case tea.KeyMsg:
 		if msg.Type != tea.KeyRunes {
 			return fmt.Sprintf("%T{%s}", msg, msg)
 		}
+	case []*authd.ABResponse_BrokerInfo:
+		return defaultSafeMessageFormatter(jsonMarshal{msg})
+	case []*authd.UILayout:
+		return defaultSafeMessageFormatter(jsonMarshal{msg})
+	case []*authd.GAMResponse_AuthenticationMode:
+		return defaultSafeMessageFormatter(jsonMarshal{msg})
+	case proto.Message:
+		return defaultSafeMessageFormatter(jsonMarshal{msg})
+	case []proto.Message:
+		return defaultSafeMessageFormatter(jsonMarshal{msg})
+	case jsonMarshal:
+		b, err := json.Marshal(msg.Msg)
+		if err != nil {
+			// Use fallback mode, avoid recursion by wrapping it with an unnamed type.
+			b = []byte(defaultSafeMessageFormatter(struct{ tea.Msg }{msg.Msg}))
+		}
+		return fmt.Sprintf("%T{%s}", msg.Msg, b)
 	case nil:
 		return ""
+	case string:
+		return msg
 	default:
 		return fmt.Sprintf("%#v", msg)
 	}
