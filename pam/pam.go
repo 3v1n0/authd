@@ -273,11 +273,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 			flags&pam.UpdateAuthtok)
 	}
 
-	serviceName, err := mTx.GetItem(pam.Service)
-	if err != nil {
-		log.Warningf(context.TODO(), "Impossible to get PAM service name: %v", err)
-	}
-	if serviceName == gdmServiceName && !gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
+	if adapter.ServiceName(mTx) == gdmServiceName && !gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		log.Debug(context.TODO(), "GDM service running without JSON extension, skipping...")
 		return pam.ErrIgnore
 	}

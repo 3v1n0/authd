@@ -24,6 +24,9 @@ var (
 
 	isTerminalTTYValue bool
 	isTerminalTTYOnce  sync.Once
+
+	serviceNameValue string
+	serviceNameOnce  sync.Once
 )
 
 // convertTo converts an interface I value to T. It will panic (progamming error) if this is not the case.
@@ -52,9 +55,20 @@ func TeaHeadlessOptions() ([]tea.ProgramOption, error) {
 	}, nil
 }
 
+// ServiceName returns the current PAM service name.
+func ServiceName(mTx pam.ModuleTransaction) string {
+	serviceNameOnce.Do(func() {
+		var err error
+		serviceNameValue, err = mTx.GetItem(pam.Service)
+		if err != nil {
+			log.Errorf(context.Background(), "Failed to get PAM service name: %v!", err)
+		}
+	})
+	return serviceNameValue
+}
+
 func isSSHSessionFunc(mTx pam.ModuleTransaction) bool {
-	service, _ := mTx.GetItem(pam.Service)
-	if service == "sshd" {
+	if ServiceName(mTx) == "sshd" {
 		return true
 	}
 

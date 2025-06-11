@@ -32,7 +32,6 @@ type nativeModel struct {
 	selectedAuthMode string
 	uiLayout         *authd.UILayout
 
-	serviceName          string
 	interactive          bool
 	currentStage         proto.Stage
 	busy                 bool
@@ -80,12 +79,6 @@ var errNotAnInteger = errors.New("parsed value is not an integer")
 func newNativeModel(mTx pam.ModuleTransaction, userServiceClient authd.UserServiceClient) nativeModel {
 	m := nativeModel{pamMTx: mTx, userServiceClient: userServiceClient}
 
-	var err error
-	m.serviceName, err = m.pamMTx.GetItem(pam.Service)
-	if err != nil {
-		log.Errorf(context.TODO(), "failed to get the PAM service: %v", err)
-	}
-
 	m.interactive = isSSHSession(m.pamMTx) || IsTerminalTTY(m.pamMTx)
 
 	return m
@@ -94,7 +87,7 @@ func newNativeModel(mTx pam.ModuleTransaction, userServiceClient authd.UserServi
 // Init initializes the native model orchestrator.
 func (m nativeModel) Init() tea.Cmd {
 	rendersQrCode := m.isQrcodeRenderingSupported()
-	supportsQrCode := m.serviceName != polkitServiceName
+	supportsQrCode := ServiceName(m.pamMTx) != polkitServiceName
 
 	return func() tea.Msg {
 		required, optional := layouts.Required, layouts.Optional
@@ -770,11 +763,11 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 // isLocalBrokerAllowed returns whether the local broker should be enabled.
 // FIXME: This should be up to authd to keep a list of brokers based on service.
 func (m nativeModel) isLocalBrokerAllowed() bool {
-	return m.serviceName != polkitServiceName
+	return ServiceName(m.pamMTx) != polkitServiceName
 }
 
 func (m nativeModel) isQrcodeRenderingSupported() bool {
-	switch m.serviceName {
+	switch ServiceName(m.pamMTx) {
 	case polkitServiceName:
 		return false
 	default:
