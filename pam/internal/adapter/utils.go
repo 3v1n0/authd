@@ -161,6 +161,15 @@ func defaultSafeMessageFormatter(msg tea.Msg) string {
 	case isAuthenticatedRequestedSend:
 		return fmt.Sprintf("%T{%s}", msg,
 			defaultSafeMessageFormatter(msg.isAuthenticatedRequested))
+	case brokersListReceived:
+		var brokers []string
+		for _, b := range msg.brokers {
+			brokers = append(brokers, defaultSafeMessageFormatter(b))
+		}
+		return fmt.Sprintf("%T{%#v}", msg, brokers)
+	case *authd.ABResponse_BrokerInfo:
+		return fmt.Sprintf("%T{Id: %q, Name: %q, Icon: %q}", msg, msg.Id,
+			msg.Name, msg.GetBrandIcon())
 	case UILayoutReceived:
 		return fmt.Sprintf("%T{%#v}", msg, msg.layout)
 	case ChangeStage:
