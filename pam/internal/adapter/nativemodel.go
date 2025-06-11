@@ -206,11 +206,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 	case brokersListReceived:
 		m.availableBrokers = msg.brokers
 
-		// We should only handle this special case if there's more than one broker available.
-		// Otherwise, we will break polkit for local users.
-		if m.serviceName == polkitServiceName && len(msg.brokers) > 1 {
-			// Do not support using local broker in the polkit case.
-			// FIXME: This should be up to authd to keep a list of brokers based on service.
+		if !m.isLocalBrokerAllowed() {
 			m.availableBrokers = slices.DeleteFunc(slices.Clone(m.availableBrokers), func(b *authd.ABResponse_BrokerInfo) bool {
 				return b.Id == brokers.LocalBrokerName
 			})
@@ -249,7 +245,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 
 		if len(m.availableBrokers) < 1 {
 			return m, sendEvent(pamError{
-				status: pam.ErrSystem,
+				status: pam.ErrAuthinfoUnavail,
 				msg:    "No brokers available to select",
 			})
 		}
@@ -769,6 +765,12 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 	default:
 		return nil
 	}
+}
+
+// isLocalBrokerAllowed returns whether the local broker should be enabled.
+// FIXME: This should be up to authd to keep a list of brokers based on service.
+func (m nativeModel) isLocalBrokerAllowed() bool {
+	return m.serviceName != polkitServiceName
 }
 
 func (m nativeModel) isQrcodeRenderingSupported() bool {
