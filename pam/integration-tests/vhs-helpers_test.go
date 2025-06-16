@@ -466,6 +466,14 @@ func (td tapeData) PrepareTape(t *testing.T, testType vhsTestType, outputPath st
 
 	tape = []byte(strings.Join([]string{
 		td.String(),
+		`Hide
+Type "env PS1='> ' sh"
+Enter
+Type "clear"
+Enter
+Wait
+Show
+`,
 		tapeString,
 		// Note that not sleeping enough may lead to a system hang, so keep it
 		// in mind if tests are failing in CI with with error code 143.
