@@ -17,14 +17,8 @@ import (
 	"sync"
 
 	"github.com/ubuntu/authd/internal/errno"
+	"github.com/ubuntu/authd/internal/users/types"
 )
-
-// Group represents a group entry.
-type Group struct {
-	Name   string
-	GID    uint32
-	Passwd string
-}
 
 var getgrentMu sync.Mutex
 
@@ -50,7 +44,7 @@ func getGroupEntry() (*C.struct_group, error) {
 }
 
 // GetGroupEntries returns all group entries.
-func GetGroupEntries() ([]Group, error) {
+func GetGroupEntries() ([]types.GroupEntry, error) {
 	// This function repeatedly calls getgrent, which iterates over the records in the group database.
 	// Use a mutex to avoid that parallel calls to this function interfere with each other.
 	getgrentMu.Lock()
@@ -59,7 +53,7 @@ func GetGroupEntries() ([]Group, error) {
 	C.setgrent()
 	defer C.endgrent()
 
-	var entries []Group
+	var entries []types.GroupEntry
 	for {
 		cGroup, err := getGroupEntry()
 		if err != nil {
@@ -70,7 +64,7 @@ func GetGroupEntries() ([]Group, error) {
 			break
 		}
 
-		entries = append(entries, Group{
+		entries = append(entries, types.GroupEntry{
 			Name:   C.GoString(cGroup.gr_name),
 			GID:    uint32(cGroup.gr_gid),
 			Passwd: C.GoString(cGroup.gr_passwd),
@@ -84,7 +78,7 @@ func GetGroupEntries() ([]Group, error) {
 var ErrGroupNotFound = errors.New("group not found")
 
 // GetGroupByName returns the group with the given name.
-func GetGroupByName(name string) (Group, error) {
+func GetGroupByName(name string) (types.GroupEntry, error) {
 	errno.Lock()
 	defer errno.Unlock()
 
@@ -96,12 +90,12 @@ func GetGroupByName(name string) (Group, error) {
 			errors.Is(err, errno.ErrSrch) ||
 			errors.Is(err, errno.ErrBadf) ||
 			errors.Is(err, errno.ErrPerm) {
-			return Group{}, ErrGroupNotFound
+			return types.GroupEntry{}, ErrGroupNotFound
 		}
-		return Group{}, fmt.Errorf("getgrnam: %v", err)
+		return types.GroupEntry{}, fmt.Errorf("getgrnam: %v", err)
 	}
 
-	return Group{
+	return types.GroupEntry{
 		Name: C.GoString(cGroup.gr_name),
 		GID:  uint32(cGroup.gr_gid),
 	}, nil

@@ -17,14 +17,8 @@ import (
 	"sync"
 
 	"github.com/ubuntu/authd/internal/errno"
+	"github.com/ubuntu/authd/internal/users/types"
 )
-
-// Passwd represents a passwd entry.
-type Passwd struct {
-	Name  string
-	UID   uint32
-	Gecos string
-}
 
 var getpwentMu sync.Mutex
 
@@ -50,7 +44,7 @@ func getPasswdEntry() (*C.struct_passwd, error) {
 }
 
 // GetPasswdEntries returns all passwd entries.
-func GetPasswdEntries() ([]Passwd, error) {
+func GetPasswdEntries() ([]types.UserEntry, error) {
 	// This function repeatedly calls getpwent, which iterates over the records in the passwd database.
 	// Use a mutex to avoid that parallel calls to this function interfere with each other.
 	getpwentMu.Lock()
@@ -59,7 +53,7 @@ func GetPasswdEntries() ([]Passwd, error) {
 	C.setpwent()
 	defer C.endpwent()
 
-	var entries []Passwd
+	var entries []types.UserEntry
 	for {
 		cPasswd, err := getPasswdEntry()
 		if err != nil {
@@ -70,7 +64,7 @@ func GetPasswdEntries() ([]Passwd, error) {
 			break
 		}
 
-		entries = append(entries, Passwd{
+		entries = append(entries, types.UserEntry{
 			Name:  C.GoString(cPasswd.pw_name),
 			UID:   uint32(cPasswd.pw_uid),
 			Gecos: C.GoString(cPasswd.pw_gecos),
@@ -84,7 +78,7 @@ func GetPasswdEntries() ([]Passwd, error) {
 var ErrUserNotFound = errors.New("user not found")
 
 // GetPasswdByName returns the user with the given name.
-func GetPasswdByName(name string) (Passwd, error) {
+func GetPasswdByName(name string) (types.UserEntry, error) {
 	errno.Lock()
 	defer errno.Unlock()
 
@@ -96,12 +90,12 @@ func GetPasswdByName(name string) (Passwd, error) {
 			errors.Is(err, errno.ErrSrch) ||
 			errors.Is(err, errno.ErrBadf) ||
 			errors.Is(err, errno.ErrPerm) {
-			return Passwd{}, ErrUserNotFound
+			return types.UserEntry{}, ErrUserNotFound
 		}
-		return Passwd{}, fmt.Errorf("getpwnam: %v", err)
+		return types.UserEntry{}, fmt.Errorf("getpwnam: %v", err)
 	}
 
-	return Passwd{
+	return types.UserEntry{
 		Name: C.GoString(cPasswd.pw_name),
 		UID:  uint32(cPasswd.pw_uid),
 	}, nil
