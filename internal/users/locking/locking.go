@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	writeLockImpl   = writeLock
-	writeUnlockImpl = writeUnlock
+	writeLockImpl   = lckpwdf
+	writeUnlockImpl = ulckpwdf
 
 	writeLocksCount   uint64
 	writeLocksCountMu sync.RWMutex
