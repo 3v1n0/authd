@@ -59,6 +59,16 @@ func Z_ForTests_OverrideLocking() {
 	}
 }
 
+// Z_ForTests_OverrideLockingFile is a function to override the locking functions
+// for testing purposes.
+//
+// nolint:revive,nolintlint // We want to use underscores in the function name here.
+func Z_ForTests_OverrideLockingFile(path string) {
+	testsdetection.MustBeTesting()
+
+	etcPasswdLockPath = path
+}
+
 // Z_ForTests_OverrideLockingWithCleanup is a function to override the locking
 // functions for testing purposes.
 // It simulates the real behavior but without actual file locking.

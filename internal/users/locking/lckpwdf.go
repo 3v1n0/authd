@@ -23,6 +23,7 @@ var (
 
 	mu         sync.Mutex
 	lockedFile *os.File
+	/* Use atomic with a Lckpwfd struct that is initialized to a null ptr and filled in case */
 )
 
 // lckpwdf is a simpler native implementation of glibc one, however we follow

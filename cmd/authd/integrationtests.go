@@ -34,5 +34,8 @@ func init() {
 	localentries.Z_ForTests_SetGroupPath(grpFilePath, grpFileOutputPath)
 	db.Z_ForTests_SetGroupFile(grpFilePath)
 
-	userslocking.Z_ForTests_OverrideLocking()
+	// .pwd.lock also redirect the ssh_preloader here
+	userslocking.Z_ForTests_OverrideLockingFile("/tmp/authd.lockfile")
+
+	// userslocking.Z_ForTests_OverrideLocking()
 }
