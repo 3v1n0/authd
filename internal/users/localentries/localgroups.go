@@ -6,13 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/ubuntu/authd/internal/sliceutils"
+	"github.com/ubuntu/authd/internal/users/types"
 	"github.com/ubuntu/authd/log"
 	"github.com/ubuntu/decorate"
 )
@@ -52,13 +55,18 @@ func Update(username string, newGroups []string, oldGroups []string, args ...Opt
 		return err
 	}
 
+	var currentGroupsNames = make([]string, len(currentGroups))
+	for _, g := range currentGroups {
+		currentGroupsNames = append(currentGroupsNames, g.Name)
+	}
+
 	localGroupsMu.Lock()
 	defer localGroupsMu.Unlock()
-	groupsToAdd := sliceutils.Difference(newGroups, currentGroups)
+	groupsToAdd := sliceutils.Difference(newGroups, currentGroupsNames)
 	log.Debugf(context.TODO(), "Adding to local groups: %v", groupsToAdd)
 	groupsToRemove := sliceutils.Difference(oldGroups, newGroups)
 	// Only remove user from groups which they are part of
-	groupsToRemove = sliceutils.Intersection(groupsToRemove, currentGroups)
+	groupsToRemove = sliceutils.Intersection(groupsToRemove, currentGroupsNames)
 	log.Debugf(context.TODO(), "Removing from local groups: %v", groupsToRemove)
 
 	// Do all this in a goroutine as we don't want to hang.
@@ -94,8 +102,7 @@ func getPasswdUsernames() ([]string, error) {
 	return usernames, nil
 }
 
-// existingLocalGroups returns which groups from groupPath the user is part of.
-func existingLocalGroups(user, groupPath string) (groups []string, err error) {
+func parseLocalGroups(groupPath string) (groups []types.GroupEntry, err error) {
 	defer decorate.OnError(&err, "could not fetch existing local group")
 
 	localGroupsMu.RLock()
@@ -116,16 +123,20 @@ func existingLocalGroups(user, groupPath string) (groups []string, err error) {
 		}
 		elems := strings.Split(t, ":")
 		if len(elems) != 4 {
-			return nil, fmt.Errorf("malformed entry in group file (should have 4 separators): %q", t)
+			return nil, fmt.Errorf("malformed entry in group file (should have 4 separators, got %d): %q", len(elems), t)
 		}
 
-		n := elems[0]
-		users := strings.Split(elems[3], ",")
-		if !slices.Contains(users, user) {
-			continue
+		gid, err := strconv.ParseUint(elems[2], 10, 0)
+		if err != nil || gid > math.MaxUint32 {
+			return nil, fmt.Errorf("failed parsing entry %q, unexpected GID value", t)
 		}
 
-		groups = append(groups, n)
+		groups = append(groups, types.GroupEntry{
+			Name:   elems[0],
+			Passwd: elems[1],
+			GID:    uint32(gid),
+			Users:  strings.Split(elems[3], ","),
+		})
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -133,6 +144,20 @@ func existingLocalGroups(user, groupPath string) (groups []string, err error) {
 	}
 
 	return groups, nil
+}
+
+// existingLocalGroups returns which groups from groupPath the user is part of.
+func existingLocalGroups(user, groupPath string) (groups []types.GroupEntry, err error) {
+	defer decorate.OnError(&err, "could not fetch existing local group for user %q", user)
+
+	groups, err = parseLocalGroups(groupPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(groups, func(g types.GroupEntry) bool {
+		return !slices.Contains(g.Users, user)
+	}), nil
 }
 
 // CleanUser removes the user from all local groups.
@@ -154,7 +179,7 @@ func CleanUser(user string, args ...Option) (err error) {
 	defer localGroupsMu.Unlock()
 	for _, group := range groups {
 		args := opts.gpasswdCmd[1:]
-		args = append(args, "--delete", user, group)
+		args = append(args, "--delete", user, group.Name)
 		if err := runGPasswd(opts.gpasswdCmd[0], args...); err != nil {
 			return err
 		}
