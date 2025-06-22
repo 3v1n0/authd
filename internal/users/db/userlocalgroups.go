@@ -2,24 +2,23 @@ package db
 
 import (
 	"fmt"
-
-	"github.com/ubuntu/authd/internal/users/types"
 )
 
 // UserLocalGroups returns all local groups for a given user or an error if the database is corrupted or no entry was found.
-func (m *Manager) UserLocalGroups(uid uint32) (localGroups []types.GroupEntry, err error) {
+func (m *Manager) UserLocalGroups(uid uint32) ([]string, error) {
 	rows, err := m.db.Query(`SELECT group_name FROM users_to_local_groups WHERE uid = ?`, uid)
 	if err != nil {
 		return nil, fmt.Errorf("query error: %w", err)
 	}
 	defer closeRows(rows)
 
+	var localGroups []string
 	for rows.Next() {
 		var groupName string
 		if err := rows.Scan(&groupName); err != nil {
 			return nil, fmt.Errorf("scan error: %w", err)
 		}
-		localGroups = append(localGroups, types.GroupEntry{Name: groupName})
+		localGroups = append(localGroups, groupName)
 	}
 
 	// Check for errors from iteration

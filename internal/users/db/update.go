@@ -7,12 +7,11 @@ import (
 	"strings"
 
 	"github.com/mattn/go-sqlite3"
-	"github.com/ubuntu/authd/internal/users/types"
 	"github.com/ubuntu/authd/log"
 )
 
 // UpdateUserEntry inserts or updates user and group records from the user information.
-func (m *Manager) UpdateUserEntry(user UserRow, authdGroups []GroupRow, localGroups []types.GroupEntry) (err error) {
+func (m *Manager) UpdateUserEntry(user UserRow, authdGroups []GroupRow, localGroups []string) (err error) {
 	// authd uses lowercase usernames
 	user.Name = strings.ToLower(user.Name)
 
@@ -144,7 +143,7 @@ func handleUsersToGroupsUpdate(db queryable, uid uint32, groups []GroupRow) erro
 }
 
 // handleUsersToLocalGroupsUpdate updates the users_to_local_groups table.
-func handleUsersToLocalGroupsUpdate(db queryable, uid uint32, localGroups []types.GroupEntry) error {
+func handleUsersToLocalGroupsUpdate(db queryable, uid uint32, localGroups []string) error {
 	// Remove the user from all local groups
 	if err := removeUserFromAllLocalGroups(db, uid); err != nil {
 		return fmt.Errorf("failed to remove user from local groups: %w", err)
@@ -152,7 +151,7 @@ func handleUsersToLocalGroupsUpdate(db queryable, uid uint32, localGroups []type
 
 	// Add the user to the local groups
 	for _, group := range localGroups {
-		if err := addUserToLocalGroup(db, uid, group.Name); err != nil {
+		if err := addUserToLocalGroup(db, uid, group); err != nil {
 			return fmt.Errorf("failed to add user to local group: %w", err)
 		}
 	}

@@ -9,7 +9,6 @@ import (
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	"github.com/ubuntu/authd/internal/users/localentries"
 	localentriestestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
-	"github.com/ubuntu/authd/internal/users/types"
 )
 
 func TestUpdatelocalentries(t *testing.T) {
@@ -18,8 +17,8 @@ func TestUpdatelocalentries(t *testing.T) {
 	tests := map[string]struct {
 		username string
 
-		newGroups     []types.GroupEntry
-		oldGroups     []types.GroupEntry
+		newGroups     []string
+		oldGroups     []string
 		groupFilePath string
 
 		wantErr bool
@@ -43,25 +42,13 @@ func TestUpdatelocalentries(t *testing.T) {
 		"Group_file_with_empty_line_is_ignored": {groupFilePath: "empty_line.group"},
 
 		// No new groups
-		"No-Op_for_user_with_no_groups_and_was_in_none": {newGroups: []types.GroupEntry{}, groupFilePath: "no_users_in_our_groups.group"},
-		"Remove_user_with_no_groups_from_existing_ones": {newGroups: []types.GroupEntry{}, groupFilePath: "user_in_both_groups.group"},
+		"No-Op_for_user_with_no_groups_and_was_in_none": {newGroups: []string{}, groupFilePath: "no_users_in_our_groups.group"},
+		"Remove_user_with_no_groups_from_existing_ones": {newGroups: []string{}, groupFilePath: "user_in_both_groups.group"},
 
 		// User removed from groups
-		"User_is_added_to_group_they_were_added_to_before": {
-			newGroups:     []types.GroupEntry{{Name: "localgroup1"}},
-			oldGroups:     []types.GroupEntry{{Name: "localgroup1"}},
-			groupFilePath: "no_users.group",
-		},
-		"User_is_removed_from_old_groups_but_not_from_other_groups": {
-			newGroups:     []types.GroupEntry{},
-			oldGroups:     []types.GroupEntry{{Name: "localgroup3"}},
-			groupFilePath: "user_in_both_groups.group",
-		},
-		"User_is_not_removed_from_groups_they_are_not_part_of": {
-			newGroups:     []types.GroupEntry{},
-			oldGroups:     []types.GroupEntry{{Name: "localgroup2"}},
-			groupFilePath: "user_in_one_group.group",
-		},
+		"User_is_added_to_group_they_were_added_to_before":          {newGroups: []string{"localgroup1"}, oldGroups: []string{"localgroup1"}, groupFilePath: "no_users.group"},
+		"User_is_removed_from_old_groups_but_not_from_other_groups": {newGroups: []string{}, oldGroups: []string{"localgroup3"}, groupFilePath: "user_in_both_groups.group"},
+		"User_is_not_removed_from_groups_they_are_not_part_of":      {newGroups: []string{}, oldGroups: []string{"localgroup2"}, groupFilePath: "user_in_one_group.group"},
 
 		// Error cases
 		"Error_on_missing_groups_file":                {groupFilePath: "does_not_exists.group", wantErr: true},
@@ -74,7 +61,7 @@ func TestUpdatelocalentries(t *testing.T) {
 			t.Parallel()
 
 			if tc.newGroups == nil {
-				tc.newGroups = []types.GroupEntry{{Name: "localgroup1"}, {Name: "localgroup3"}}
+				tc.newGroups = []string{"localgroup1", "localgroup3"}
 			}
 
 			switch tc.username {
