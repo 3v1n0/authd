@@ -163,7 +163,7 @@ func (m *Manager) UpdateUser(u types.UserInfo) (err error) {
 	u.Groups = append([]types.GroupInfo{{Name: u.Name, GID: &uid, UGID: u.Name}}, u.Groups...)
 
 	var groupRows []db.GroupRow
-	var localGroups []string
+	var localGroups []types.GroupEntry
 	for _, g := range u.Groups {
 		if g.Name == "" {
 			return fmt.Errorf("empty group name for user %q", u.Name)
@@ -172,7 +172,7 @@ func (m *Manager) UpdateUser(u types.UserInfo) (err error) {
 		if g.UGID == "" {
 			// An empty UGID means that the group is local, i.e. it's not stored in the database but expected to be
 			// already present in /etc/group.
-			localGroups = append(localGroups, g.Name)
+			localGroups = append(localGroups, types.GroupEntry{Name: g.Name})
 			continue
 		}
 
