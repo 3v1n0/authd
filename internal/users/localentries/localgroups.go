@@ -17,6 +17,7 @@ import (
 
 	"github.com/ubuntu/authd/internal/fileutils"
 	"github.com/ubuntu/authd/internal/sliceutils"
+	"github.com/ubuntu/authd/internal/testsdetection"
 	userslocking "github.com/ubuntu/authd/internal/users/locking"
 	"github.com/ubuntu/authd/internal/users/types"
 	"github.com/ubuntu/authd/log"
@@ -39,34 +40,99 @@ type options struct {
 // Option represents an optional function to override UpdateLocalGroups default values.
 type Option func(*options)
 
-var localGroupsMu = &sync.RWMutex{}
+type lockedGroups struct {
+	mu            sync.RWMutex
+	refCount      uint64
+	options       options
+	currentGroups []types.GroupEntry
+}
 
-// Update synchronizes for the given user the local group list with the current group list from UserInfo.
-func Update(username string, newGroups []string, oldGroups []string, args ...Option) (err error) {
-	log.Debugf(context.TODO(), "Updating local groups for user %q, new groups: %v, old groups: %v", username, newGroups, oldGroups)
-	defer decorate.OnError(&err, "could not update local groups for user %q", username)
+// defaultLockedGroupsInstance is used as the instance for locked groups when
+// no test options are provided.
+var defaultLockedGroupsInstance = &lockedGroups{}
+
+// GetLockedGroups gets a [lockedGroups] instance that allows to perform operations on
+// user groups that require users locking, and a cleanup function to release it.
+//
+//nolint:revive,nolintlint  // [lockedGroups] is not a type we want to be able to use outside of this package
+func GetLockedGroups(args ...Option) (locked *lockedGroups, cleanup func() error, err error) {
+	defer decorate.OnError(&err, "could not lock local groups")
+
+	if err := userslocking.WriteRecLock(); err != nil {
+		return nil, nil, err
+	}
+
+	cleanupUnlocked := func() error {
+		if locked.refCount == 0 {
+			return fmt.Errorf("locked groups were already unlocked")
+		}
+
+		locked.refCount--
+		if locked.refCount == 0 {
+			locked.currentGroups = nil
+		}
+		return userslocking.WriteRecUnlock()
+	}
+
+	cleanup = func() error {
+		locked.mu.Lock()
+		defer locked.mu.Unlock()
+
+		return cleanupUnlocked()
+	}
+
+	locked = defaultLockedGroupsInstance
+	testingMode := len(args) != 0
+
+	if testingMode {
+		testsdetection.MustBeTesting()
+		locked = &lockedGroups{}
+	}
+
+	locked.mu.Lock()
+	defer locked.mu.Unlock()
+
+	locked.refCount++
+	if locked.refCount > 1 {
+		return locked, cleanup, nil
+	}
 
 	opts := defaultOptions
 	for _, arg := range args {
 		arg(&opts)
 	}
 
-	if err := userslocking.WriteRecLock(); err != nil {
-		return err
-	}
-	defer func() {
-		if unlockErr := userslocking.WriteRecUnlock(); unlockErr != nil {
-			err = errors.Join(err, unlockErr)
-		}
-	}()
-
-	localGroupsMu.Lock()
-	defer localGroupsMu.Unlock()
-
-	allGroups, userGroups, err := existingLocalGroups(username, opts.groupInputPath)
+	locked.options = opts
+	locked.currentGroups, err = parseLocalGroups(opts.groupInputPath)
 	if err != nil {
-		return err
+		return nil, nil, errors.Join(err, cleanupUnlocked())
 	}
+
+	return locked, cleanup, nil
+}
+
+func (l *lockedGroups) mustLock() (cleanup func()) {
+	l.mu.Lock()
+	cleanup = l.mu.Unlock
+
+	if l.refCount == 0 {
+		defer cleanup()
+		panic("locked groups are not locked!")
+	}
+
+	return cleanup
+}
+
+// Update synchronizes for the given user the local group list with the current group list from UserInfo.
+func (l *lockedGroups) Update(username string, newGroups []string, oldGroups []string) (err error) {
+	log.Debugf(context.TODO(), "Updating local groups for user %q, new groups: %v, old groups: %v", username, newGroups, oldGroups)
+	defer decorate.OnError(&err, "could not update local groups for user %q", username)
+
+	unlock := l.mustLock()
+	defer unlock()
+
+	allGroups := types.DeepCopyGroupEntries(l.currentGroups)
+	userGroups := l.userLocalGroups(username)
 	currentGroupsNames := sliceutils.Map(userGroups, func(g types.GroupEntry) string {
 		return g.Name
 	})
@@ -106,7 +172,7 @@ func Update(username string, newGroups []string, oldGroups []string, args ...Opt
 		group.Users = append(group.Users, username)
 	}
 
-	return saveLocalGroups(opts.groupInputPath, opts.groupOutputPath, allGroups)
+	return l.saveLocalGroups(allGroups)
 }
 
 func parseLocalGroups(groupPath string) (groups []types.GroupEntry, err error) {
@@ -173,24 +239,25 @@ func groupFileBackupPath(groupPath string) string {
 }
 
 func formatGroupEntries(groups []types.GroupEntry) string {
-	newLines := make([]string, 0, len(groups))
-
-	for _, group := range groups {
-		newLines = append(newLines, strings.Join([]string{
+	groupLines := sliceutils.Map(groups, func(group types.GroupEntry) string {
+		return strings.Join([]string{
 			group.Name,
 			group.Passwd,
 			fmt.Sprint(group.GID),
 			strings.Join(group.Users, ","),
-		}, ":"))
-	}
+		}, ":")
+	})
 
 	// Add final new line to the group file.
-	newLines = append(newLines, "")
+	groupLines = append(groupLines, "")
 
-	return strings.Join(newLines, "\n")
+	return strings.Join(groupLines, "\n")
 }
 
-func saveLocalGroups(inputPath, groupPath string, groups []types.GroupEntry) (err error) {
+func (l *lockedGroups) saveLocalGroups(groups []types.GroupEntry) (err error) {
+	inputPath := l.options.groupInputPath
+	groupPath := l.options.groupOutputPath
+
 	defer decorate.OnError(&err, "could not write local groups to %q", groupPath)
 
 	if err := types.ValidateGroupEntries(groups); err != nil {
@@ -253,19 +320,13 @@ func saveLocalGroups(inputPath, groupPath string, groups []types.GroupEntry) (er
 		return fmt.Errorf("error renaming %s to %s: %w", tempPath, groupPath, err)
 	}
 
+	l.currentGroups = types.DeepCopyGroupEntries(groups)
 	return nil
 }
 
-// existingLocalGroups returns all the available groups and which groups from groupPath the user is part of.
-func existingLocalGroups(user, groupPath string) (groups, userGroups []types.GroupEntry, err error) {
-	defer decorate.OnError(&err, "could not fetch existing local group for user %q", user)
-
-	groups, err = parseLocalGroups(groupPath)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return groups, slices.DeleteFunc(slices.Clone(groups), func(g types.GroupEntry) bool {
+// userLocalGroups returns all groups the user is part of.
+func (l *lockedGroups) userLocalGroups(user string) (userGroups []types.GroupEntry) {
+	return slices.DeleteFunc(slices.Clone(l.currentGroups), func(g types.GroupEntry) bool {
 		return !slices.Contains(g.Users, user)
-	}), nil
+	})
 }
