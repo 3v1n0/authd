@@ -69,6 +69,10 @@ func TestUpdatelocalentries(t *testing.T) {
 			groupFilePath: "malformed_file_no_group_name.group",
 			wantErr:       true,
 		},
+		"Error_when_groups_file_has_a_duplicated_group": {
+			groupFilePath: "malformed_file_duplicated.group",
+			wantErr:       true,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

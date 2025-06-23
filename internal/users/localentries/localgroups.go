@@ -121,6 +121,8 @@ func parseLocalGroups(groupPath string) (groups []types.GroupEntry, err error) {
 	}
 	defer f.Close()
 
+	groupNames := make(map[string]struct{})
+
 	// Format of a line composing the group file is:
 	// group_name:password:group_id:user1,…,usern
 	scanner := bufio.NewScanner(f)
@@ -140,6 +142,10 @@ func parseLocalGroups(groupPath string) (groups []types.GroupEntry, err error) {
 			return nil, fmt.Errorf("failed parsing entry %q, unexpected group name", t)
 		}
 
+		if _, ok := groupNames[name]; ok {
+			return nil, fmt.Errorf("failed parsing entry %q, duplicated group %q", t, name)
+		}
+
 		gid, err := strconv.ParseUint(gidValue, 10, 0)
 		if err != nil || gid > math.MaxUint32 {
 			return nil, fmt.Errorf("failed parsing entry %q, unexpected GID value", t)
@@ -150,6 +156,7 @@ func parseLocalGroups(groupPath string) (groups []types.GroupEntry, err error) {
 			users = strings.Split(usersValue, ",")
 		}
 
+		groupNames[name] = struct{}{}
 		groups = append(groups, types.GroupEntry{
 			Name:   name,
 			Passwd: passwd,
