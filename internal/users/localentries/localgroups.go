@@ -110,20 +110,6 @@ func Update(username string, newGroups []string, oldGroups []string, args ...Opt
 	return saveLocalGroups(opts.groupInputPath, opts.groupOutputPath, allGroups)
 }
 
-// getPasswdUsernames gets the passwd entries and returns their usernames.
-func getPasswdUsernames() ([]string, error) {
-	var usernames []string
-	entries, err := GetPasswdEntries()
-	if err != nil {
-		return nil, err
-	}
-	for _, e := range entries {
-		usernames = append(usernames, e.Name)
-	}
-
-	return usernames, nil
-}
-
 func parseLocalGroups(groupPath string) (groups []types.GroupEntry, err error) {
 	defer decorate.OnError(&err, "could not fetch existing local group")
 
