@@ -1,14 +1,16 @@
 package localentries_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd/internal/fileutils"
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	"github.com/ubuntu/authd/internal/users/localentries"
 	localentriestestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
+	userslocking "github.com/ubuntu/authd/internal/users/locking"
+	"github.com/ubuntu/authd/log"
 )
 
 func TestUpdatelocalentries(t *testing.T) {
@@ -51,10 +53,22 @@ func TestUpdatelocalentries(t *testing.T) {
 		"User_is_not_removed_from_groups_they_are_not_part_of":      {newGroups: []string{}, oldGroups: []string{"localgroup2"}, groupFilePath: "user_in_one_group.group"},
 
 		// Error cases
-		"Error_on_missing_groups_file":                {groupFilePath: "does_not_exists.group", wantErr: true},
-		"Error_when_groups_file_is_malformed":         {groupFilePath: "malformed_file.group", wantErr: true},
-		"Error_on_any_unignored_add_gpasswd_error":    {username: "gpasswdfail", groupFilePath: "no_users.group", wantErr: true},
-		"Error_on_any_unignored_delete_gpasswd_error": {username: "gpasswdfail", groupFilePath: "gpasswdfail_in_deleted_group.group", wantErr: true},
+		"Error_on_missing_groups_file": {
+			groupFilePath: "does_not_exists.group",
+			wantErr:       true,
+		},
+		"Error_when_groups_file_has_missing_fields": {
+			groupFilePath: "malformed_file_missing_field.group",
+			wantErr:       true,
+		},
+		"Error_when_groups_file_has_invalid_gid": {
+			groupFilePath: "malformed_file_invalid_gid.group",
+			wantErr:       true,
+		},
+		"Error_when_groups_file_has_no_group_name": {
+			groupFilePath: "malformed_file_no_group_name.group",
+			wantErr:       true,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -71,25 +85,35 @@ func TestUpdatelocalentries(t *testing.T) {
 				tc.username = ""
 			}
 
-			destCmdsFile := filepath.Join(t.TempDir(), "gpasswd.output")
+			inputGroupFilePath := filepath.Join("testdata", tc.groupFilePath)
+			outputGroupFilePath := filepath.Join(t.TempDir(), "group")
 
-			groupFilePath := filepath.Join("testdata", tc.groupFilePath)
-			cmdArgs := []string{"env", "GO_WANT_HELPER_PROCESS=1",
-				os.Args[0], "-test.run=TestMockgpasswd", "--",
-				groupFilePath, destCmdsFile,
+			if exists, _ := fileutils.FileExists(inputGroupFilePath); exists {
+				tempGroupFile := filepath.Join(t.TempDir(), "group")
+				err := fileutils.CopyFile(inputGroupFilePath, tempGroupFile)
+				require.NoError(t, err, "failed to copy group file for testing")
+				inputGroupFilePath = tempGroupFile
 			}
 
-			err := localentries.Update(tc.username, tc.newGroups, tc.oldGroups, localentries.WithGroupPath(groupFilePath), localentries.WithGpasswdCmd(cmdArgs))
+			err := localentries.Update(tc.username, tc.newGroups, tc.oldGroups,
+				localentries.WithGroupInputPath(inputGroupFilePath),
+				localentries.WithGroupOutputPath(outputGroupFilePath))
 			if tc.wantErr {
 				require.Error(t, err, "Updatelocalentries should have failed")
 			} else {
 				require.NoError(t, err, "Updatelocalentries should not have failed")
 			}
 
+			localentriestestutils.RequireGroupFile(t, outputGroupFilePath, golden.Path(t))
 		})
 	}
 }
 
-func TestMockgpasswd(t *testing.T) {
-	localentriestestutils.Mockgpasswd(t)
+func TestMain(m *testing.M) {
+	log.SetLevel(log.DebugLevel)
+
+	userslocking.Z_ForTests_OverrideLocking()
+	defer userslocking.Z_ForTests_RestoreLocking()
+
+	m.Run()
 }
