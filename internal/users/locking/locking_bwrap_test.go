@@ -111,7 +111,10 @@ testgroup:x:1001:testuser`
 		t.Run(name, func(t *testing.T) {
 			err = f.WriteLock()
 			require.NoError(t, err, "Locking once it is allowed")
-			t.Cleanup(func() { f.WriteUnlock() })
+			t.Cleanup(func() {
+				err := f.WriteUnlock()
+				require.NoError(t, err, "Unlocking should be allowed")
+			})
 
 			output, err := runCmd(t, "getent", "group", "root", "testgroup")
 			require.NoError(t, err, "Reading should be allowed")
