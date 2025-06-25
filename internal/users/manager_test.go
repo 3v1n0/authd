@@ -684,7 +684,7 @@ func TestRegisterUserPreAuthAfterUnlock(t *testing.T) {
 	userslocking.Z_ForTests_OverrideLockingAsLockedExternally(t, lockCtx)
 	userslocking.Z_ForTests_SetMaxWaitTime(t, waitTime)
 
-	t.Cleanup(func() { _ = userslocking.WriteUnlock() })
+	t.Cleanup(func() { _ = userslocking.WriteRecUnlock() })
 
 	dbFile := "one_user_and_group"
 	dbDir := t.TempDir()
@@ -725,7 +725,7 @@ func TestUpdateUserAfterUnlock(t *testing.T) {
 	userslocking.Z_ForTests_OverrideLockingAsLockedExternally(t, lockCtx)
 	userslocking.Z_ForTests_SetMaxWaitTime(t, waitTime)
 
-	t.Cleanup(func() { _ = userslocking.WriteUnlock() })
+	t.Cleanup(func() { _ = userslocking.WriteRecUnlock() })
 
 	dbFile := "one_user_and_group"
 	dbDir := t.TempDir()
