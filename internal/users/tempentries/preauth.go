@@ -55,6 +55,10 @@ func (r *preAuthUserRecords) userByID(uid uint32) (types.UserEntry, error) {
 	r.rwMu.RLock()
 	defer r.rwMu.RUnlock()
 
+	return r.userByIDUnlocked(uid)
+}
+
+func (r *preAuthUserRecords) userByIDUnlocked(uid uint32) (types.UserEntry, error) {
 	user, ok := r.users[uid]
 	if !ok {
 		return types.UserEntry{}, db.NewUIDNotFoundError(uid)
@@ -73,7 +77,7 @@ func (r *preAuthUserRecords) userByName(name string) (types.UserEntry, error) {
 		return types.UserEntry{}, db.NewUserNotFoundError(name)
 	}
 
-	return r.userByID(uid)
+	return r.userByIDUnlocked(uid)
 }
 
 func (r *preAuthUserRecords) userByLogin(loginName string) (types.UserEntry, error) {
@@ -85,7 +89,7 @@ func (r *preAuthUserRecords) userByLogin(loginName string) (types.UserEntry, err
 		return types.UserEntry{}, db.NewUserNotFoundError(loginName)
 	}
 
-	return r.userByID(uid)
+	return r.userByIDUnlocked(uid)
 }
 
 func preAuthUserEntry(user preAuthUser) types.UserEntry {
