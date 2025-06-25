@@ -83,12 +83,12 @@ func TestIntersection(t *testing.T) {
 	}
 }
 
-type intStruct struct {
-	i int
-}
-
 func TestMap(t *testing.T) {
 	t.Parallel()
+
+	type intStruct struct {
+		i int
+	}
 
 	tests := map[string]struct {
 		a    []intStruct
