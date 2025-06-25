@@ -143,7 +143,11 @@ func TestLockAndLockAgainGroupFileOverridden(t *testing.T) {
 
 	err = userslocking.WriteRecLock()
 	require.NoError(t, err, "Locking once it is allowed")
-	t.Cleanup(func() { userslocking.WriteRecUnlock() })
+	t.Cleanup(func() {
+		// Ignore the error here, as it's expected to return an error if the WriteRecUnlock
+		// further below is called first.
+		_ = userslocking.WriteRecUnlock()
+	})
 
 	gPasswdExited := make(chan error)
 	go func() {
