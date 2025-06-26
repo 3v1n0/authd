@@ -254,7 +254,7 @@ func renameUsersInGroupFile(oldNames, newNames []string) (err error) {
 	}
 	defer func() { err = errors.Join(err, unlock()) }()
 
-	groups := lockedGroups.GetCurrentGroups()
+	groups := lockedGroups.GetEntries()
 	for idx, group := range groups {
 		for j, user := range group.Users {
 			for k, oldName := range oldNames {
@@ -265,7 +265,7 @@ func renameUsersInGroupFile(oldNames, newNames []string) (err error) {
 		}
 	}
 
-	return lockedGroups.SaveGroups(groups)
+	return lockedGroups.SaveEntries(groups)
 }
 
 func removeGroupsWithNameConflicts(db queryable) error {
