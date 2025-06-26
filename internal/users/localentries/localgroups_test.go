@@ -293,7 +293,7 @@ func TestGetAndSaveLocalGroups(t *testing.T) {
 			require.NoError(t, err, "Setup: failed to lock the users group")
 			defer func() { require.NoError(t, cleanup(), "Releasing unlocked groups") }()
 
-			groups := lg.GetCurrentGroups()
+			groups := lg.GetEntries()
 			initialGroups := slices.Clone(groups)
 
 			groups = append(groups, tc.addGroups...)
@@ -307,10 +307,10 @@ func TestGetAndSaveLocalGroups(t *testing.T) {
 				groups[idx].Users = append(groups[idx].Users, userNames...)
 			}
 
-			err = lg.SaveGroups(groups)
+			err = lg.SaveEntries(groups)
 			if tc.wantSetErr {
-				require.Error(t, err, "SaveGroups should have failed")
-				updatedGroups := lg.GetCurrentGroups()
+				require.Error(t, err, "SaveEntries should have failed")
+				updatedGroups := lg.GetEntries()
 				require.Equal(t, initialGroups, updatedGroups, "Cached groups have been changed")
 				return
 			}
@@ -319,9 +319,9 @@ func TestGetAndSaveLocalGroups(t *testing.T) {
 				groups = nil
 			}
 
-			require.NoError(t, err, "SaveGroups should not have failed")
+			require.NoError(t, err, "SaveEntries should not have failed")
 			// Ensure we also saved the cached version of the groups...
-			updatedGroups := lg.GetCurrentGroups()
+			updatedGroups := lg.GetEntries()
 			require.Equal(t, groups, updatedGroups, "Cached groups are not saved")
 		})
 	}
@@ -355,7 +355,7 @@ func TestRacingLockingActions(t *testing.T) {
 
 			lg, unlock, err := localentries.GetGroupsWithLock(opts...)
 			require.NoError(t, err, "Failed to lock the users group (test groups: %v)", useTestGroupFile)
-			groups := lg.GetCurrentGroups()
+			groups := lg.GetEntries()
 			require.NotEmpty(t, groups, "Got empty groups (test groups: %v)", useTestGroupFile)
 			require.Contains(t, groups, wantGroup, "Expected group was not found  (test groups: %v)", useTestGroupFile)
 			err = unlock()
@@ -374,7 +374,7 @@ func TestRacingLockingActions(t *testing.T) {
 		require.NoError(t, err, "Unlock should not fail to lock the users group")
 
 		// Ensure that we had cleaned up all the locks correctly!
-		require.Panics(t, func() { _ = lg.GetCurrentGroups() })
+		require.Panics(t, func() { _ = lg.GetEntries() })
 	})
 }
 
@@ -392,10 +392,10 @@ func TestLockedInvalidActions(t *testing.T) {
 
 	require.Panics(t, func() { _ = lg.Update("", nil, nil) },
 		"Update should panic but did not")
-	require.Panics(t, func() { _ = lg.GetCurrentGroups() },
-		"GetCurrentGroups should panic but did not")
-	require.Panics(t, func() { _ = lg.SaveGroups(nil) },
-		"SaveGroups should panic but did not")
+	require.Panics(t, func() { _ = lg.GetEntries() },
+		"GetEntries should panic but did not")
+	require.Panics(t, func() { _ = lg.SaveEntries(nil) },
+		"SaveEntries should panic but did not")
 
 	// This is to ensure that we're in a good state, despite the actions above
 	for range 10 {

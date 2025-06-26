@@ -140,22 +140,22 @@ func (g *GroupsWithLock) mustRLock() (cleanup func()) {
 	return cleanup
 }
 
-// GetCurrentGroups returns the current groups.
-func (g *GroupsWithLock) GetCurrentGroups() (groups []types.GroupEntry) {
+// GetEntries returns a copy of the current group entries.
+func (g *GroupsWithLock) GetEntries() (entries []types.GroupEntry) {
 	unlock := g.mustRLock()
 	defer unlock()
 
 	return types.DeepCopyGroupEntries(g.entries)
 }
 
-// SaveGroups saves the passed user groups to the local groups file.
-func (g *GroupsWithLock) SaveGroups(groups []types.GroupEntry) (err error) {
+// SaveEntries saves the provided group entries to the local group file.
+func (g *GroupsWithLock) SaveEntries(entries []types.GroupEntry) (err error) {
 	defer decorate.OnError(&err, "could not save groups")
 
 	unlock := g.mustLock()
 	defer unlock()
 
-	return g.saveLocalGroups(groups)
+	return g.saveLocalGroups(entries)
 }
 
 // Update synchronizes for the given user the local group list with the current group list from UserInfo.
