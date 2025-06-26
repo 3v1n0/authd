@@ -6,10 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"math"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -307,7 +305,6 @@ func (g *GroupsWithLock) saveLocalGroups(groups []types.GroupEntry) (err error) 
 	}
 
 	backupPath := groupFileBackupPath(groupPath)
-	oldBackup := ""
 	groupsEntries := formatGroupEntries(groups)
 
 	log.Debugf(context.TODO(), "Saving group entries %#v to %q", groups, groupPath)
@@ -315,41 +312,13 @@ func (g *GroupsWithLock) saveLocalGroups(groups []types.GroupEntry) (err error) 
 		log.Debugf(context.TODO(), "Group file content:\n%s", groupsEntries)
 	}
 
-	if tmpDir, err := os.MkdirTemp(os.TempDir(), "authd-groups-backup"); err == nil {
-		defer os.Remove(tmpDir)
-
-		b := filepath.Join(tmpDir, filepath.Base(backupPath))
-		err := fileutils.CopyFile(backupPath, b)
-		if err == nil {
-			log.Debugf(context.Background(), "Backup of %q saved to %q", backupPath, b)
-			oldBackup = b
-			defer os.Remove(oldBackup)
-		}
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Warningf(context.Background(), "Failed to create backup of %q: %v",
-				backupPath, err)
-		}
-	}
-
 	if err := os.Remove(backupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Warningf(context.Background(), "Failed to remove group file backup: %v", err)
 	}
 
 	log.Debugf(context.Background(), "Backing up %q to %q", inputPath, backupPath)
-	backupAction := os.Rename
-	if fi, _ := os.Lstat(inputPath); fi != nil && fi.Mode()&fs.ModeSymlink != 0 {
-		backupAction = fileutils.CopyFile
-	}
-	if err := backupAction(inputPath, backupPath); err != nil {
+	if err := fileutils.CopyFile(inputPath, backupPath); err != nil {
 		log.Warningf(context.Background(), "Failed make a backup for the group file: %v", err)
-
-		if oldBackup != "" {
-			// Backup of current group file failed, let's restore the old backup.
-			if err := fileutils.Lrename(oldBackup, backupPath); err != nil {
-				log.Warningf(context.Background(), "Failed restoring %q to %q: %v",
-					oldBackup, backupPath, err)
-			}
-		}
 	}
 
 	tempPath := groupFileTemporaryPath(groupPath)
