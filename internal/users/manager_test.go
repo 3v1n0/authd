@@ -270,14 +270,14 @@ func TestRegisterUserPreauth(t *testing.T) {
 
 		dbFile string
 
-		wantErr     bool
-		wantSameUID bool
+		wantUserInDB bool
+		wantErr      bool
 	}{
 		"Successfully_update_user": {},
-
-		"Error_if_user_already_exists_on_db": {
-			userCase: "same-name-different-uid", dbFile: "one_user_and_group", wantErr: true,
+		"Successfully_if_user_already_exists_on_db": {
+			userCase: "same-name-different-uid", dbFile: "one_user_and_group", wantUserInDB: true,
 		},
+
 		"Error_if_user_has_no_username":  {userCase: "nameless", wantErr: true},
 		"Error_if_user_exists_on_system": {userCase: "user-exists-on-system", wantErr: true},
 	}
@@ -312,15 +312,26 @@ func TestRegisterUserPreauth(t *testing.T) {
 			}
 
 			_, err = m.UserByName(user.Name)
-			require.Error(t, err, "UserByName should return an error, but did not")
+			if tc.wantUserInDB {
+				require.NoError(t, err, "UserByName should not return an error, but did")
+			} else {
+				require.Error(t, err, "UserByName should return an error, but did not")
+			}
 
 			newUser, err := m.UserByID(uid)
 			require.NoError(t, err, "UserByID should not return an error, but did")
 
 			require.Equal(t, uid, newUser.UID, "UID should not have changed")
-			require.True(t, strings.HasPrefix(newUser.Name, tempentries.UserPrefix))
 
-			newUser.Name = tempentries.UserPrefix + "-{{random-suffix}}"
+			if tc.wantUserInDB {
+				require.Equal(t, user.Name, newUser.Name, "User name does not match")
+			} else {
+				require.True(t, strings.HasPrefix(newUser.Name, tempentries.UserPrefix),
+					"Pre-auth users should have %q as prefix: %q", tempentries.UserPrefix,
+					newUser.Name)
+				newUser.Name = tempentries.UserPrefix + "-{{random-suffix}}"
+			}
+
 			golden.CheckOrUpdateYAML(t, newUser)
 		})
 	}
