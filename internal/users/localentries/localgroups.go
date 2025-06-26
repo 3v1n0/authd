@@ -40,18 +40,26 @@ type options struct {
 // Option represents an optional function to override UpdateLocalGroups default values.
 type Option func(*options)
 
+// GroupsWithLock is a struct that holds the current user groups and provides methods to
+// retrieve and update them while ensuring that the system's user database is locked
+// to prevent concurrent modifications.
 type GroupsWithLock struct {
-	mu       sync.RWMutex
+	// mu is a mutex that protects the refCount and entries fields.
+	mu sync.RWMutex
+	// refCount is used to track how many times the GroupsWithLock instance has been returned by GetGroupsWithLock.
 	refCount uint64
-	options  options
-	entries  []types.GroupEntry
+	// entries holds the current group entries.
+	entries []types.GroupEntry
+	// options for testing purposes.
+	options options
 }
 
-// defaultGroupsWithLock is the GroupsWithLock instance returned by GetGroupsWithLock when no test options are provided.
+// defaultGroupsWithLock is used as the instance for locked groups when
+// no test options are provided.
 var defaultGroupsWithLock = &GroupsWithLock{}
 
-// GetGroupsWithLock gets a GroupsWithLock instance that allows to perform operations on
-// user groups that require users locking, and a cleanup function to release it.
+// GetGroupsWithLock gets a GroupsWithLock instance with a lock on the system's user database.
+// It returns a cleanup function that should be called to unlock system's user database.
 func GetGroupsWithLock(args ...Option) (groups *GroupsWithLock, cleanup func() error, err error) {
 	defer decorate.OnError(&err, "could not lock local groups")
 
