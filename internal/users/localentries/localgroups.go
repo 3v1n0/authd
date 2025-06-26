@@ -158,7 +158,9 @@ func (g *GroupsWithLock) SaveEntries(entries []types.GroupEntry) (err error) {
 	return g.saveLocalGroups(entries)
 }
 
-// Update synchronizes for the given user the local group list with the current group list from UserInfo.
+// Update updates the local groups for a user, adding them to the groups in
+// newGroups which they are not already part of, and removing them from the
+// groups in oldGroups which are not in newGroups.
 func (g *GroupsWithLock) Update(username string, newGroups []string, oldGroups []string) (err error) {
 	log.Debugf(context.TODO(), "Updating local groups for user %q, new groups: %v, old groups: %v", username, newGroups, oldGroups)
 	defer decorate.OnError(&err, "could not update local groups for user %q", username)
