@@ -2,9 +2,11 @@ package users_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -333,6 +335,86 @@ func TestRegisterUserPreauth(t *testing.T) {
 			}
 
 			golden.CheckOrUpdateYAML(t, newUser)
+		})
+	}
+}
+
+func TestRacingLockingActions(t *testing.T) {
+	t.Parallel()
+
+	const nIterations = 100
+
+	dbDir := t.TempDir()
+	const dbFile = "one_user_and_group"
+	err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", dbFile+".db.yaml"), dbDir)
+	require.NoError(t, err, "Setup: could not create database from testdata")
+
+	managerOpts := []users.Option{
+		users.WithIDGenerator(&idgenerator.IDGenerator{
+			UIDMin: 0,
+			UIDMax: nIterations * 3,
+			GIDMin: 0,
+			GIDMax: nIterations * 3,
+		}),
+	}
+
+	m := newManagerForTests(t, dbDir, managerOpts...)
+
+	// Lock and get the values in parallel.
+	for idx := range nIterations {
+		t.Run(fmt.Sprintf("iteration_%d", idx), func(t *testing.T) {
+			t.Parallel()
+
+			idx := idx
+			doPreAuth := idx%3 == 0
+			userName := fmt.Sprintf("authd-test-user%d", idx)
+
+			var preauthUID atomic.Uint32
+			// var err error
+			if doPreAuth {
+				// In the pre-auth case we do even more parallelization, so that
+				// the pre-auth happens without a defined order of the actual
+				// registration.
+				userName = fmt.Sprintf("authd-test-maybe-pre-check-user%d", idx)
+
+				preAuth := func(t *testing.T) {
+					t.Helper()
+					t.Parallel()
+
+					uid, err := m.RegisterUserPreAuth(userName)
+					require.NoError(t, err, "RegisterPreAuthUser should not fail but it did")
+					preauthUID.Store(uid)
+				}
+				t.Run("pre_auth1", preAuth)
+				t.Run("pre_auth2", preAuth)
+			}
+
+			userUpdate := func(t *testing.T) {
+				t.Helper()
+
+				// FIXME: This should be parallel too, but we're not ready for it.
+				// t.Parallel()
+
+				err := m.UpdateUser(types.UserInfo{
+					Name:  userName,
+					UID:   preauthUID.Load(),
+					Dir:   "/home-prefixes/" + userName,
+					Shell: "/usr/sbin/nologin",
+					Groups: []types.GroupInfo{
+						{Name: fmt.Sprintf("authd-test-group%d", idx)},
+						{Name: fmt.Sprintf("authd-test-other-group%d", idx)},
+					},
+				})
+				require.NoError(t, err, "UpdateUser should not fail but it did")
+			}
+
+			testName := "update_user"
+			if doPreAuth {
+				testName = "maybe_finish_registration"
+			}
+
+			t.Run(testName+"1", userUpdate)
+			t.Run(testName+"2", userUpdate)
 		})
 	}
 }
