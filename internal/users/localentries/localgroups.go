@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"math"
 	"os"
 	"slices"
@@ -318,11 +317,7 @@ func (g *GroupsWithLock) saveLocalGroups(groups []types.GroupEntry) (err error) 
 	}
 
 	log.Debugf(context.Background(), "Backing up %q to %q", inputPath, backupPath)
-	backupAction := os.Rename
-	if fi, _ := os.Lstat(inputPath); fi != nil && fi.Mode()&fs.ModeSymlink != 0 {
-		backupAction = fileutils.CopyFile
-	}
-	if err := backupAction(inputPath, backupPath); err != nil {
+	if err := fileutils.CopyFile(inputPath, backupPath); err != nil {
 		log.Warningf(context.Background(), "Failed make a backup for the group file: %v", err)
 	}
 
