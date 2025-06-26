@@ -113,12 +113,12 @@ func TestUpdatelocalentries(t *testing.T) {
 
 			defer localentriestestutils.RequireGroupFile(t, outputGroupFilePath, golden.Path(t))
 
-			lg, cleanup, err := localentries.GetLockedGroups(
+			lg, cleanup, err := localentries.GetGroupsWithLock(
 				localentries.WithGroupInputPath(inputGroupFilePath),
 				localentries.WithGroupOutputPath(outputGroupFilePath),
 			)
 			if tc.wantLockErr {
-				require.Error(t, err, "GetLockedGroups should have failed")
+				require.Error(t, err, "GetGroupsWithLock should have failed")
 				return
 			}
 			require.NoError(t, err, "Setup: failed to lock the users group")
@@ -281,7 +281,7 @@ func TestGetAndSaveLocalGroups(t *testing.T) {
 
 			defer localentriestestutils.RequireGroupFile(t, outputGroupFilePath, golden.Path(t))
 
-			lg, cleanup, err := localentries.GetLockedGroups(
+			lg, cleanup, err := localentries.GetGroupsWithLock(
 				localentries.WithGroupInputPath(inputGroupFilePath),
 				localentries.WithGroupOutputPath(outputGroupFilePath),
 			)
@@ -353,7 +353,7 @@ func TestRacingLockingActions(t *testing.T) {
 				wantGroup = types.GroupEntry{Name: "localgroup1", GID: 41, Passwd: "x"}
 			}
 
-			lg, unlock, err := localentries.GetLockedGroups(opts...)
+			lg, unlock, err := localentries.GetGroupsWithLock(opts...)
 			require.NoError(t, err, "Failed to lock the users group (test groups: %v)", useTestGroupFile)
 			groups := lg.GetCurrentGroups()
 			require.NotEmpty(t, groups, "Got empty groups (test groups: %v)", useTestGroupFile)
@@ -368,7 +368,7 @@ func TestRacingLockingActions(t *testing.T) {
 		wg.Wait()
 
 		// Get a last unlock function, to see if we're all good...
-		lg, unlock, err := localentries.GetLockedGroups()
+		lg, unlock, err := localentries.GetGroupsWithLock()
 		require.NoError(t, err, "Failed to lock the users group")
 		err = unlock()
 		require.NoError(t, err, "Unlock should not fail to lock the users group")
@@ -381,7 +381,7 @@ func TestRacingLockingActions(t *testing.T) {
 func TestLockedInvalidActions(t *testing.T) {
 	// This cannot be parallel
 
-	lg, unlock, err := localentries.GetLockedGroups()
+	lg, unlock, err := localentries.GetGroupsWithLock()
 
 	require.NoError(t, err, "Setup: failed to lock the users group")
 	err = unlock()
@@ -399,7 +399,7 @@ func TestLockedInvalidActions(t *testing.T) {
 
 	// This is to ensure that we're in a good state, despite the actions above
 	for range 10 {
-		lg, unlock, err = localentries.GetLockedGroups()
+		lg, unlock, err = localentries.GetGroupsWithLock()
 		require.NoError(t, err, "Failed to lock the users group")
 		defer func() {
 			err := unlock()

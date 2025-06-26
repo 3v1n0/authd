@@ -248,7 +248,7 @@ func renameUsersInGroupFile(oldNames, newNames []string) (err error) {
 		return nil
 	}
 
-	lockedGroups, unlock, err := localentries.GetLockedGroups()
+	lockedGroups, unlock, err := localentries.GetGroupsWithLock()
 	if err != nil {
 		return err
 	}
