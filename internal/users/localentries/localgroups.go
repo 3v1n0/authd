@@ -372,3 +372,20 @@ func (g *GroupsWithLock) userLocalGroups(user string) (userGroups []types.GroupE
 		return !slices.Contains(g.Users, user)
 	})
 }
+
+// UpdateGroups updates the groups of a user, adding them to the groups in newGroups
+// which they are not already part of, and removing them from the groups in oldGroups
+// which are not in newGroups. It locks the groups to prevent concurrent modifications.
+func UpdateGroups(username string, newGroups []string, oldGroups []string) (err error) {
+	groups, cleanup, err := GetGroupsWithLock()
+	if err != nil {
+		return fmt.Errorf("failed to get groups with lock: %w", err)
+	}
+	defer func() {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to unlock groups: %w", cleanupErr))
+		}
+	}()
+
+	return groups.Update(username, newGroups, oldGroups)
+}
