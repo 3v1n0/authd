@@ -55,9 +55,17 @@ func writeLockInternal() error {
 	}
 }
 
-// WriteRecLock is like [WriteLock] but it allows recursive locks, so that if
-// called when authd already has shadow password lock, then we increase the
-// locking reference count without returning an error.
+// WriteRecLock locks the system's user database for writing via the libc
+// lckpwdf() function. While the lock is held, all other processes trying to
+// lock the database via lckpwdf() will block until the lock is released or
+// the lckpwdf() timeout (15 seconds) is reached.
+//
+// This function is recursive, it can be called multiple times without deadlocking -
+// even by different goroutines - the lckpwdf() function is only called if the
+// reference count is 0, else it just increments the reference count.
+//
+// WriteRecUnlock must be called the same number of times as WriteRecLock to
+// release the lock.
 func WriteRecLock() error {
 	writeLocksCountMu.Lock()
 	defer writeLocksCountMu.Unlock()
@@ -72,8 +80,9 @@ func WriteRecLock() error {
 	return nil
 }
 
-// WriteRecUnlock is like [WriteUnlock] but it reduces the reference count
-// of the recursive lock added by [WriteRecLock].
+// WriteRecUnlock decreases the reference count of the lock acquired by WriteRecLock.
+// If the reference count reaches 0, it releases the lock by calling the libc
+// ulckpwdf() function.
 func WriteRecUnlock() error {
 	writeLocksCountMu.Lock()
 	defer writeLocksCountMu.Unlock()
