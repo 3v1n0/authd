@@ -41,10 +41,10 @@ type options struct {
 type Option func(*options)
 
 type GroupsWithLock struct {
-	mu            sync.RWMutex
-	refCount      uint64
-	options       options
-	currentGroups []types.GroupEntry
+	mu       sync.RWMutex
+	refCount uint64
+	options  options
+	entries  []types.GroupEntry
 }
 
 // defaultGroupsWithLock is the GroupsWithLock instance returned by GetGroupsWithLock when no test options are provided.
@@ -66,7 +66,7 @@ func GetGroupsWithLock(args ...Option) (groups *GroupsWithLock, cleanup func() e
 
 		groups.refCount--
 		if groups.refCount == 0 {
-			groups.currentGroups = nil
+			groups.entries = nil
 		}
 		return userslocking.WriteRecUnlock()
 	}
@@ -100,7 +100,7 @@ func GetGroupsWithLock(args ...Option) (groups *GroupsWithLock, cleanup func() e
 	}
 
 	groups.options = opts
-	groups.currentGroups, err = parseLocalGroups(opts.groupInputPath)
+	groups.entries, err = parseLocalGroups(opts.groupInputPath)
 	if err != nil {
 		return nil, nil, errors.Join(err, cleanupUnlocked())
 	}
@@ -137,7 +137,7 @@ func (g *GroupsWithLock) GetCurrentGroups() (groups []types.GroupEntry) {
 	unlock := g.mustRLock()
 	defer unlock()
 
-	return types.DeepCopyGroupEntries(g.currentGroups)
+	return types.DeepCopyGroupEntries(g.entries)
 }
 
 // SaveGroups saves the passed user groups to the local groups file.
@@ -158,7 +158,7 @@ func (g *GroupsWithLock) Update(username string, newGroups []string, oldGroups [
 	unlock := g.mustLock()
 	defer unlock()
 
-	allGroups := types.DeepCopyGroupEntries(g.currentGroups)
+	allGroups := types.DeepCopyGroupEntries(g.entries)
 	userGroups := g.userLocalGroups(username)
 	currentGroupsNames := sliceutils.Map(userGroups, func(g types.GroupEntry) string {
 		return g.Name
@@ -287,7 +287,7 @@ func (g *GroupsWithLock) saveLocalGroups(groups []types.GroupEntry) (err error) 
 
 	defer decorate.OnError(&err, "could not write local groups to %q", groupPath)
 
-	if slices.EqualFunc(g.currentGroups, groups, types.GroupEntry.Equals) {
+	if slices.EqualFunc(g.entries, groups, types.GroupEntry.Equals) {
 		log.Debugf(context.TODO(), "Nothing to do, groups are equal")
 		return nil
 	}
@@ -352,13 +352,13 @@ func (g *GroupsWithLock) saveLocalGroups(groups []types.GroupEntry) (err error) 
 		return fmt.Errorf("error renaming %s to %s: %w", tempPath, groupPath, err)
 	}
 
-	g.currentGroups = types.DeepCopyGroupEntries(groups)
+	g.entries = types.DeepCopyGroupEntries(groups)
 	return nil
 }
 
 // userLocalGroups returns all groups the user is part of.
 func (g *GroupsWithLock) userLocalGroups(user string) (userGroups []types.GroupEntry) {
-	return slices.DeleteFunc(slices.Clone(g.currentGroups), func(g types.GroupEntry) bool {
+	return slices.DeleteFunc(slices.Clone(g.entries), func(g types.GroupEntry) bool {
 		return !slices.Contains(g.Users, user)
 	})
 }
