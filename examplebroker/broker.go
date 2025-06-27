@@ -18,6 +18,7 @@ import (
 	"maps"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -46,6 +47,11 @@ const (
 const (
 	optionalResetMode  = "optionalreset"
 	mandatoryResetMode = "mandatoryreset"
+)
+
+var (
+	homeBaseDir     string
+	homeBaseDirOnce sync.Once
 )
 
 type authMode struct {
@@ -563,8 +569,10 @@ func (b *Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authen
 		authenticationMode.wantedCode += "0"
 		sessionInfo.allModes[authenticationModeName] = authenticationMode
 		sessionInfo.totpSelections++
-		uiLayoutInfo[layouts.Button] = fmt.Sprintf("Resend SMS (%d sent)",
-			sessionInfo.totpSelections)
+		if authenticationModeName == totpWithButtonMode.id {
+			uiLayoutInfo[layouts.Button] = fmt.Sprintf("Resend SMS (%d sent)",
+				sessionInfo.totpSelections)
+		}
 	case phoneAck1Mode.id, phoneAck2Mode.id:
 		// send request to sessionInfo.allModes[authenticationModeName].phone
 	case fidoDeviceMode.id:
@@ -625,10 +633,16 @@ func (b *Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationD
 	}()
 
 	access, data = b.handleIsAuthenticated(ctx, sessionInfo, authData)
+	log.Debugf(context.TODO(), "Authentication result on session %s (%s) for user %q: %q - %#v",
+		sessionInfo.sessionMode, sessionID, sessionInfo.username, access, data)
 	if access == auth.Granted && sessionInfo.currentAuthStep < sessionInfo.neededAuthSteps {
+		data = ""
+		if sessionInfo.pwdChange != noReset && sessionInfo.sessionMode == auth.SessionModeLogin {
+			data = fmt.Sprintf(`{"message": "Password reset, %d step(s) missing"}`,
+				sessionInfo.neededAuthSteps-sessionInfo.currentAuthStep)
+		}
 		sessionInfo.currentAuthStep++
 		access = auth.Next
-		data = ""
 	} else if access == auth.Retry {
 		sessionInfo.attemptsPerMode[sessionInfo.currentAuthMode]++
 		if sessionInfo.attemptsPerMode[sessionInfo.currentAuthMode] >= maxAttempts {
@@ -656,7 +670,7 @@ func (b *Broker) sleepDuration(in time.Duration) time.Duration {
 
 func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionInfo, authData map[string]string) (access, data string) {
 	// Decrypt secret if present.
-	secret, err := decodeRawSecret(b.privateKey, authData["challenge"])
+	secret, err := decodeRawSecret(b.privateKey, authData["secret"])
 	if err != nil {
 		return auth.Retry, fmt.Sprintf(`{"message": "could not decode secret: %v"}`, err)
 	}
@@ -756,6 +770,7 @@ func (b *Broker) handleIsAuthenticated(ctx context.Context, sessionInfo sessionI
 			return auth.Retry, fmt.Sprintf(`{"message": "new password does not match criteria: must be '%s'"}`, expectedSecret)
 		}
 		exampleUsersMu.Lock()
+		log.Debugf(context.TODO(), "Password for user %q changed to %q", sessionInfo.username, secret)
 		exampleUsers[sessionInfo.username] = userInfoBroker{Password: secret}
 		exampleUsersMu.Unlock()
 
@@ -843,6 +858,9 @@ func (b *Broker) UserPreCheck(ctx context.Context, username string) (string, err
 		strings.Contains(username, fmt.Sprintf("-%s-", UserIntegrationPreCheckValue)) {
 		return userInfoFromName(username), nil
 	}
+
+	exampleUsersMu.Lock()
+	defer exampleUsersMu.Unlock()
 	if _, exists := exampleUsers[username]; !exists {
 		return "", fmt.Errorf("user %q does not exist", username)
 	}
@@ -923,6 +941,13 @@ func userInfoFromName(name string) string {
 		UGID string
 	}
 
+	homeBaseDirOnce.Do(func() {
+		homeBaseDir = os.Getenv("AUTHD_EXAMPLE_BROKER_HOME_BASE_DIR")
+		if homeBaseDir == "" {
+			homeBaseDir = "/home"
+		}
+	})
+
 	user := struct {
 		Name   string
 		UUID   string
@@ -933,8 +958,8 @@ func userInfoFromName(name string) string {
 	}{
 		Name:   name,
 		UUID:   "uuid-" + name,
-		Dir:    "/home/" + name,
-		Shell:  "/usr/bin/bash",
+		Dir:    filepath.Join(homeBaseDir, name),
+		Shell:  "/bin/sh",
 		Groups: []groupJSONInfo{{Name: "group-" + name, UGID: "ugid-" + name}},
 		Gecos:  "gecos for " + name,
 	}

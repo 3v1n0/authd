@@ -4,3 +4,28 @@ package db
 func (m *Manager) Path() string {
 	return m.path
 }
+
+// GroupFile exposes the path to the group file for testing.
+func GroupFile() string {
+	return groupFile
+}
+
+// GroupFileBackupPath exposes the path to the group file backup for testing.
+func GroupFileBackupPath() string {
+	return groupFileBackupPath()
+}
+
+// SetGroupFile sets the path to the group file for testing.
+func SetGroupFile(path string) {
+	groupFile = path
+}
+
+// GetCreateSchemaQuery exposes the query to create the schema for testing.
+func GetCreateSchemaQuery() string {
+	return createSchemaQuery
+}
+
+// SetCreateSchemaQuery sets the query to create the schema for testing.
+func SetCreateSchemaQuery(query string) {
+	createSchemaQuery = query
+}

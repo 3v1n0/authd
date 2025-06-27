@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/fileutils"
 	"github.com/ubuntu/authd/internal/users/db"
 	"github.com/ubuntu/authd/internal/users/db/bbolt"
@@ -45,7 +46,7 @@ func maybeMigrateOldDBDir(oldPath, newPath string) error {
 
 func maybeMigrateBBoltToSQLite(dbDir string) (migrated bool, err error) {
 	bboltPath := filepath.Join(dbDir, bbolt.DBFilename())
-	sqlitePath := filepath.Join(dbDir, db.Filename())
+	sqlitePath := filepath.Join(dbDir, consts.DefaultDatabaseFileName)
 
 	exists, err := fileutils.FileExists(bboltPath)
 	if err != nil {
@@ -68,7 +69,7 @@ func maybeMigrateBBoltToSQLite(dbDir string) (migrated bool, err error) {
 		return false, nil
 	}
 
-	if err := db.MigrateData(dbDir); err != nil {
+	if err := db.MigrateFromBBoltToSQLite(dbDir); err != nil {
 		return false, fmt.Errorf("failed to migrate data: %w", err)
 	}
 

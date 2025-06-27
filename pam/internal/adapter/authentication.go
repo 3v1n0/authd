@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,9 +102,7 @@ type isAuthenticatedResultReceived struct {
 }
 
 // isAuthenticatedCancelled is the event to cancel the auth request.
-type isAuthenticatedCancelled struct {
-	msg string
-}
+type isAuthenticatedCancelled struct{}
 
 // reselectAuthMode signals to restart auth mode selection with the same id (to resend sms or
 // reenable the broker).
@@ -124,6 +123,7 @@ type authenticationModel struct {
 	client     authd.PAMClient
 	clientType PamClientType
 
+	inProgress       bool
 	currentModel     authenticationComponent
 	currentSessionID string
 	currentBrokerID  string
@@ -145,6 +145,9 @@ type authTracker struct {
 // startAuthentication signals that the authentication model can start
 // wait:true authentication and reset fields.
 type startAuthentication struct{}
+
+// startAuthentication signals that the authentication has been stopped.
+type stopAuthentication struct{}
 
 // errMsgToDisplay signals from an authentication form to display an error message.
 type errMsgToDisplay struct {
@@ -174,7 +177,7 @@ func newAuthenticationModel(client authd.PAMClient, clientType PamClientType) au
 }
 
 // Init initializes authenticationModel.
-func (m *authenticationModel) Init() tea.Cmd {
+func (m authenticationModel) Init() tea.Cmd {
 	return nil
 }
 
@@ -182,21 +185,45 @@ func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
 	authTracker := m.authTracker
 	return func() tea.Msg {
 		authTracker.cancelAndWait()
-		return nil
+		return stopAuthentication{}
 	}
 }
 
 // Update handles events and actions.
-func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel, command tea.Cmd) {
+func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel, command tea.Cmd) {
 	switch msg := msg.(type) {
+	case StageChanged:
+		if msg.Stage != pam_proto.Stage_challenge {
+			return m, nil
+		}
+		safeMessageDebug(msg, "in progress %v, focused: %v",
+			m.inProgress, m.Focused())
+		if m.inProgress || !m.Focused() {
+			return m, nil
+		}
+		return m, sendEvent(startAuthentication{})
+
+	case startAuthentication:
+		safeMessageDebug(msg, "current model %v, focused %v",
+			m.currentModel, m.Focused())
+		if !m.Focused() {
+			return m, nil
+		}
+		m.inProgress = true
+
+	case stopAuthentication:
+		safeMessageDebug(msg, "current model %v, focused %v",
+			m.currentModel, m.Focused())
+		m.inProgress = false
+
 	case reselectAuthMode:
-		log.Debugf(context.TODO(), "%#v", msg)
-		return *m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(AuthModeSelected{}))
+		safeMessageDebug(msg)
+		return m, tea.Sequence(m.cancelIsAuthenticated(), sendEvent(AuthModeSelected{}))
 
 	case newPasswordCheck:
-		log.Debugf(context.TODO(), "%T", msg)
+		safeMessageDebug(msg)
 		currentSecret := m.currentSecret
-		return *m, func() tea.Msg {
+		return m, func() tea.Msg {
 			res := newPasswordCheckResult{ctx: msg.ctx, password: msg.password}
 			if err := checkPasswordQuality(currentSecret, msg.password); err != nil {
 				res.msg = err.Error()
@@ -205,37 +232,36 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		}
 
 	case newPasswordCheckResult:
-		log.Debugf(msg.ctx, "%T: %s", msg, msg.msg)
+		safeMessageDebug(msg)
 		if m.clientType != Gdm {
 			// This may be handled by the current model, so don't return early.
 			break
 		}
 
 		if msg.msg == "" {
-			return *m, sendEvent(isAuthenticatedRequestedSend{
+			return m, sendEvent(isAuthenticatedRequestedSend{
 				ctx: msg.ctx,
 				isAuthenticatedRequested: isAuthenticatedRequested{
-					// TODO(UDENG-5844): Rename this to "secret" once all broker installations support the auth data field "secret".
-					item: &authd.IARequest_AuthenticationData_Challenge{Challenge: msg.password},
+					item: &authd.IARequest_AuthenticationData_Secret{Secret: msg.password},
 				},
 			})
 		}
 
 		errMsg, err := json.Marshal(msg.msg)
 		if err != nil {
-			return *m, sendEvent(pamError{
+			return m, sendEvent(pamError{
 				status: pam.ErrSystem,
 				msg:    fmt.Sprintf("could not encode %q error: %v", msg.msg, err),
 			})
 		}
 
-		return *m, sendEvent(isAuthenticatedResultReceived{
+		return m, sendEvent(isAuthenticatedResultReceived{
 			access: auth.Retry,
 			msg:    fmt.Sprintf(`{"message": %s}`, errMsg),
 		})
 
 	case isAuthenticatedRequested:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 
 		authTracker := m.authTracker
 
@@ -256,33 +282,33 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		// we've completed the previous one(s).
 		clientType := m.clientType
 		currentLayout := m.currentLayout
-		return *m, func() tea.Msg {
+		return m, func() tea.Msg {
 			authTracker.waitAndStart(cancelFunc)
 
-			secret, hasSecret := msg.item.(*authd.IARequest_AuthenticationData_Challenge)
+			secret, hasSecret := msg.item.(*authd.IARequest_AuthenticationData_Secret)
 			if hasSecret && clientType == Gdm && currentLayout == layouts.NewPassword {
-				return newPasswordCheck{ctx: ctx, password: secret.Challenge}
+				return newPasswordCheck{ctx: ctx, password: secret.Secret}
 			}
 
 			return isAuthenticatedRequestedSend{msg, ctx}
 		}
 
 	case isAuthenticatedRequestedSend:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		// no password value, pass it as is
 		plainTextSecret, err := msg.encryptSecretIfPresent(m.encryptionKey)
 		if err != nil {
-			return *m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt password payload: %v", err)})
+			return m, sendEvent(pamError{status: pam.ErrSystem, msg: fmt.Sprintf("could not encrypt password payload: %v", err)})
 		}
 
-		return *m, sendIsAuthenticated(msg.ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item}, plainTextSecret)
+		return m, sendIsAuthenticated(msg.ctx, m.client, m.currentSessionID, &authd.IARequest_AuthenticationData{Item: msg.item}, plainTextSecret)
 
 	case isAuthenticatedCancelled:
-		log.Debugf(context.TODO(), "%#v", msg)
-		return *m, m.cancelIsAuthenticated()
+		safeMessageDebug(msg)
+		return m, m.cancelIsAuthenticated()
 
 	case isAuthenticatedResultReceived:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 
 		// Resets password if the authentication wasn't successful.
 		defer func() {
@@ -299,57 +325,63 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 			m.authTracker.reset()
 		}()
 
+		var authMsg string
+		if msg.access != auth.Cancelled {
+			msg, err := dataToMsg(msg.msg)
+			if err != nil {
+				return m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
+			}
+			authMsg = msg
+		}
+
 		switch msg.access {
 		case auth.Granted:
-			infoMsg, err := dataToMsg(msg.msg)
-			if err != nil {
-				return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
-			}
-			return *m, sendEvent(PamSuccess{BrokerID: m.currentBrokerID, msg: infoMsg})
+			return m, sendEvent(PamSuccess{BrokerID: m.currentBrokerID, msg: authMsg})
 
 		case auth.Retry:
-			errorMsg, err := dataToMsg(msg.msg)
-			if err != nil {
-				return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
-			}
-			m.errorMsg = errorMsg
-			return *m, sendEvent(startAuthentication{})
+			m.errorMsg = authMsg
+			return m, sendEvent(startAuthentication{})
 
 		case auth.Denied:
-			errMsg, err := dataToMsg(msg.msg)
-			if err != nil {
-				return *m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
+			if authMsg == "" {
+				authMsg = "Access denied"
 			}
-			if errMsg == "" {
-				errMsg = "Access denied"
-			}
-			return *m, sendEvent(pamError{status: pam.ErrAuth, msg: errMsg})
+			return m, sendEvent(pamError{status: pam.ErrAuth, msg: authMsg})
 
 		case auth.Next:
-			return *m, sendEvent(GetAuthenticationModesRequested{})
+			if authMsg != "" {
+				m.errorMsg = authMsg
+
+				// Give the user some time to read the message, if any, using
+				const baseWPM = float64(120)
+				const delay = 500 * time.Millisecond
+				const extraTime = 1000 * time.Millisecond
+				words := len(strings.Fields(m.errorMsg))
+				readTime := time.Duration(float64(words)/baseWPM*60) * time.Second
+				userReadTime := delay + readTime + extraTime
+				return m, tea.Tick(userReadTime, func(t time.Time) tea.Msg {
+					return GetAuthenticationModesRequested{}
+				})
+			}
+			return m, sendEvent(GetAuthenticationModesRequested{})
 
 		case auth.Cancelled:
 			// nothing to do
-			return *m, nil
+			return m, nil
 		}
 
 	case errMsgToDisplay:
 		m.errorMsg = msg.msg
-		return *m, nil
+		return m, nil
 	}
 
 	if m.clientType != InteractiveTerminal {
-		return *m, nil
-	}
-
-	if _, ok := msg.(startAuthentication); ok {
-		log.Debugf(context.TODO(), "%T: %#v: current model %v, focused %v",
-			m, msg, m.currentModel, m.Focused())
+		return m, nil
 	}
 
 	// interaction events
 	if !m.Focused() {
-		return *m, nil
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -358,21 +390,27 @@ func (m *authenticationModel) Update(msg tea.Msg) (authModel authenticationModel
 		model, cmd = m.currentModel.Update(msg)
 		m.currentModel = convertTo[authenticationComponent](model)
 	}
-	return *m, cmd
+	return m, cmd
 }
 
 // Focus focuses this model.
-func (m *authenticationModel) Focus() tea.Cmd {
-	log.Debugf(context.TODO(), "%T: Focus", m)
+func (m authenticationModel) Focus() tea.Cmd {
+	log.Debugf(context.TODO(), "%T: Focus, focused %v", m, m.Focused())
 	if m.currentModel == nil {
 		return nil
+	}
+
+	if m.Focused() {
+		// This is in the case of re-authentication or next, as the stage has
+		// not been changed and we are already focused.
+		return sendEvent(startAuthentication{})
 	}
 
 	return m.currentModel.Focus()
 }
 
 // Focused returns if this model is focused.
-func (m *authenticationModel) Focused() bool {
+func (m authenticationModel) Focused() bool {
 	if m.currentModel == nil {
 		return false
 	}
@@ -400,8 +438,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 
 	if m.clientType != InteractiveTerminal {
 		m.currentModel = &focusTrackerModel{}
-		return tea.Sequence(sendEvent(ChangeStage{pam_proto.Stage_challenge}),
-			sendEvent(startAuthentication{}))
+		return sendEvent(ChangeStage{pam_proto.Stage_challenge})
 	}
 
 	switch layout.Type {
@@ -430,13 +467,12 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 
 	return tea.Sequence(
 		m.currentModel.Init(),
-		sendEvent(ChangeStage{pam_proto.Stage_challenge}),
-		sendEvent(startAuthentication{}))
+		sendEvent(ChangeStage{pam_proto.Stage_challenge}))
 }
 
 // View renders a text view of the authentication UI.
 func (m authenticationModel) View() string {
-	if m.currentModel == nil {
+	if !m.inProgress {
 		return ""
 	}
 	if !m.Focused() {
@@ -457,6 +493,7 @@ func (m authenticationModel) View() string {
 // Resets zeroes any internal state on the authenticationModel.
 func (m *authenticationModel) Reset() tea.Cmd {
 	log.Debugf(context.TODO(), "%T: Reset", m)
+	m.inProgress = false
 	m.currentModel = nil
 	m.currentSessionID = ""
 	m.currentBrokerID = ""
@@ -487,20 +524,20 @@ func dataToMsg(data string) (string, error) {
 
 func (authData *isAuthenticatedRequestedSend) encryptSecretIfPresent(publicKey *rsa.PublicKey) (*string, error) {
 	// no password value, pass it as is
-	secret, ok := authData.item.(*authd.IARequest_AuthenticationData_Challenge)
+	secret, ok := authData.item.(*authd.IARequest_AuthenticationData_Secret)
 	if !ok {
 		return nil, nil
 	}
 
-	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(secret.Challenge), nil)
+	ciphertext, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, []byte(secret.Secret), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// encrypt it to base64 and replace the password with it
 	base64Encoded := base64.StdEncoding.EncodeToString(ciphertext)
-	authData.item = &authd.IARequest_AuthenticationData_Challenge{Challenge: base64Encoded}
-	return &secret.Challenge, nil
+	authData.item = &authd.IARequest_AuthenticationData_Secret{Secret: base64Encoded}
+	return &secret.Secret, nil
 }
 
 // wait waits for the current authentication to be completed.

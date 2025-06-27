@@ -24,8 +24,8 @@ import (
 )
 
 type nativeModel struct {
-	pamMTx    pam.ModuleTransaction
-	nssClient authd.NSSClient
+	pamMTx            pam.ModuleTransaction
+	userServiceClient authd.UserServiceClient
 
 	availableBrokers []*authd.ABResponse_BrokerInfo
 	authModes        []*authd.GAMResponse_AuthenticationMode
@@ -52,9 +52,6 @@ const (
 	inputPromptStyleMultiLine
 )
 
-// nativeChangeStage is the internal event to notify that a stage change has happened.
-type nativeChangeStage ChangeStage
-
 // nativeStageChangeRequest is the internal event to request that a stage change.
 type nativeStageChangeRequest ChangeStage
 
@@ -80,8 +77,9 @@ var errGoBack = errors.New("request to go back")
 var errEmptyResponse = errors.New("empty response received")
 var errNotAnInteger = errors.New("parsed value is not an integer")
 
-// Init initializes the main model orchestrator.
-func (m *nativeModel) Init() tea.Cmd {
+func newNativeModel(mTx pam.ModuleTransaction, userServiceClient authd.UserServiceClient) nativeModel {
+	m := nativeModel{pamMTx: mTx, userServiceClient: userServiceClient}
+
 	var err error
 	m.serviceName, err = m.pamMTx.GetItem(pam.Service)
 	if err != nil {
@@ -89,6 +87,12 @@ func (m *nativeModel) Init() tea.Cmd {
 	}
 
 	m.interactive = isSSHSession(m.pamMTx) || IsTerminalTTY(m.pamMTx)
+
+	return m
+}
+
+// Init initializes the native model orchestrator.
+func (m nativeModel) Init() tea.Cmd {
 	rendersQrCode := m.isQrcodeRenderingSupported()
 	supportsQrCode := m.serviceName != polkitServiceName
 
@@ -135,10 +139,6 @@ func (m *nativeModel) Init() tea.Cmd {
 	}
 }
 
-func (m nativeModel) changeStage(stage proto.Stage) tea.Cmd {
-	return sendEvent(nativeChangeStage{stage})
-}
-
 func (m nativeModel) checkStage(expected proto.Stage) bool {
 	if m.currentStage != expected {
 		log.Debugf(context.Background(),
@@ -153,10 +153,10 @@ func (m nativeModel) requestStageChange(stage proto.Stage) tea.Cmd {
 }
 
 func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
-	log.Debugf(context.TODO(), "Native model update: %#v", msg)
+	safeMessageDebugWithPrefix("Native model update", msg)
 
 	switch msg := msg.(type) {
-	case nativeChangeStage:
+	case StageChanged:
 		m.currentStage = msg.Stage
 
 	case nativeStageChangeRequest:
@@ -204,15 +204,17 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		return m.startAsyncOp(m.userSelection)
 
 	case brokersListReceived:
-		if m.serviceName == polkitServiceName {
+		m.availableBrokers = msg.brokers
+
+		// We should only handle this special case if there's more than one broker available.
+		// Otherwise, we will break polkit for local users.
+		if m.serviceName == polkitServiceName && len(msg.brokers) > 1 {
 			// Do not support using local broker in the polkit case.
 			// FIXME: This should be up to authd to keep a list of brokers based on service.
-			m.availableBrokers = slices.DeleteFunc(msg.brokers, func(b *authd.ABResponse_BrokerInfo) bool {
+			m.availableBrokers = slices.DeleteFunc(slices.Clone(m.availableBrokers), func(b *authd.ABResponse_BrokerInfo) bool {
 				return b.Id == brokers.LocalBrokerName
 			})
-			return m, nil
 		}
-		m.availableBrokers = msg.brokers
 
 	case authModesReceived:
 		m.authModes = msg.authModes
@@ -279,7 +281,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		}
 
 		if len(m.authModes) == 1 {
-			return m, sendEvent(authModeSelected{id: m.authModes[0].Id})
+			return m, selectAuthMode(m.authModes[0].Id)
 		}
 
 		return m.startAsyncOp(m.authModeSelection)
@@ -331,6 +333,8 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			return m, maybeSendPamError(m.sendError(authMsg))
 		case auth.Denied:
 			// This is handled by the main authentication model
+			return m, nil
+		case auth.Cancelled:
 			return m, nil
 		default:
 			return m, maybeSendPamError(m.sendError("Access %q is not valid", access))
@@ -437,9 +441,8 @@ func (m nativeModel) promptForChoiceWithMessage(title string, message string, ch
 		}
 	}
 
-	if m.canGoBack() {
-		msg += fmt.Sprintf("\nOr enter '%s' to %s", nativeCancelKey,
-			m.goBackActionLabel())
+	if goBackLabel := m.goBackActionLabel(); goBackLabel != "" {
+		msg += fmt.Sprintf("\nOr enter '%s' to %s", nativeCancelKey, goBackLabel)
 	}
 
 	for {
@@ -491,15 +494,15 @@ func (m nativeModel) userSelection() tea.Cmd {
 }
 
 func (m nativeModel) maybePreCheckUser(user string, nextCmd tea.Cmd) tea.Cmd {
-	if m.nssClient == nil {
+	if m.userServiceClient == nil {
 		return nextCmd
 	}
 
-	// When the NSS client is defined (i.e. under SSH for now) we want also
+	// When the user service client is defined (i.e. under SSH for now) we want also
 	// repeat the user pre-check, to ensure that the user is handled by at least
 	// one broker, or we may end up leaking such infos.
 	// We don't care about the content, we only care if the user is known by some broker.
-	_, err := m.nssClient.GetPasswdByName(context.TODO(), &authd.GetPasswdByNameRequest{
+	_, err := m.userServiceClient.GetUserByName(context.TODO(), &authd.GetUserByNameRequest{
 		Name:           user,
 		ShouldPreCheck: true,
 	})
@@ -550,7 +553,7 @@ func (m nativeModel) authModeSelection() tea.Cmd {
 		})
 	}
 
-	return sendEvent(authModeSelected{id: id})
+	return selectAuthMode(id)
 }
 
 func (m nativeModel) startChallenge() tea.Cmd {
@@ -634,19 +637,27 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 		})
 	}
 
-	instructions := "Enter '%[1]s' to cancel the request and %[2]s"
+	var instructions string
+	if m.canGoBack() {
+		instructions = "Enter '%[1]s' to cancel the request and %[2]s"
+	}
+
 	if hasWait {
 		// Duplicating some contents here, as it will be better for translators once we've them
-		instructions = "Leave the input field empty to wait for the alternative authentication method " +
-			"or enter '%[1]s' to %[2]s"
+		instructions = "Leave the input field empty to wait for the alternative authentication method"
 		if m.uiLayout.GetEntry() == "" {
-			instructions = "Press Enter to wait for authentication " +
-				"or enter '%[1]s' to %[2]s"
+			instructions = "Press Enter to wait for authentication"
+		}
+
+		if m.canGoBack() {
+			instructions += " or enter '%[1]s' to %[2]s"
 		}
 	}
 
-	instructions = fmt.Sprintf(instructions, nativeCancelKey, m.goBackActionLabel())
-	if cmd := maybeSendPamError(m.sendInfo("== %s ==\n%s", authMode, instructions)); cmd != nil {
+	if goBackLabel := m.goBackActionLabel(); goBackLabel != "" {
+		instructions = "\n" + fmt.Sprintf(instructions, nativeCancelKey, m.goBackActionLabel())
+	}
+	if cmd := maybeSendPamError(m.sendInfo("== %s ==%s", authMode, instructions)); cmd != nil {
 		return cmd
 	}
 
@@ -665,7 +676,7 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 	}
 
 	return sendEvent(isAuthenticatedRequested{
-		item: &authd.IARequest_AuthenticationData_Challenge{Challenge: secret},
+		item: &authd.IARequest_AuthenticationData_Secret{Secret: secret},
 	})
 }
 
@@ -728,7 +739,7 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 		qrcodeView = append(qrcodeView, centerString(code, firstQrCodeLine))
 	}
 
-	// Ass some extra vertical space to improve readability
+	// Add some extra vertical space to improve readability
 	qrcodeView = append(qrcodeView, " ")
 
 	choices := []choicePair{
@@ -815,10 +826,13 @@ func (m nativeModel) handleNewPassword() tea.Cmd {
 
 func (m nativeModel) newPasswordChallenge(previousPassword *string) tea.Cmd {
 	if previousPassword == nil {
-		instructions := fmt.Sprintf("Enter '%[1]s' to cancel the request and %[2]s",
-			nativeCancelKey, m.goBackActionLabel())
+		var instructions string
+		if goBackLabel := m.goBackActionLabel(); goBackLabel != "" {
+			instructions = fmt.Sprintf("\nEnter '%[1]s' to cancel the request and %[2]s",
+				nativeCancelKey, goBackLabel)
+		}
 		title := m.selectedAuthModeLabel("Password Update")
-		if cmd := maybeSendPamError(m.sendInfo("== %s ==\n%s", title, instructions)); cmd != nil {
+		if cmd := maybeSendPamError(m.sendInfo("== %s ==%s", title, instructions)); cmd != nil {
 			return cmd
 		}
 	}
@@ -847,7 +861,7 @@ func (m nativeModel) newPasswordChallenge(previousPassword *string) tea.Cmd {
 		return m.newPasswordChallenge(nil)
 	}
 	return sendEvent(isAuthenticatedRequested{
-		item: &authd.IARequest_AuthenticationData_Challenge{Challenge: password},
+		item: &authd.IARequest_AuthenticationData_Secret{Secret: password},
 	})
 }
 
@@ -888,17 +902,11 @@ func (m nativeModel) previousStage() pam_proto.Stage {
 }
 
 func (m nativeModel) goBackActionLabel() string {
-	switch m.previousStage() {
-	case proto.Stage_authModeSelection:
-		return "go back to select the authentication method"
-	case proto.Stage_brokerSelection:
-		return "go back to choose the provider"
-	case proto.Stage_challenge:
-		return "go back to authentication"
-	case proto.Stage_userSelection:
-		return "go back to user selection"
+	if !m.canGoBack() {
+		return ""
 	}
-	return "go back"
+
+	return goBackLabel(m.previousStage())
 }
 
 func sendAuthWaitCommand() tea.Cmd {

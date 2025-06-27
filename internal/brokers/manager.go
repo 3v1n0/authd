@@ -132,6 +132,9 @@ func (m *Manager) SetDefaultBrokerForUser(brokerID, username string) error {
 		return fmt.Errorf("invalid broker: %v", err)
 	}
 
+	// authd uses lowercase usernames
+	username = strings.ToLower(username)
+
 	m.usersToBrokerMu.Lock()
 	defer m.usersToBrokerMu.Unlock()
 	m.usersToBroker[username] = broker
@@ -177,7 +180,8 @@ func (m *Manager) NewSession(brokerID, username, lang, mode string) (sessionID s
 
 	m.transactionsToBrokerMu.Lock()
 	defer m.transactionsToBrokerMu.Unlock()
-	log.Debug(context.Background(), fmt.Sprintf("%s: New session for %q", sessionID, username))
+	log.Debugf(context.Background(), "%s: New %s session for %q",
+		sessionID, mode, username)
 	m.transactionsToBroker[sessionID] = broker
 	return sessionID, encryptionKey, nil
 }
@@ -195,8 +199,8 @@ func (m *Manager) EndSession(sessionID string) error {
 	}
 
 	m.transactionsToBrokerMu.Lock()
-	log.Debug(context.Background(), fmt.Sprintf("%s: End session %q",
-		sessionID, m.transactionsToBroker[sessionID].Name))
+	log.Debugf(context.Background(), "%s: End session %q",
+		sessionID, m.transactionsToBroker[sessionID].Name)
 	delete(m.transactionsToBroker, sessionID)
 	m.transactionsToBrokerMu.Unlock()
 	return nil

@@ -60,14 +60,22 @@ func Z_ForTests_DumpNormalizedYAML(c *Manager) (string, error) {
 		return userGroups[i].UID < userGroups[j].UID
 	})
 
+	// Get the schema version
+	schemaVersion, err := getSchemaVersion(c.db)
+	if err != nil {
+		return "", err
+	}
+
 	content := struct {
 		Users         []UserRow        `yaml:"users"`
 		Groups        []GroupRow       `yaml:"groups"`
 		UsersToGroups []userToGroupRow `yaml:"users_to_groups"`
+		SchemaVersion int              `yaml:"schema_version"`
 	}{
 		Users:         users,
 		Groups:        groups,
 		UsersToGroups: userGroups,
+		SchemaVersion: schemaVersion,
 	}
 
 	// Marshal the content into a YAML string.
@@ -77,14 +85,6 @@ func Z_ForTests_DumpNormalizedYAML(c *Manager) (string, error) {
 	}
 
 	return string(yamlData), nil
-}
-
-// Z_ForTests_DBName returns the name of the database.
-//
-// nolint:revive,nolintlint // We want to use underscores in the function name here.
-func Z_ForTests_DBName() string {
-	testsdetection.MustBeTesting()
-	return filename
 }
 
 // Z_ForTests_CreateDBFromYAML creates the bbolt database inside destDir and loads the src file content into it.
@@ -122,7 +122,7 @@ func createDBFromYAMLReader(r io.Reader, destDir string) (err error) {
 	}
 
 	// unmarshal the content into a map.
-	dbContent := make(map[string][]map[string]string)
+	dbContent := make(map[string]any)
 	err = yaml.Unmarshal(yamlData, dbContent)
 	if err != nil {
 		return err
@@ -138,13 +138,38 @@ func createDBFromYAMLReader(r io.Reader, destDir string) (err error) {
 		}
 	}()
 
-	tablesInOrder := []string{"users", "groups", "users_to_groups"}
+	tablesInOrder := []string{"users", "groups", "users_to_groups", "schema_version"}
 
 	// Insert data
 	for _, table := range tablesInOrder {
-		records, exists := dbContent[table]
+		tableContent, exists := dbContent[table]
 		if !exists {
 			continue
+		}
+
+		if table == "schema_version" {
+			log.Debugf(context.Background(), "Setting schema version to %v", tableContent)
+			query := "UPDATE schema_version SET version = ?"
+			_, err = db.db.Exec(query, tableContent)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// All other tables are expected to be slices of maps.
+		temp, ok := tableContent.([]any)
+		if !ok {
+			return fmt.Errorf("unexpected type for table %s: %T, content: %v", table, tableContent, tableContent)
+		}
+
+		records := make([]map[string]any, len(temp))
+		for i, v := range temp {
+			record, ok := v.(map[string]any)
+			if !ok {
+				return fmt.Errorf("unexpected type in table %s: %T, content: %v", table, v, v)
+			}
+			records[i] = record
 		}
 
 		for _, record := range records {
@@ -161,7 +186,7 @@ func createDBFromYAMLReader(r io.Reader, destDir string) (err error) {
 				values += "?"
 				vals = append(vals, val)
 			}
-			log.Debugf(context.Background(), "Inserting into %s: %s", table, vals)
+			log.Debugf(context.Background(), "Inserting into %s: %+v", table, vals)
 
 			//nolint:gosec // We don't care about SQL injection in our tests.
 			query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, columns, values)
@@ -174,4 +199,20 @@ func createDBFromYAMLReader(r io.Reader, destDir string) (err error) {
 
 	log.Debug(context.Background(), "Database created")
 	return nil
+}
+
+// Z_ForTests_GetGroupFile returns the path to the group file.
+//
+// nolint:revive,nolintlint // We want to use underscores in the function name here.
+func Z_ForTests_GetGroupFile() string {
+	testsdetection.MustBeTesting()
+
+	return groupFile
+}
+
+// Z_ForTests_SetGroupFile sets the group file to the provided path.
+//
+// nolint:revive,nolintlint // We want to use underscores in the function name here.
+func Z_ForTests_SetGroupFile(groupFilePath string) {
+	groupFile = groupFilePath
 }

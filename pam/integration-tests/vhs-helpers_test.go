@@ -1,7 +1,6 @@
 package main_test
 
 import (
-	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -38,8 +37,9 @@ const (
 	vhsWaitPattern = "WaitPattern"
 	vhsTypingSpeed = "TypingSpeed"
 
-	vhsCommandVariable  = "AUTHD_TEST_TAPE_COMMAND"
-	vhsTapeUserVariable = "AUTHD_TEST_TAPE_USERNAME"
+	vhsCommandVariable    = "AUTHD_TEST_TAPE_COMMAND"
+	vhsTapeSocketVariable = "AUTHD_TEST_TAPE_SOCKET"
+	vhsTapeUserVariable   = "AUTHD_TEST_TAPE_USERNAME"
 
 	vhsCommandFinalAuthWaitVariable         = "AUTHD_TEST_TAPE_COMMAND_AUTH_FINAL_WAIT"
 	vhsCommandFinalChangeAuthokWaitVariable = "AUTHD_TEST_TAPE_COMMAND_PASSWD_FINAL_WAIT"
@@ -53,6 +53,8 @@ Show`
 
 	vhsFrameSeparator       = '─'
 	vhsFrameSeparatorLength = 80
+
+	authdWaitDefault = "AUTHD_WAIT_DEFAULT"
 
 	authdSleepDefault                 = "AUTHD_SLEEP_DEFAULT"
 	authdSleepLong                    = "AUTHD_SLEEP_LONG"
@@ -101,6 +103,7 @@ func (tt vhsTestType) tapesPath(t *testing.T) string {
 
 var (
 	defaultSleepValues = map[string]time.Duration{
+		authdWaitDefault:  10 * time.Second,
 		authdSleepDefault: 100 * time.Millisecond,
 		authdSleepLong:    1 * time.Second,
 		// Keep these in sync with example broker default wait times
@@ -112,8 +115,8 @@ var (
 
 	defaultConnectionTimeout = sleepDuration(3*time.Second) / time.Millisecond
 
-	vhsSleepRegex = regexp.MustCompile(
-		`(?m)\$\{?(AUTHD_SLEEP_[A-Z_]+)\}?(\s?([*/]+)\s?([\d.]+))?(.*)$`)
+	vhsSleepOrWaitRegex = regexp.MustCompile(
+		`(?m)\$\{?(AUTHD_(?:SLEEP|WAIT)_[A-Z_]+)\}?(\s?([*/]+)\s?([\d.]+))?(.*)$`)
 
 	vhsEmptyTrailingLinesRegex = regexp.MustCompile(`(?m)\s+\z`)
 	vhsUnixTargetRegex         = regexp.MustCompile(fmt.Sprintf(`unix://%s/(\S*)\b`,
@@ -173,7 +176,7 @@ func newTapeData(tapeName string, settings ...tapeSetting) tapeData {
 		vhsPadding:     0,
 		vhsMargin:      0,
 		vhsShell:       "bash",
-		vhsWaitTimeout: 10 * time.Second,
+		vhsWaitTimeout: defaultSleepValues[authdWaitDefault],
 		vhsTypingSpeed: 5 * time.Millisecond,
 	}
 	for _, s := range settings {
@@ -260,14 +263,22 @@ func (td tapeData) RunVhs(t *testing.T, testType vhsTestType, outDir string, cli
 	var raceLog string
 	if testutils.IsRace() {
 		raceLog = filepath.Join(t.TempDir(), "gorace.log")
-		cmd.Env = append(cmd.Env, fmt.Sprintf("GORACE=log_path=%s", raceLog))
-		saveArtifactsForDebugOnCleanup(t, []string{raceLog})
+		cmd.Env = append(cmd.Env, fmt.Sprintf("GORACE=log_path=%s exitcode=0", raceLog))
+	}
+
+	if testutils.IsAsan() {
+		if asanOptions := os.Getenv("ASAN_OPTIONS"); asanOptions != "" {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("ASAN_OPTIONS=%s", asanOptions))
+		}
+		if lsanOptions := os.Getenv("LSAN_OPTIONS"); lsanOptions != "" {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("LSAN_OPTIONS=%s", lsanOptions))
+		}
 	}
 
 	cmd.Args = append(cmd.Args, td.PrepareTape(t, testType, outDir))
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		checkDataRace(t, raceLog)
+	if raceLog != "" {
+		checkDataRaces(t, raceLog)
 	}
 
 	isSSHError := func(processOut []byte) bool {
@@ -324,32 +335,42 @@ func (td tapeData) Output() string {
 	return txt
 }
 
+func checkDataRaces(t *testing.T, raceLog string) {
+	t.Helper()
+
+	if !testutils.IsRace() {
+		return
+	}
+
+	var raceLogs []string
+	err := filepath.Walk(filepath.Dir(raceLog),
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !strings.HasPrefix(info.Name(), filepath.Base(raceLog)) {
+				return nil
+			}
+			t.Logf("Found data race %s", info.Name())
+			raceLogs = append(raceLogs, filepath.Join(filepath.Dir(raceLog), info.Name()))
+			return nil
+		})
+
+	require.NoError(t, err, "TearDown: Check for races")
+	saveArtifactsForDebugOnCleanup(t, raceLogs)
+	for _, raceLog := range raceLogs {
+		checkDataRace(t, raceLog)
+	}
+}
+
 func checkDataRace(t *testing.T, raceLog string) {
 	t.Helper()
 
-	if !testutils.IsRace() || raceLog == "" {
-		return
-	}
-
 	content, err := os.ReadFile(raceLog)
-	if err == nil || errors.Is(err, os.ErrNotExist) {
-		return
-	}
 	require.NoError(t, err, "TearDown: Error reading race log %q", raceLog)
 
 	out := string(content)
 	if strings.TrimSpace(out) == "" {
-		return
-	}
-
-	if strings.Contains(out, "bubbles/cursor.(*Model).BlinkCmd.func1") {
-		// FIXME: This is a well known race of bubble tea:
-		// https://github.com/charmbracelet/bubbletea/issues/909
-		// We can't do much here, as the workaround will likely affect the
-		// GUI behavior, but we ignore this since it's definitely not our bug.
-
-		// TODO: In case other races are detected, we should still fail here.
-		t.Skipf("This is a very well known bubble tea bug (#909), ignoring it:\n%s", out)
 		return
 	}
 
@@ -456,7 +477,7 @@ func (td tapeData) PrepareTape(t *testing.T, testType vhsTestType, outputPath st
 	err = os.WriteFile(tapePath, tape, 0600)
 	require.NoError(t, err, "Setup: write tape file")
 
-	if testutils.IsVerbose() {
+	if testing.Verbose() {
 		t.Logf("Tape %q is now:\n%s", td.Name, tape)
 	}
 
@@ -472,7 +493,7 @@ func (td tapeData) PrepareTape(t *testing.T, testType vhsTestType, outputPath st
 func evaluateTapeVariables(t *testing.T, tapeString string, td tapeData, testType vhsTestType) string {
 	t.Helper()
 
-	for _, m := range vhsSleepRegex.FindAllStringSubmatch(tapeString, -1) {
+	for _, m := range vhsSleepOrWaitRegex.FindAllStringSubmatch(tapeString, -1) {
 		fullMatch, sleepKind, op, arg, rest := m[0], m[1], m[3], m[4], m[5]
 		sleep, ok := defaultSleepValues[sleepKind]
 		require.True(t, ok, "Setup: unknown sleep kind: %q", sleepKind)
@@ -530,7 +551,7 @@ func evaluateTapeVariables(t *testing.T, tapeString string, td tapeData, testTyp
 	for k, v := range variables {
 		variable := fmt.Sprintf("${%s}", k)
 		require.Contains(t, tapeString, variable,
-			"Setup: Tape does not contain %q", variable)
+			"Setup: Tape does not contain %q\n%s", variable, tapeString)
 		tapeString = strings.ReplaceAll(tapeString, variable, v)
 	}
 
@@ -621,20 +642,28 @@ func evaluateTapeVariables(t *testing.T, tapeString string, td tapeData, testTyp
 }
 
 func finalWaitCommands(testType vhsTestType, sessionMode authd.SessionMode) string {
-	if testType == vhsTestTypeSSH {
-		return `Wait+Suffix /Connection to localhost closed\.\n>/`
-	}
+	finalWaitDuration := sleepDuration(defaultSleepValues[authdWaitDefault])
+	var firstResult, secondResult pam_test.RunnerResultAction
+	switch testType {
+	case vhsTestTypeSSH:
+		finalWaitDuration = sshDefaultFinalWaitTimeout
+		firstResult = pam_test.RunnerResultActionAuthenticate
+		secondResult = pam_test.RunnerResultActionAcctMgmt
 
-	firstResult := pam_test.RunnerResultActionAuthenticate
-	if sessionMode == authd.SessionMode_CHANGE_PASSWORD {
-		firstResult = pam_test.RunnerResultActionChangeAuthTok
+	default:
+		firstResult = pam_test.RunnerResultActionAuthenticate
+		if sessionMode == authd.SessionMode_CHANGE_PASSWORD {
+			firstResult = pam_test.RunnerResultActionChangeAuthTok
+		}
+		secondResult = pam_test.RunnerResultActionAcctMgmt
 	}
 
 	return fmt.Sprintf(`Wait+Screen /%s[^\n]*/
 Wait+Screen /%s[^\n]*/
-Wait`,
+Wait@%dms`,
 		regexp.QuoteMeta(firstResult.String()),
-		regexp.QuoteMeta(pam_test.RunnerResultActionAcctMgmt.String()),
+		regexp.QuoteMeta(secondResult.String()),
+		sleepDuration(finalWaitDuration).Milliseconds(),
 	)
 }
 
@@ -645,6 +674,9 @@ func requireRunnerResultForUser(t *testing.T, sessionMode authd.SessionMode, use
 	// the result is printed, while printing the full output on failure is too much.
 	goldenLines := strings.Split(goldenContent, "\n")
 	goldenContent = strings.Join(goldenLines[max(0, len(goldenLines)-50):], "\n")
+
+	// authd uses lowercase usernames
+	user = strings.ToLower(user)
 
 	require.Contains(t, goldenContent, pam_test.RunnerAction(sessionMode).Result().Message(user),
 		"Golden file does not include required value, consider increasing the terminal size:\n%s",

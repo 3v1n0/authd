@@ -16,14 +16,15 @@ import (
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 )
 
+const nativeTapeBaseCommand = "./pam_authd %s socket=${%s} force_native_client=true"
+
 func TestNativeAuthenticate(t *testing.T) {
 	t.Parallel()
 
 	clientPath := t.TempDir()
 	cliEnv := preparePamRunnerTest(t, clientPath)
-	const socketPathEnv = "AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK"
-	tapeCommand := fmt.Sprintf("./pam_authd login socket=${%s} force_native_client=true",
-		socketPathEnv)
+	tapeCommand := fmt.Sprintf(nativeTapeBaseCommand, pam_test.RunnerActionLogin,
+		vhsTapeSocketVariable)
 
 	tests := map[string]struct {
 		tape          string
@@ -34,6 +35,8 @@ func TestNativeAuthenticate(t *testing.T) {
 		clientOptions      clientOptions
 		currentUserNotRoot bool
 		userSelection      bool
+		userSuffixSkip     bool
+		oldDB              string
 		wantLocalGroups    bool
 		wantSeparateDaemon bool
 		skipRunnerCheck    bool
@@ -42,11 +45,24 @@ func TestNativeAuthenticate(t *testing.T) {
 		"Authenticate_user_successfully": {
 			tape: "simple_auth",
 		},
+		"Authenticate_user_successfully_with_upper_case": {
+			tape: "simple_auth",
+			clientOptions: clientOptions{
+				PamUser: strings.ToUpper(vhsTestUserName(t, "upper-case")),
+			},
+		},
 		"Authenticate_user_successfully_with_user_selection": {
 			tape:          "simple_auth_with_user_selection",
 			userSelection: true,
 			tapeVariables: map[string]string{
 				vhsTapeUserVariable: examplebroker.UserIntegrationPrefix + "native-user-selection",
+			},
+		},
+		"Authenticate_user_successfully_using_upper_case_with_user_selection": {
+			tape:          "simple_auth_with_user_selection",
+			userSelection: true,
+			tapeVariables: map[string]string{
+				vhsTapeUserVariable: strings.ToUpper(vhsTestUserName(t, "selection-upper-case")),
 			},
 		},
 		"Authenticate_user_successfully_with_invalid_connection_timeout": {
@@ -60,6 +76,38 @@ func TestNativeAuthenticate(t *testing.T) {
 			tape: "simple_auth",
 			clientOptions: clientOptions{
 				PamUser: examplebroker.UserIntegrationAuthModesPrefix + "password-integration-native",
+			},
+		},
+		"Authenticate_user_successfully_with_password_only_supported_method_in_polkit": {
+			tape: "simple_auth_one_broker_only",
+			clientOptions: clientOptions{
+				PamServiceName: "polkit-1",
+				PamUser: vhsTestUserNameFull(t,
+					examplebroker.UserIntegrationAuthModesPrefix, "password-integration-polkit"),
+			},
+		},
+		"Authenticate_user_successfully_after_db_migration": {
+			tape:           "simple_auth_with_auto_selected_broker",
+			oldDB:          "authd_0.4.1_bbolt_with_mixed_case_users",
+			userSuffixSkip: true,
+			clientOptions: clientOptions{
+				PamUser: "user-integration-cached",
+			},
+		},
+		"Authenticate_user_with_upper_case_using_lower_case_after_db_migration": {
+			tape:           "simple_auth_with_auto_selected_broker",
+			oldDB:          "authd_0.4.1_bbolt_with_mixed_case_users",
+			userSuffixSkip: true,
+			clientOptions: clientOptions{
+				PamUser: "user-integration-upper-case",
+			},
+		},
+		"Authenticate_user_with_mixed_case_after_db_migration": {
+			tape:           "simple_auth_with_auto_selected_broker",
+			oldDB:          "authd_0.4.1_bbolt_with_mixed_case_users",
+			userSuffixSkip: true,
+			clientOptions: clientOptions{
+				PamUser: "user-integration-WITH-Mixed-CaSe",
 			},
 		},
 		"Authenticate_user_with_mfa": {
@@ -154,6 +202,20 @@ func TestNativeAuthenticate(t *testing.T) {
 				PamUser: examplebroker.UserIntegrationNeedsResetPrefix + "mandatory",
 			},
 		},
+		"Authenticate_user_and_reset_password_with_case_insensitive_user_selection": {
+			tape:          "mandatory_password_reset_case_insensitive",
+			tapeSettings:  []tapeSetting{{vhsHeight, 600}},
+			userSelection: true,
+			tapeVariables: map[string]string{
+				vhsTapeUserVariable: vhsTestUserNameFull(t,
+					examplebroker.UserIntegrationNeedsResetPrefix, "case-insensitive"),
+				"AUTHD_TEST_TAPE_UPPER_CASE_USERNAME": strings.ToUpper(
+					vhsTestUserNameFull(t,
+						examplebroker.UserIntegrationNeedsResetPrefix, "Case-INSENSITIVE")),
+				"AUTHD_TEST_TAPE_MIXED_CASE_USERNAME": vhsTestUserNameFull(t,
+					examplebroker.UserIntegrationNeedsResetPrefix, "Case-INSENSITIVE"),
+			},
+		},
 		"Authenticate_user_with_mfa_and_reset_password_while_enforcing_policy": {
 			tape:         "mfa_reset_pwquality_auth",
 			tapeSettings: []tapeSetting{{vhsHeight, 3000}},
@@ -244,10 +306,22 @@ func TestNativeAuthenticate(t *testing.T) {
 			tape:          "local_user",
 			userSelection: true,
 		},
+		"Autoselect_local_broker_for_local_user_on_polkit": {
+			tape:          "local_user",
+			userSelection: true,
+			clientOptions: clientOptions{PamServiceName: "polkit-1"},
+		},
 		"Autoselect_local_broker_for_local_user_preset": {
 			tape: "local_user_preset",
 			clientOptions: clientOptions{
 				PamUser: "root",
+			},
+		},
+		"Autoselect_local_broker_for_local_user_preset_on_polkit": {
+			tape: "local_user_preset",
+			clientOptions: clientOptions{
+				PamServiceName: "polkit-1",
+				PamUser:        "root",
 			},
 		},
 
@@ -327,17 +401,20 @@ func TestNativeAuthenticate(t *testing.T) {
 				filepath.Join(outDir, "pam_authd"))
 			require.NoError(t, err, "Setup: symlinking the pam client")
 
-			var socketPath, gpasswdOutput, pidFile string
-			if tc.wantLocalGroups || tc.currentUserNotRoot || tc.wantSeparateDaemon {
+			var socketPath, gpasswdOutput, groupsFile, pidFile string
+			if tc.wantLocalGroups || tc.currentUserNotRoot || tc.wantSeparateDaemon ||
+				tc.oldDB != "" {
 				// For the local groups tests we need to run authd again so that it has
 				// special environment that generates a fake gpasswd output for us to test.
 				// Similarly for the not-root tests authd has to run in a more restricted way.
 				// In the other cases this is not needed, so we can just use a shared authd.
-				var groupsFile string
 				gpasswdOutput, groupsFile = prepareGPasswdFiles(t)
+
 				pidFile = filepath.Join(outDir, "authd.pid")
+
 				socketPath = runAuthd(t, gpasswdOutput, groupsFile, !tc.currentUserNotRoot,
-					testutils.WithPidFile(pidFile))
+					testutils.WithPidFile(pidFile),
+					testutils.WithEnvironment(useOldDatabaseEnv(t, tc.oldDB)...))
 			} else {
 				socketPath, gpasswdOutput = sharedAuthd(t)
 			}
@@ -349,7 +426,8 @@ func TestNativeAuthenticate(t *testing.T) {
 				tc.tapeCommand = tapeCommand
 			}
 
-			if u := tc.clientOptions.PamUser; strings.Contains(u, "integration") && !strings.Contains(u, "native") {
+			if u := tc.clientOptions.PamUser; !tc.userSuffixSkip &&
+				strings.Contains(u, "integration") && !strings.Contains(u, "native") {
 				tc.clientOptions.PamUser += "-native"
 			}
 			if tc.clientOptions.PamUser == "" && !tc.userSelection {
@@ -358,7 +436,7 @@ func TestNativeAuthenticate(t *testing.T) {
 
 			td := newTapeData(tc.tape, tc.tapeSettings...)
 			td.Command = tc.tapeCommand
-			td.Env[socketPathEnv] = socketPath
+			td.Env[vhsTapeSocketVariable] = socketPath
 			td.Env[pam_test.RunnerEnvSupportsConversation] = "1"
 			td.Env["AUTHD_TEST_PID_FILE"] = pidFile
 			td.Variables = tc.tapeVariables
@@ -366,6 +444,12 @@ func TestNativeAuthenticate(t *testing.T) {
 			td.RunVhs(t, vhsTestTypeNative, outDir, cliEnv)
 			got := td.ExpectedOutput(t, outDir)
 			golden.CheckOrUpdate(t, got)
+
+			if tc.wantLocalGroups || tc.oldDB != "" {
+				actualGroups, err := os.ReadFile(groupsFile)
+				require.NoError(t, err, "Failed to read the groups file")
+				golden.CheckOrUpdate(t, string(actualGroups), golden.WithSuffix(".groups"))
+			}
 
 			localgroupstestutils.RequireGPasswdOutput(t, gpasswdOutput, golden.Path(t)+".gpasswd_out")
 
@@ -379,27 +463,48 @@ func TestNativeAuthenticate(t *testing.T) {
 func TestNativeChangeAuthTok(t *testing.T) {
 	t.Parallel()
 
-	outDir := t.TempDir()
-	cliEnv := preparePamRunnerTest(t, outDir)
+	clientPath := t.TempDir()
+	cliEnv := preparePamRunnerTest(t, clientPath)
 
-	const socketPathEnv = "AUTHD_TESTS_CLI_AUTHTOK_TESTS_SOCK"
-	const tapeBaseCommand = "./pam_authd %s socket=${%s} force_native_client=true"
-	tapeCommand := fmt.Sprintf(tapeBaseCommand, pam_test.RunnerActionPasswd, socketPathEnv)
+	tapeCommand := fmt.Sprintf(nativeTapeBaseCommand, pam_test.RunnerActionPasswd,
+		vhsTapeSocketVariable)
+	tapeLoginCommand := fmt.Sprintf(nativeTapeBaseCommand, pam_test.RunnerActionLogin,
+		vhsTapeSocketVariable)
 
 	tests := map[string]struct {
 		tape          string
 		tapeSettings  []tapeSetting
 		tapeVariables map[string]string
+		clientOptions clientOptions
 
 		currentUserNotRoot bool
 		skipRunnerCheck    bool
 	}{
 		"Change_password_successfully_and_authenticate_with_new_one": {
-			tape:         "passwd_simple",
-			tapeSettings: []tapeSetting{{vhsHeight, 600}},
+			tape: "passwd_simple",
 			tapeVariables: map[string]string{
-				"AUTHD_TEST_TAPE_LOGIN_COMMAND": fmt.Sprintf(
-					tapeBaseCommand, pam_test.RunnerActionLogin, socketPathEnv),
+				"AUTHD_TEST_TAPE_LOGIN_COMMAND":  tapeLoginCommand,
+				vhsTapeUserVariable:              vhsTestUserName(t, "simple"),
+				"AUTHD_TEST_TAPE_LOGIN_USERNAME": vhsTestUserName(t, "simple"),
+			},
+		},
+		"Change_password_successfully_and_authenticate_with_new_one_with_single_broker_and_password_only_supported_method": {
+			tape: "passwd_simple_one_broker_only",
+			tapeVariables: map[string]string{
+				"AUTHD_TEST_TAPE_LOGIN_COMMAND": tapeLoginCommand,
+			},
+			clientOptions: clientOptions{
+				PamServiceName: "polkit-1",
+				PamUser: vhsTestUserNameFull(t,
+					examplebroker.UserIntegrationAuthModesPrefix, "password,mandatoryreset-integration-polkit"),
+			},
+		},
+		"Change_password_successfully_and_authenticate_with_new_one_with_different_case": {
+			tape: "passwd_simple",
+			tapeVariables: map[string]string{
+				"AUTHD_TEST_TAPE_LOGIN_COMMAND":  tapeLoginCommand,
+				vhsTapeUserVariable:              vhsTestUserName(t, "case-insensitive"),
+				"AUTHD_TEST_TAPE_LOGIN_USERNAME": vhsTestUserName(t, "case-insensitive"),
 			},
 		},
 		"Change_passwd_after_MFA_auth": {
@@ -452,6 +557,11 @@ func TestNativeChangeAuthTok(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			outDir := t.TempDir()
+			err := os.Symlink(filepath.Join(clientPath, "pam_authd"),
+				filepath.Join(outDir, "pam_authd"))
+			require.NoError(t, err, "Setup: symlinking the pam client")
+
 			var socketPath string
 			if tc.currentUserNotRoot {
 				// For the not-root tests authd has to run in a more restricted way.
@@ -461,7 +571,8 @@ func TestNativeChangeAuthTok(t *testing.T) {
 				socketPath, _ = sharedAuthd(t)
 			}
 
-			if _, ok := tc.tapeVariables[vhsTapeUserVariable]; !ok && !tc.currentUserNotRoot {
+			if _, ok := tc.tapeVariables[vhsTapeUserVariable]; !ok &&
+				!tc.currentUserNotRoot && tc.clientOptions.PamUser == "" {
 				if tc.tapeVariables == nil {
 					tc.tapeVariables = make(map[string]string)
 				}
@@ -471,15 +582,16 @@ func TestNativeChangeAuthTok(t *testing.T) {
 			td := newTapeData(tc.tape, tc.tapeSettings...)
 			td.Command = tapeCommand
 			td.Variables = tc.tapeVariables
-			td.Env[socketPathEnv] = socketPath
+			td.Env[vhsTapeSocketVariable] = socketPath
 			td.Env[pam_test.RunnerEnvSupportsConversation] = "1"
-			td.AddClientOptions(t, clientOptions{})
+			td.AddClientOptions(t, tc.clientOptions)
 			td.RunVhs(t, vhsTestTypeNative, outDir, cliEnv)
 			got := td.ExpectedOutput(t, outDir)
 			golden.CheckOrUpdate(t, got)
 
 			if !tc.skipRunnerCheck {
-				requireRunnerResult(t, authd.SessionMode_CHANGE_PASSWORD, got)
+				requireRunnerResultForUser(t, authd.SessionMode_CHANGE_PASSWORD,
+					tc.clientOptions.PamUser, got)
 			}
 		})
 	}

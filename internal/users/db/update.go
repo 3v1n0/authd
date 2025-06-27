@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mattn/go-sqlite3"
 	"github.com/ubuntu/authd/log"
@@ -11,6 +12,9 @@ import (
 
 // UpdateUserEntry inserts or updates user and group records from the user information.
 func (m *Manager) UpdateUserEntry(user UserRow, authdGroups []GroupRow, localGroups []string) (err error) {
+	// authd uses lowercase usernames
+	user.Name = strings.ToLower(user.Name)
+
 	// Start a transaction
 	tx, err := m.db.Begin()
 	if err != nil {
@@ -47,6 +51,8 @@ func (m *Manager) UpdateUserEntry(user UserRow, authdGroups []GroupRow, localGro
 
 // handleUserUpdate updates the user record in the database.
 func handleUserUpdate(db queryable, u UserRow) error {
+	log.Debugf(context.Background(), "Updating entry of user %q (UID: %d)", u.Name, u.UID)
+
 	existingUser, err := userByID(db, u.UID)
 	if err != nil && !errors.Is(err, NoDataFoundError{}) {
 		return err
@@ -64,7 +70,12 @@ func handleUserUpdate(db queryable, u UserRow) error {
 		u.Dir = existingUser.Dir
 	}
 
-	log.Debug(context.Background(), fmt.Sprintf("Updating entry of user %q (UID: %d)", u.Name, u.UID))
+	// Ensure that we use the same shell as the one we have in the database.
+	if existingUser.Shell != "" && existingUser.Shell != u.Shell {
+		log.Debugf(context.TODO(), "Not updating shell to %q because it's already set to %q", u.Shell, existingUser.Shell)
+		u.Shell = existingUser.Shell
+	}
+
 	return insertOrUpdateUserByID(db, u)
 }
 
@@ -85,7 +96,7 @@ func handleGroupsUpdate(db queryable, groups []GroupRow) error {
 			return fmt.Errorf("GID for group %q already in use by a different group", group.Name)
 		}
 
-		log.Debug(context.Background(), fmt.Sprintf("Updating entry of group %q (%+v)", group.Name, group))
+		log.Debugf(context.Background(), "Updating entry of group %q (%+v)", group.Name, group)
 		if err := insertOrUpdateGroupByID(db, group); err != nil {
 			return err
 		}
@@ -150,6 +161,9 @@ func handleUsersToLocalGroupsUpdate(db queryable, uid uint32, localGroups []stri
 
 // UpdateBrokerForUser updates the last broker the user successfully authenticated with.
 func (m *Manager) UpdateBrokerForUser(username, brokerID string) error {
+	// authd uses lowercase usernames
+	username = strings.ToLower(username)
+
 	query := `UPDATE users SET broker_id = ? WHERE name = ?`
 	res, err := m.db.Exec(query, brokerID, username)
 	if err != nil {
@@ -160,7 +174,7 @@ func (m *Manager) UpdateBrokerForUser(username, brokerID string) error {
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return NoDataFoundError{table: "users", key: username}
+		return NewUserNotFoundError(username)
 	}
 
 	return nil

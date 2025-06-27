@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,11 +17,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd/internal/consts"
+	"github.com/ubuntu/authd/internal/fileutils"
 	"github.com/ubuntu/authd/internal/grpcutils"
 	"github.com/ubuntu/authd/internal/proto/authd"
 	"github.com/ubuntu/authd/internal/services/errmessages"
 	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/internal/testutils/golden"
+	"github.com/ubuntu/authd/internal/users/db/bbolt"
 	localgroupstestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
 	"google.golang.org/grpc"
@@ -29,9 +33,10 @@ import (
 )
 
 var (
-	authdTestSessionTime  = time.Now()
-	authdArtifactsDir     string
-	authdArtifactsDirSync sync.Once
+	authdTestSessionTime     = time.Now()
+	authdArtifactsDir        string
+	authdArtifactsAlwaysSave bool
+	authdArtifactsDirSync    sync.Once
 )
 
 type authdInstance struct {
@@ -47,17 +52,38 @@ var (
 	sharedAuthdInstance = authdInstance{}
 )
 
-func runAuthdForTesting(t *testing.T, gpasswdOutput, groupsFile string, currentUserAsRoot bool, args ...testutils.DaemonOption) (
+func runAuthdForTesting(t *testing.T, gpasswdOutput, groupsFile string, currentUserAsRoot bool, isSharedDaemon bool, args ...testutils.DaemonOption) (
 	socketPath string, waitFunc func()) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
+
 	env := localgroupstestutils.AuthdIntegrationTestsEnvWithGpasswdMock(t, gpasswdOutput, groupsFile)
 	if currentUserAsRoot {
 		env = append(env, authdCurrentUserRootEnvVariableContent)
 	}
 	args = append(args, testutils.WithEnvironment(env...))
+
+	outputFile := filepath.Join(t.TempDir(), "authd.log")
+	args = append(args, testutils.WithOutputFile(outputFile))
+
+	homeBaseDir := filepath.Join(t.TempDir(), "homes")
+	err := os.MkdirAll(homeBaseDir, 0700)
+	require.NoError(t, err, "Setup: Creating home base dir %q", homeBaseDir)
+	args = append(args, testutils.WithHomeBaseDir(homeBaseDir))
+
+	if !isSharedDaemon {
+		database := filepath.Join(t.TempDir(), "db", consts.DefaultDatabaseFileName)
+		args = append(args, testutils.WithDBPath(filepath.Dir(database)))
+		saveArtifactsForDebugOnCleanup(t, []string{database})
+	}
+	if isSharedDaemon && authdArtifactsAlwaysSave {
+		database := filepath.Join(authdArtifactsDir, "db", consts.DefaultDatabaseFileName)
+		args = append(args, testutils.WithDBPath(filepath.Dir(database)))
+	}
+
 	socketPath, stopped := testutils.RunDaemon(ctx, t, daemonPath, args...)
+	saveArtifactsForDebugOnCleanup(t, []string{outputFile})
 	return socketPath, func() {
 		cancel()
 		<-stopped
@@ -67,11 +93,12 @@ func runAuthdForTesting(t *testing.T, gpasswdOutput, groupsFile string, currentU
 func runAuthd(t *testing.T, gpasswdOutput, groupsFile string, currentUserAsRoot bool, args ...testutils.DaemonOption) string {
 	t.Helper()
 
-	socketPath, _ := runAuthdForTesting(t, gpasswdOutput, groupsFile, currentUserAsRoot, args...)
+	socketPath, waitFunc := runAuthdForTesting(t, gpasswdOutput, groupsFile, currentUserAsRoot, false, args...)
+	t.Cleanup(waitFunc)
 	return socketPath
 }
 
-func sharedAuthd(t *testing.T) (socketPath string, gpasswdFile string) {
+func sharedAuthd(t *testing.T, args ...testutils.DaemonOption) (socketPath string, gpasswdFile string) {
 	t.Helper()
 
 	useSharedInstance := testutils.IsRace()
@@ -82,7 +109,7 @@ func sharedAuthd(t *testing.T) (socketPath string, gpasswdFile string) {
 	if !useSharedInstance {
 		gPasswd := filepath.Join(t.TempDir(), "gpasswd.output")
 		groups := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
-		socket, cleanup := runAuthdForTesting(t, gPasswd, groups, true)
+		socket, cleanup := runAuthdForTesting(t, gPasswd, groups, true, useSharedInstance, args...)
 		t.Cleanup(cleanup)
 		return socket, gPasswd
 	}
@@ -93,7 +120,7 @@ func sharedAuthd(t *testing.T) (socketPath string, gpasswdFile string) {
 		defer sharedAuthdInstance.mu.Unlock()
 
 		sa.refCount--
-		if testutils.IsVerbose() {
+		if testing.Verbose() {
 			t.Logf("Authd shared instances decreased: %v", sa.refCount)
 		}
 		if sa.refCount != 0 {
@@ -112,16 +139,18 @@ func sharedAuthd(t *testing.T) (socketPath string, gpasswdFile string) {
 	defer sharedAuthdInstance.mu.Unlock()
 
 	sa.refCount++
-	if testutils.IsVerbose() {
+	if testing.Verbose() {
 		t.Logf("Authd shared instances increased: %v", sa.refCount)
 	}
 	if sa.refCount != 1 {
 		return sa.socketPath, sa.gPasswdOutputPath
 	}
 
+	args = append(slices.Clone(args), testutils.WithSharedDaemon(true))
 	sa.gPasswdOutputPath = filepath.Join(t.TempDir(), "gpasswd.output")
 	sa.groupsFile = filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
-	sa.socketPath, sa.cleanup = runAuthdForTesting(t, sa.gPasswdOutputPath, sa.groupsFile, true)
+	sa.socketPath, sa.cleanup = runAuthdForTesting(t, sa.gPasswdOutputPath,
+		sa.groupsFile, true, useSharedInstance, args...)
 	return sa.socketPath, sa.gPasswdOutputPath
 }
 
@@ -246,8 +275,10 @@ func artifactsPath(t *testing.T) string {
 	authdArtifactsDirSync.Do(func() {
 		defer func() { t.Logf("Saving test artifacts at %s", authdArtifactsDir) }()
 
+		authdArtifactsAlwaysSave = os.Getenv("AUTHD_TESTS_ARTIFACTS_ALWAYS_SAVE") != ""
+
 		// We need to copy the artifacts to another directory, since the test directory will be cleaned up.
-		authdArtifactsDir = os.Getenv("AUTHD_TEST_ARTIFACTS_PATH")
+		authdArtifactsDir = os.Getenv("AUTHD_TESTS_ARTIFACTS_PATH")
 		if authdArtifactsDir != "" {
 			if err := os.MkdirAll(authdArtifactsDir, 0750); err != nil && !os.IsExist(err) {
 				require.NoError(t, err, "TearDown: could not create artifacts directory %q", authdArtifactsDir)
@@ -271,7 +302,7 @@ func artifactsPath(t *testing.T) string {
 // saveArtifactsForDebug saves the specified artifacts to a temporary directory if the test failed.
 func saveArtifactsForDebug(t *testing.T, artifacts []string) {
 	t.Helper()
-	if !t.Failed() {
+	if !t.Failed() && !authdArtifactsAlwaysSave {
 		return
 	}
 
@@ -316,8 +347,22 @@ func prependBinToPath(t *testing.T) string {
 func prepareGPasswdFiles(t *testing.T) (string, string) {
 	t.Helper()
 
+	cwd, err := os.Getwd()
+	require.NoError(t, err, "Cannot get current working directory")
+
+	const groupFileName = "gpasswd.group"
 	gpasswdOutput := filepath.Join(t.TempDir(), "gpasswd.output")
-	groupsFile := filepath.Join(testutils.TestFamilyPath(t), "gpasswd.group")
+	groupsFile := filepath.Join(cwd, "testdata", t.Name(), groupFileName)
+
+	if ok, _ := fileutils.FileExists(groupsFile); !ok {
+		groupsFile = filepath.Join(cwd, testutils.TestFamilyPath(t), groupFileName)
+	}
+
+	// Do a copy of the original group file, since it may be migrated by authd.
+	tmpCopy := filepath.Join(t.TempDir(), filepath.Base(groupsFile))
+	err = fileutils.CopyFile(groupsFile, tmpCopy)
+	require.NoError(t, err, "Cannot copy the group file %q", groupsFile)
+	groupsFile = tmpCopy
 
 	saveArtifactsForDebugOnCleanup(t, []string{gpasswdOutput, groupsFile})
 
@@ -344,4 +389,183 @@ func getUbuntuVersion(t *testing.T) int {
 	v, err := strconv.Atoi(versionID)
 	require.NoError(t, err, "Can't parse version ID: %q", osrelease.Release.ID)
 	return v
+}
+
+func nssTestEnvBase(t *testing.T, nssLibrary string) []string {
+	t.Helper()
+
+	require.NotEmpty(t, nssLibrary, "Setup: NSS Library is unset")
+	return []string{
+		"AUTHD_NSS_INFO=stderr",
+		fmt.Sprintf("LD_LIBRARY_PATH=%s:%s", filepath.Dir(nssLibrary),
+			os.Getenv("LD_LIBRARY_PATH")),
+	}
+}
+
+func nssTestEnv(t *testing.T, nssLibrary, authdSocket string) []string {
+	t.Helper()
+
+	baseEnv := nssTestEnvBase(t, nssLibrary)
+
+	var preloadLibraries []string
+	if testutils.IsAsan() {
+		asanPath, err := exec.Command("gcc", "-print-file-name=libasan.so").Output()
+		require.NoError(t, err, "Setup: Looking for ASAN lib path")
+		preloadLibraries = []string{strings.TrimSpace(string(asanPath))}
+	}
+	preloadLibraries = append(preloadLibraries, nssLibrary)
+	baseEnv = append(baseEnv, fmt.Sprintf("LD_PRELOAD=%s",
+		strings.Join(preloadLibraries, ":")))
+
+	if authdSocket == "" {
+		return baseEnv
+	}
+
+	return append(baseEnv, fmt.Sprintf("AUTHD_NSS_SOCKET=%s", authdSocket))
+}
+
+func requireAuthdUser(t *testing.T, client authd.UserServiceClient, user string) *authd.User {
+	t.Helper()
+
+	authdUser, err := client.GetUserByName(context.Background(),
+		&authd.GetUserByNameRequest{Name: user, ShouldPreCheck: false})
+	require.NoError(t, err, "User %q is expected to exist", user)
+	require.NotNil(t, authdUser, "User %q is expected to be not nil", user)
+
+	require.Equal(t, strings.ToLower(user), authdUser.Name, "Passwd user does not match")
+	require.Equal(t, "/bin/sh", authdUser.Shell, "Unexpected Shell for user %q", user)
+	require.NotZero(t, authdUser.Uid, "Unexpected UID for user %q", user)
+	require.NotZero(t, authdUser.Gid, "Unexpected GID for user %q", user)
+	require.NotEmpty(t, authdUser.Homedir, "Unexpected HOME for user %q", user)
+	require.NotEmpty(t, authdUser.Gecos, "Unexpected Gecos for user %q", user)
+
+	p, err := client.GetUserByID(context.Background(),
+		&authd.GetUserByIDRequest{Id: authdUser.Uid})
+	require.NoError(t, err, "User %q is expected to exist as id %v", authdUser.Uid)
+	require.Equal(t, authdUser, p, "User by ID does not match")
+
+	return authdUser
+}
+
+func requireNoAuthdUser(t *testing.T, client authd.UserServiceClient, user string) {
+	t.Helper()
+
+	_, err := client.GetUserByName(context.Background(),
+		&authd.GetUserByNameRequest{Name: user, ShouldPreCheck: false})
+	require.Error(t, err, "User %q is not expected to exist")
+}
+
+func requireAuthdGroup(t *testing.T, client authd.UserServiceClient, gid uint32) *authd.Group {
+	t.Helper()
+
+	group, err := client.GetGroupByID(context.Background(),
+		&authd.GetGroupByIDRequest{Id: gid})
+	require.NoError(t, err, "Group %v is expected to exist", gid)
+	require.NotNil(t, group, "Group %v is expected to be not nil", gid)
+
+	require.Equal(t, gid, group.Gid, group.Name, "Group ID does not match")
+	require.NotEmpty(t, group.Name, "Group does not match")
+	require.NotEmpty(t, group.Gid, "Unexpected GID for group %q", group.Name)
+	require.NotEmpty(t, group.Members, "Unexpected Members for user %q", group.Name)
+
+	g, err := client.GetGroupByName(context.Background(),
+		&authd.GetGroupByNameRequest{Name: group.Name})
+	require.NoError(t, err, "Group %q is expected to exist", group.Name)
+	require.Equal(t, group, g, "Group by name %q does not match", group.Name)
+
+	return group
+}
+
+func getEntOutput(t *testing.T, nssLibrary, authdSocket, db, key string) string {
+	t.Helper()
+
+	// #nosec:G204 - we control the command arguments in tests
+	cmd := exec.Command("getent", db, key)
+	cmd.Env = nssTestEnv(t, nssLibrary, authdSocket)
+
+	out, err := cmd.Output()
+	require.NoError(t, err, "getent %s should not fail for key %q\n%s", db, key)
+
+	o := strings.TrimSpace(string(out))
+	t.Log(strings.Join(cmd.Args, " "), "returned:", o)
+
+	return o
+}
+
+func requireGetEntOutputEqualsUser(t *testing.T, getentOutput string, user *authd.User) {
+	t.Helper()
+
+	require.Equal(t, []string{
+		user.Name,
+		"x",
+		fmt.Sprint(user.Uid),
+		fmt.Sprint(user.Gid),
+		user.Gecos,
+		user.Homedir,
+		user.Shell,
+	}, strings.Split(getentOutput, ":"), "Unexpected getent output: %s", getentOutput)
+}
+
+func requireGetEntEqualsUser(t *testing.T, nssLibrary, authdSocket, userName string, user *authd.User) {
+	t.Helper()
+
+	requireGetEntOutputEqualsUser(t,
+		getEntOutput(t, nssLibrary, authdSocket, "passwd", userName), user)
+
+	requireGetEntOutputEqualsUser(t,
+		getEntOutput(t, nssLibrary, authdSocket, "passwd", fmt.Sprint(user.Uid)),
+		user)
+}
+
+func requireGetEntOutputEqualsGroup(t *testing.T, getentOutput string, group *authd.Group) {
+	t.Helper()
+
+	require.Equal(t, []string{
+		group.Name,
+		group.Passwd,
+		fmt.Sprint(group.Gid),
+		strings.Join(group.Members, ","),
+	}, strings.Split(getentOutput, ":"), "Unexpected getent output: %s", getentOutput)
+}
+
+func requireGetEntEqualsGroup(t *testing.T, nssLibrary, authdSocket, name string, group *authd.Group) {
+	t.Helper()
+
+	requireGetEntOutputEqualsGroup(t,
+		getEntOutput(t, nssLibrary, authdSocket, "group", name), group)
+
+	requireGetEntOutputEqualsGroup(t,
+		getEntOutput(t, nssLibrary, authdSocket, "group", fmt.Sprint(group.Gid)), group)
+}
+
+func requireGetEntExists(t *testing.T, nssLibrary, authdSocket, user string, exists bool) {
+	t.Helper()
+
+	// #nosec:G204 - we control the command arguments in tests
+	cmd := exec.Command("getent", "passwd", user)
+	cmd.Env = nssTestEnv(t, nssLibrary, authdSocket)
+	out, err := cmd.CombinedOutput()
+
+	if !exists {
+		require.Error(t, err, "getent should fail for user %q\n%s", user, out)
+		return
+	}
+	require.NoError(t, err, "getent should not fail for user %q\n%s", user, out)
+}
+
+func useOldDatabaseEnv(t *testing.T, oldDB string) []string {
+	t.Helper()
+
+	if oldDB == "" {
+		return nil
+	}
+
+	tempDir := t.TempDir()
+	oldDBDir, err := os.MkdirTemp(tempDir, "old-db-path")
+	require.NoError(t, err, "Cannot create db directory in %q", tempDir)
+
+	err = bbolt.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", oldDB+".db.yaml"), oldDBDir)
+	require.NoError(t, err, "Setup: creating old database")
+
+	return []string{fmt.Sprintf("AUTHD_INTEGRATIONTESTS_OLD_DB_DIR=%s", oldDBDir)}
 }
