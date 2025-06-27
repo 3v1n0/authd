@@ -76,8 +76,6 @@ pub fn sleep_until(deadline: Instant) -> Sleep {
 ///
 /// To run something regularly on a schedule, see [`interval`].
 ///
-/// The maximum duration for a sleep is 68719476734 milliseconds (approximately 2.2 years).
-///
 /// # Cancellation
 ///
 /// Canceling a sleep instance is done by dropping the returned future. No additional
@@ -407,11 +405,11 @@ impl Sleep {
         #[cfg(all(tokio_unstable, feature = "tracing"))]
         let coop = ready!(trace_poll_op!(
             "poll_elapsed",
-            crate::runtime::coop::poll_proceed(cx),
+            crate::task::coop::poll_proceed(cx),
         ));
 
         #[cfg(any(not(tokio_unstable), not(feature = "tracing")))]
-        let coop = ready!(crate::runtime::coop::poll_proceed(cx));
+        let coop = ready!(crate::task::coop::poll_proceed(cx));
 
         let result = me.entry.poll_elapsed(cx).map(move |r| {
             coop.made_progress();

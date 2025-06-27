@@ -3,6 +3,7 @@ package adapter
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -58,7 +59,7 @@ func newUserSelectionModel(pamMTx pam.ModuleTransaction, clientType PamClientTyp
 }
 
 // Init initializes userSelectionModel.
-func (m *userSelectionModel) Init() tea.Cmd {
+func (m userSelectionModel) Init() tea.Cmd {
 	return nil
 }
 
@@ -78,26 +79,30 @@ func (m userSelectionModel) SelectUser() tea.Cmd {
 func (m userSelectionModel) Update(msg tea.Msg) (userSelectionModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case userSelected:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		currentUser, err := m.pamMTx.GetItem(pam.User)
 		if cmd := maybeSendPamError(err); cmd != nil {
 			return m, cmd
 		}
-		differentUser := msg.username != currentUser
-		if !m.enabled && currentUser != "" && differentUser {
+
+		// authd uses lowercase usernames
+		selectedUser := strings.ToLower(msg.username)
+		isDifferentUser := selectedUser != strings.ToLower(currentUser)
+
+		if !m.enabled && currentUser != "" && isDifferentUser {
 			return m, sendEvent(pamError{
 				status: pam.ErrPermDenied,
 				msg: fmt.Sprintf("Changing username %q to %q is not allowed",
-					currentUser, msg.username),
+					currentUser, selectedUser),
 			})
 		}
-		if differentUser {
-			err := m.pamMTx.SetItem(pam.User, msg.username)
+		if selectedUser != currentUser {
+			err := m.pamMTx.SetItem(pam.User, selectedUser)
 			if cmd := maybeSendPamError(err); cmd != nil {
 				return m, cmd
 			}
 		}
-		m.selected = msg.username != ""
+		m.selected = selectedUser != ""
 		// synchronise our internal validated field and the text one.
 		m.SetValue(msg.username)
 		if !m.selected {
@@ -106,7 +111,7 @@ func (m userSelectionModel) Update(msg tea.Msg) (userSelectionModel, tea.Cmd) {
 		return m, sendEvent(UsernameSelected{})
 
 	case userRequired:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		m.enabled = true
 		return m, sendEvent(ChangeStage{Stage: proto.Stage_userSelection})
 	}
@@ -148,7 +153,8 @@ func (m userSelectionModel) Username() string {
 	if m.clientType == InteractiveTerminal && !m.selected {
 		return ""
 	}
-	return m.Model.Value()
+	// authd uses lowercase usernames
+	return strings.ToLower(m.Model.Value())
 }
 
 // Focus sets the focus state on the model. We also mark as the user is not

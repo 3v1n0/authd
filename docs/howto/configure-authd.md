@@ -9,6 +9,19 @@ myst:
 This guide shows how to configure identity brokers to support authentication of
 Ubuntu devices with authd and your chosen cloud provider.
 
+```{admonition} Logging in multiple users with authd
+:class: tip
+By default, the first user to authenticate and log in to a machine becomes the
+"owner" and only they are allowed to log in.
+
+For other authenticated users to log in, they must first be added as an
+"allowed user".
+
+The steps you need to follow when allowing more users are outlined in
+[configure allowed users](ref::config-allowed-users) on the current page.
+
+```
+
 ## Broker discovery
 
 Create the directory that will contain the declaration files of the broker(s):
@@ -17,7 +30,7 @@ Create the directory that will contain the declaration files of the broker(s):
 sudo mkdir -p /etc/authd/brokers.d/
 ```
 
-Then copy the the `.conf` file from your chosen broker snap package:
+Then copy the `.conf` file from your chosen broker snap package:
 
 :::::{tab-set}
 :sync-group: broker
@@ -132,7 +145,6 @@ issuer = https://accounts.google.com
 client_id = <CLIENT_ID>
 client_secret = <CLIENT_SECRET>
 ```
-
 ::::
 
 ::::{tab-item} Microsoft Entra ID
@@ -145,10 +157,28 @@ To configure Entra ID, edit  `/var/snap/authd-msentraid/current/broker.conf`:
 issuer = https://login.microsoftonline.com/<ISSUER_ID>/v2.0
 client_id = <CLIENT_ID>
 ```
-
 ::::
 :::::
 
+## Force remote authentication with the identity provider
+
+By default, remote authentication with the identity provider only happens
+if there is a working internet connection and the provider is reachable during login.
+
+If you want to force remote authentication, even when the provider is unreachable,
+enable it as follows:
+
+```ini
+[oidc]
+...
+force_provider_authentication = true
+```
+
+```{warning}
+In some cases, this may prevent login, such as when there are network issues.
+```
+
+(ref::config-allowed-users)=
 ## Configure allowed users
 
 The users who are allowed to log in (after successfully authenticating via the
@@ -243,6 +273,23 @@ sudo snap restart authd-msentraid
 ::::
 :::::
 
-## System configuration
+## Configure login timeout
 
-By default on Ubuntu, the login timeout is 60s. This may be too brief for a device code flow authentication. It can be set to a different value by changing the value of `LOGIN_TIMEOUT` in `/etc/login.defs`
+By default on Ubuntu, the login timeout is 60s.
+
+This may be too brief for a device code flow authentication.
+
+It can be modified by changing the value of `LOGIN_TIMEOUT` in `/etc/login.defs`.
+
+## Configure the authd service
+
+The authd service is configured in `/etc/authd/authd.yaml`.
+
+This provides configuration options for logging verbosity and UID/GID ranges.
+
+```{admonition} Additional configuration for LXD
+:class: tip
+If you are using authd inside LXD containers, read our short guide on [how to
+use authd with LXD](howto::use-with-lxd), which outlines additional steps for
+configuring appropriate UID/GID ranges.
+```

@@ -1,24 +1,30 @@
-> ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
+> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Username: user name
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
+> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Username: user-local-groups-integration-auth-native
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
+> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
   Select your provider
 
 > 1. local
   2. ExampleBroker
+
+  Press escape key to go back to user selection
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
+> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 >
+
+  Press escape key to go back to select the authentication method
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
+> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 > ********
+
+  Press escape key to go back to select the authentication method
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TESTS_CLI_AUTHENTICATE_TESTS_SOCK}
+> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 PAM Authenticate()
   User: "user-local-groups-integration-auth-native"
   Result: success

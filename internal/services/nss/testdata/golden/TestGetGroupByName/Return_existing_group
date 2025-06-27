@@ -1,5 +1,0 @@
-name: group1
-passwd: ""
-gid: 11111
-members:
-    - user1

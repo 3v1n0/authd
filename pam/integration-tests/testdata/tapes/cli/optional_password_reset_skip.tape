@@ -16,16 +16,22 @@ Show
 
 Hide
 Type "2"
-Wait+Prompt /Gimme your password/
+Wait+CLIPrompt /Gimme your password/ /Press escape key to go back to select the authentication method/
 Show
 
 Hide
 TypeCLIPassword "goodpass"
+Wait /Press escape key to go back to select the authentication method/
 Show
 
 Hide
 Enter
-Wait+CLIPrompt /New password/ /\[ Skip \]/
+Wait+Screen /Password reset, 1 step\(s\) missing/
+Wait /Press escape key to go back to select the authentication method/
+Show
+
+Hide
+Wait+CLIPrompt@${AUTHD_WAIT_DEFAULT}*2 /New password/ /\[ Skip \][\n]+[ ]*Press escape key to go back to choose the provider/
 Show
 
 Hide

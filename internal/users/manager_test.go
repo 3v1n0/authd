@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	"github.com/ubuntu/authd/internal/users"
 	"github.com/ubuntu/authd/internal/users/db"
@@ -54,7 +55,7 @@ func TestNewManager(t *testing.T) {
 				require.NoError(t, err, "Setup: could not create database from testdata")
 			}
 			if tc.corruptedDbFile {
-				err := os.WriteFile(filepath.Join(dbDir, db.Z_ForTests_DBName()), []byte("Corrupted db"), 0600)
+				err := os.WriteFile(filepath.Join(dbDir, consts.DefaultDatabaseFileName), []byte("Corrupted db"), 0600)
 				require.NoError(t, err, "Setup: Can't update the file with invalid db content")
 			}
 
@@ -112,17 +113,19 @@ type groupCase struct {
 
 func TestUpdateUser(t *testing.T) {
 	userCases := map[string]userCase{
-		"user1":                   {UserInfo: types.UserInfo{Name: "user1"}, UID: 1111},
-		"nameless":                {UID: 1111},
-		"user2":                   {UserInfo: types.UserInfo{Name: "user2"}, UID: 2222},
-		"same-name-different-uid": {UserInfo: types.UserInfo{Name: "user1"}, UID: 3333},
-		"different-name-same-uid": {UserInfo: types.UserInfo{Name: "newuser1"}, UID: 1111},
-		"user-exists-on-system":   {UserInfo: types.UserInfo{Name: "root"}, UID: 1111},
+		"user1":                             {UserInfo: types.UserInfo{Name: "user1"}, UID: 1111},
+		"nameless":                          {UID: 1111},
+		"user2":                             {UserInfo: types.UserInfo{Name: "user2"}, UID: 2222},
+		"same-name-different-uid":           {UserInfo: types.UserInfo{Name: "user1"}, UID: 3333},
+		"different-name-same-uid":           {UserInfo: types.UserInfo{Name: "newuser1"}, UID: 1111},
+		"different-capitalization-same-uid": {UserInfo: types.UserInfo{Name: "User1"}, UID: 1111},
+		"user-exists-on-system":             {UserInfo: types.UserInfo{Name: "root"}, UID: 1111},
 	}
 
 	groupsCases := map[string][]groupCase{
-		"authd-group": {{GroupInfo: types.GroupInfo{Name: "group1", UGID: "1"}, GID: 11111}},
-		"local-group": {{GroupInfo: types.GroupInfo{Name: "localgroup1", UGID: ""}}},
+		"authd-group":                {{GroupInfo: types.GroupInfo{Name: "group1", UGID: "1"}, GID: 11111}},
+		"local-group":                {{GroupInfo: types.GroupInfo{Name: "localgroup1", UGID: ""}}},
+		"authd-group-with-uppercase": {{GroupInfo: types.GroupInfo{Name: "Group1", UGID: "1"}, GID: 11111}},
 		"mixed-groups-authd-first": {
 			{GroupInfo: types.GroupInfo{Name: "group1", UGID: "1"}, GID: 11111},
 			{GroupInfo: types.GroupInfo{Name: "localgroup1", UGID: ""}},
@@ -157,9 +160,11 @@ func TestUpdateUser(t *testing.T) {
 		"Successfully_update_user":                                          {groupsCase: "authd-group"},
 		"Successfully_update_user_updating_local_groups":                    {groupsCase: "mixed-groups-authd-first", localGroupsFile: "users_in_groups.group"},
 		"UID_does_not_change_if_user_already_exists":                        {userCase: "same-name-different-uid", dbFile: "one_user_and_group", wantSameUID: true},
+		"Successfully update user with different capitalization":            {userCase: "different-capitalization-same-uid", dbFile: "one_user_and_group"},
 		"GID_does_not_change_if_group_with_same_UGID_exists":                {groupsCase: "different-name-same-ugid", dbFile: "one_user_and_group"},
 		"GID_does_not_change_if_group_with_same_name_and_empty_UGID_exists": {groupsCase: "authd-group", dbFile: "group-with-empty-UGID"},
 		"Removing_last_user_from_a_group_keeps_the_group_record":            {groupsCase: "no-groups", dbFile: "one_user_and_group"},
+		"Names of authd groups are stored in lowercase":                     {groupsCase: "authd-group-with-uppercase"},
 
 		"Error_if_user_has_no_username":                           {userCase: "nameless", wantErr: true, noOutput: true},
 		"Error_if_group_has_no_name":                              {groupsCase: "nameless-group", wantErr: true, noOutput: true},
@@ -197,8 +202,7 @@ func TestUpdateUser(t *testing.T) {
 				require.NoError(t, err, "Setup: could not create database from testdata")
 			}
 
-			// One GID is generated for the user private group
-			gids := []uint32{11110}
+			var gids []uint32
 			for _, group := range groupsCases[tc.groupsCase] {
 				if group.GID != 0 {
 					gids = append(gids, group.GID)
@@ -325,7 +329,6 @@ func TestUpdateBrokerForUser(t *testing.T) {
 	}
 }
 
-//nolint:dupl // This is not a duplicate test
 func TestUserByIDAndName(t *testing.T) {
 	tests := map[string]struct {
 		uid        uint32
@@ -372,11 +375,13 @@ func TestUserByIDAndName(t *testing.T) {
 				return
 			}
 
-			// Registering a temporary user creates it with a random UID and random gecos, so we have to make it
+			// Registering a temporary user creates it with a random UID, GID, and gecos, so we have to make it
 			// deterministic before comparing it with the golden file
 			if tc.isTempUser {
 				require.Equal(t, tc.uid, user.UID)
 				user.UID = 0
+				require.Equal(t, tc.uid, user.GID)
+				user.GID = 0
 				require.NotEmpty(t, user.Gecos)
 				user.Gecos = ""
 			}
@@ -417,7 +422,6 @@ func TestAllUsers(t *testing.T) {
 	}
 }
 
-//nolint:dupl // This is not a duplicate test
 func TestGroupByIDAndName(t *testing.T) {
 	tests := map[string]struct {
 		gid         uint32

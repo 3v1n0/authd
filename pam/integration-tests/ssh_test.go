@@ -2,9 +2,9 @@ package main_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -13,24 +13,31 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/examplebroker"
+	"github.com/ubuntu/authd/internal/grpcutils"
+	"github.com/ubuntu/authd/internal/proto/authd"
+	"github.com/ubuntu/authd/internal/services/errmessages"
 	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	localgroupstestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
 	"github.com/ubuntu/authd/pam/internal/pam_test"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
 	sshEnvVariablesRegex *regexp.Regexp
 	sshHostPortRegex     *regexp.Regexp
+
+	sshDefaultFinalWaitTimeout = sleepDuration(3 * defaultSleepValues[authdWaitDefault])
 )
 
 func TestSSHAuthenticate(t *testing.T) {
@@ -66,9 +73,37 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 
 	execModule := buildExecModuleWithCFlags(t, []string{"-std=c11"}, true)
 	execChild := buildPAMExecChild(t)
+
+	mkHomeDirHelper, err := exec.LookPath("mkhomedir_helper")
+	require.NoError(t, err, "Setup: mkhomedir_helper not found")
+	pamMkHomeDirModule := buildCPAMModule(t,
+		[]string{"./pam/integration-tests/pam_mkhomedir/pam_mkhomedir.c"},
+		nil,
+		[]string{
+			"-DAUTHD_TESTS_SSH_USE_AUTHD_NSS",
+			fmt.Sprintf("-DMKHOMEDIR_HELPER=%q", mkHomeDirHelper),
+		},
+		"pam_mkhomedir_test.so", true)
+
+	var nssEnv []string
+	var nssLibrary string
+	var sshdPreloadLibraries []string
+	var sshdPreloaderCFlags []string
+	err = testutils.CanRunRustTests(false)
+	if os.Getenv("AUTHD_TESTS_SSH_USE_DUMMY_NSS") == "" && err == nil {
+		nssLibrary, nssEnv = testutils.BuildRustNSSLib(t, true)
+		sshdPreloadLibraries = append(sshdPreloadLibraries, nssLibrary)
+		sshdPreloaderCFlags = append(sshdPreloaderCFlags,
+			"-DAUTHD_TESTS_SSH_USE_AUTHD_NSS")
+		nssEnv = append(nssEnv, nssTestEnvBase(t, nssLibrary)...)
+	} else if err != nil {
+		t.Logf("Using the dummy library to implement NSS: %v", err)
+	}
+
 	sshdPreloadLibrary := buildCModule(t, []string{
 		filepath.Join(currentDir, "/sshd_preloader/sshd_preloader.c"),
-	}, nil, nil, nil, "sshd_preloader", true)
+	}, nil, sshdPreloaderCFlags, nil, "sshd_preloader", true)
+	sshdPreloadLibraries = append(sshdPreloadLibraries, sshdPreloadLibrary)
 
 	sshdHostKey := filepath.Join(t.TempDir(), "ssh_host_ed25519_key")
 	//#nosec:G204 - we control the command arguments in tests
@@ -80,15 +115,20 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 	require.NoError(t, err, "Setup: Can't read sshd host public key")
 	saveArtifactsForDebugOnCleanup(t, []string{sshdHostKey + ".pub"})
 
-	const tapeCommand = "ssh ${AUTHD_PAM_SSH_USER}@localhost ${AUTHD_PAM_SSH_ARGS}"
+	const pamSSHUserEnv = "AUTHD_PAM_SSH_USER"
+	const baseTapeCommand = "ssh ${%s}@localhost ${AUTHD_PAM_SSH_ARGS}"
+	tapeCommand := fmt.Sprintf(baseTapeCommand, pamSSHUserEnv)
 	defaultTapeSettings := []tapeSetting{{vhsHeight, 1000}, {vhsWidth, 1500}}
 
+	var sshdEnv []string
 	var defaultSSHDPort, defaultUserHome, defaultSocketPath, defaultGPasswdOutput string
 	if sharedSSHd {
 		defaultSocketPath, defaultGPasswdOutput = sharedAuthd(t)
-		serviceFile := createSshdServiceFile(t, execModule, execChild, defaultSocketPath)
+		serviceFile := createSshdServiceFile(t, execModule, execChild, pamMkHomeDirModule, defaultSocketPath)
+		sshdEnv = append(sshdEnv, nssEnv...)
+		sshdEnv = append(sshdEnv, fmt.Sprintf("AUTHD_NSS_SOCKET=%s", defaultSocketPath))
 		defaultSSHDPort, defaultUserHome = startSSHdForTest(t, serviceFile, sshdHostKey,
-			"authd-test-user-sshd-accept-all", sshdPreloadLibrary, true, false)
+			"authd-test-user-sshd-accept-all", sshdPreloadLibraries, sshdEnv, true, false)
 	}
 
 	sshEnvVariablesRegex = regexp.MustCompile(`(?m)  (PATH|HOME|PWD|SSH_[A-Z]+)=.*(\n*)($[^ ]{2}.*)?$`)
@@ -100,21 +140,55 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		tapeVariables map[string]string
 
 		user             string
+		isLocalUser      bool
 		userPrefix       string
 		pamServiceName   string
 		socketPath       string
 		daemonizeSSHd    bool
 		interactiveShell bool
+		oldDB            string
 
-		wantNotLoggedInUser bool
-		wantLocalGroups     bool
+		wantUserAlreadyExist bool
+		wantNotLoggedInUser  bool
+		wantLocalGroups      bool
 	}{
 		"Authenticate_user_successfully": {
+			tape: "simple_auth",
+		},
+		"Authenticate_user_successfully_if_already_registered": {
+			user: "user-ssh",
 			tape: "simple_auth",
 		},
 		"Authenticate_user_successfully_and_enters_shell": {
 			tape:             "simple_auth_with_shell",
 			interactiveShell: true,
+		},
+		"Authenticate_user_successfully_with_upper_case": {
+			tape: "simple_auth",
+			user: strings.ToUpper(vhsTestUserNameFull(t,
+				examplebroker.UserIntegrationPreCheckPrefix, "upper-case")),
+		},
+		"Authenticate_user_successfully_if_already_registered_with_upper_case": {
+			user: "USER-SSH2",
+			tape: "simple_auth",
+		},
+		"Authenticate_user_successfully_after_db_migration": {
+			tape:                 "simple_auth_with_auto_selected_broker",
+			oldDB:                "authd_0.4.1_bbolt_with_mixed_case_users",
+			wantUserAlreadyExist: true,
+			user:                 "user-integration-cached",
+		},
+		"Authenticate_user_with_upper_case_using_lower_case_after_db_migration": {
+			tape:                 "simple_auth_with_auto_selected_broker",
+			oldDB:                "authd_0.4.1_bbolt_with_mixed_case_users",
+			wantUserAlreadyExist: true,
+			user:                 "user-integration-upper-case",
+		},
+		"Authenticate_user_with_mixed_case_after_db_migration": {
+			tape:                 "simple_auth_with_auto_selected_broker",
+			oldDB:                "authd_0.4.1_bbolt_with_mixed_case_users",
+			wantUserAlreadyExist: true,
+			user:                 "user-integration-WITH-Mixed-CaSe",
 		},
 		"Authenticate_user_with_mfa": {
 			tape:         "mfa_auth",
@@ -139,6 +213,22 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		"Authenticate_user_and_reset_password_while_enforcing_policy": {
 			tape:       "mandatory_password_reset",
 			userPrefix: examplebroker.UserIntegrationNeedsResetPrefix,
+		},
+		"Authenticate_user_and_reset_password_with_case_insensitive_user_selection": {
+			tape: "mandatory_password_reset_case_insensitive",
+			user: strings.ToUpper(vhsTestUserNameFull(t,
+				examplebroker.UserIntegrationNeedsResetPrefix+
+					examplebroker.UserIntegrationPreCheckValue, "case-insensitive")),
+			daemonizeSSHd: true,
+			tapeVariables: map[string]string{
+				"AUTHD_TEST_TAPE_SSH_USER_VAR": pamSSHUserEnv,
+				"AUTHD_TEST_TAPE_LOWER_CASE_USERNAME": vhsTestUserNameFull(t,
+					examplebroker.UserIntegrationNeedsResetPrefix+
+						examplebroker.UserIntegrationPreCheckValue, "case-insensitive"),
+				"AUTHD_TEST_TAPE_MIXED_CASE_USERNAME": vhsTestUserNameFull(t,
+					examplebroker.UserIntegrationNeedsResetPrefix+
+						examplebroker.UserIntegrationPreCheckValue, "Case-INSENSITIVE"),
+			},
 		},
 		"Authenticate_user_with_mfa_and_reset_password_while_enforcing_policy": {
 			tape:         "mfa_reset_pwquality_auth",
@@ -189,6 +279,7 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		"Autoselect_local_broker_for_local_user": {
 			tape:                "local_user_preset",
 			user:                "root",
+			isLocalUser:         true,
 			wantNotLoggedInUser: true,
 			tapeSettings: []tapeSetting{
 				{vhsHeight, 200},
@@ -202,8 +293,9 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 			tape:                "max_attempts",
 			wantNotLoggedInUser: true,
 			tapeVariables: map[string]string{
-				vhsCommandFinalAuthWaitVariable: `Wait+Screen /Too many authentication failures/
-Wait`,
+				vhsCommandFinalAuthWaitVariable: fmt.Sprintf(
+					`Wait+Screen /Too many authentication failures/
+Wait@%dms`, sshDefaultFinalWaitTimeout),
 			},
 		},
 		"Deny_authentication_if_user_does_not_exist": {
@@ -248,7 +340,10 @@ Wait`,
 		},
 
 		"Error_if_cannot_connect_to_authd": {
-			tape:                "connection_error",
+			tape: "connection_error",
+			tapeVariables: map[string]string{
+				vhsCommandFinalAuthWaitVariable: `Wait /Password:/`,
+			},
 			socketPath:          "/some-path/not-existent-socket",
 			wantNotLoggedInUser: true,
 		},
@@ -262,15 +357,38 @@ Wait`,
 
 			socketPath := defaultSocketPath
 			gpasswdOutput := defaultGPasswdOutput
-			if tc.wantLocalGroups {
+
+			var authdEnv []string
+			var authdSocketLink string
+			if nssLibrary != "" {
+				authdEnv = slices.Clone(nssEnv)
+
+				// Chicken-egg problem here: we need to start authd with the
+				// AUTHD_NSS_SOCKET env set, but its content is not yet known to
+				// us, so let's pass to it a path that we'll eventually symlink to
+				// the real socket path, once we've one.
+				socketDir, err := os.MkdirTemp("", "authd-sockets")
+				require.NoError(t, err, "Setup: failed to create socket dir")
+				authdSocketLink = filepath.Join(socketDir, "authd.sock")
+				t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+				authdEnv = append(authdEnv, nssTestEnv(t, nssLibrary, authdSocketLink)...)
+			}
+
+			var groupsFile string
+			if tc.wantLocalGroups || tc.oldDB != "" {
 				// For the local groups tests we need to run authd again so that it has
 				// special environment that generates a fake gpasswd output for us to test.
 				// In the other cases this is not needed, so we can just use a shared authd.
-				var groupsFile string
 				gpasswdOutput, groupsFile = prepareGPasswdFiles(t)
-				socketPath = runAuthd(t, gpasswdOutput, groupsFile, true)
+
+				authdEnv = append(authdEnv, useOldDatabaseEnv(t, tc.oldDB)...)
+
+				socketPath = runAuthd(t, gpasswdOutput, groupsFile, true,
+					testutils.WithEnvironment(authdEnv...))
 			} else if !sharedSSHd {
-				socketPath, gpasswdOutput = sharedAuthd(t)
+				socketPath, gpasswdOutput = sharedAuthd(t,
+					testutils.WithEnvironment(authdEnv...))
 			}
 			if tc.socketPath != "" {
 				socketPath = tc.socketPath
@@ -287,12 +405,49 @@ Wait`,
 				user = vhsTestUserNameFull(t, tc.userPrefix, "ssh")
 			}
 
+			var userClient authd.UserServiceClient
+			if tc.socketPath == "" {
+				conn, err := grpc.NewClient("unix://"+socketPath,
+					grpc.WithTransportCredentials(insecure.NewCredentials()),
+					grpc.WithUnaryInterceptor(errmessages.FormatErrorMessage))
+				require.NoError(t, err, "Setup: could not dial the server")
+				t.Cleanup(func() { conn.Close() })
+
+				require.NoError(t, grpcutils.WaitForConnection(context.TODO(), conn,
+					sleepDuration(5*time.Second)))
+
+				userClient = authd.NewUserServiceClient(conn)
+
+				if tc.wantUserAlreadyExist {
+					requireAuthdUser(t, userClient, user)
+				} else {
+					requireNoAuthdUser(t, userClient, user)
+				}
+			}
+
 			sshdPort := defaultSSHDPort
 			userHome := defaultUserHome
-			if !sharedSSHd || tc.wantLocalGroups || tc.interactiveShell || tc.socketPath != "" {
-				serviceFile := createSshdServiceFile(t, execModule, execChild, socketPath)
+			if !sharedSSHd || tc.wantLocalGroups || tc.oldDB != "" ||
+				tc.interactiveShell || tc.socketPath != "" {
+				sshdEnv := sshdEnv
+				if nssLibrary != "" {
+					sshdEnv = slices.Clone(sshdEnv)
+					sshdEnv = append(sshdEnv, nssEnv...)
+					sshdEnv = append(sshdEnv, fmt.Sprintf("AUTHD_NSS_SOCKET=%s", socketPath))
+
+					// Let's give authd access to its own NSS module via the socket.
+					err := os.Symlink(socketPath, authdSocketLink)
+					require.NoError(t, err, "Setup: symlinking the authd socket")
+				}
+				serviceFile := createSshdServiceFile(t, execModule, execChild,
+					pamMkHomeDirModule, socketPath)
 				sshdPort, userHome = startSSHdForTest(t, serviceFile, sshdHostKey, user,
-					sshdPreloadLibrary, tc.daemonizeSSHd, tc.interactiveShell)
+					sshdPreloadLibraries, sshdEnv, tc.daemonizeSSHd, tc.interactiveShell)
+			}
+
+			if !sharedSSHd {
+				_, err := os.Stat(userHome)
+				require.ErrorIs(t, err, os.ErrNotExist, "Unexpected error checking for %q", userHome)
 			}
 
 			knownHost := filepath.Join(t.TempDir(), "known_hosts")
@@ -305,8 +460,8 @@ Wait`,
 			td := newTapeData(tc.tape, append(defaultTapeSettings, tc.tapeSettings...)...)
 			td.Command = tapeCommand
 			td.Env[pam_test.RunnerEnvSupportsConversation] = "1"
-			td.Env["HOME"] = userHome
-			td.Env["AUTHD_PAM_SSH_USER"] = user
+			td.Env["HOME"] = t.TempDir()
+			td.Env[pamSSHUserEnv] = user
 			td.Env["AUTHD_PAM_SSH_ARGS"] = strings.Join([]string{
 				"-p", sshdPort,
 				"-F", os.DevNull,
@@ -320,11 +475,46 @@ Wait`,
 			td.RunVhs(t, vhsTestTypeSSH, outDir, nil)
 			got := sanitizeGoldenFile(t, td, outDir)
 			golden.CheckOrUpdate(t, got)
-			userEnv := fmt.Sprintf("USER=%s", user)
+
+			userEnv := fmt.Sprintf("USER=%s", strings.ToLower(user))
 			if tc.wantNotLoggedInUser {
 				require.NotContains(t, got, userEnv, "Should not have a logged in user")
+
+				if userClient != nil {
+					requireNoAuthdUser(t, userClient, user)
+				}
+				if nssLibrary != "" {
+					requireGetEntExists(t, nssLibrary, socketPath, user, tc.isLocalUser)
+				}
 			} else {
 				require.Contains(t, got, userEnv, "Logged in user does not matches")
+
+				if userClient != nil {
+					authdUser := requireAuthdUser(t, userClient, user)
+					group := requireAuthdGroup(t, userClient, authdUser.Gid)
+					require.Contains(t, group.Members, authdUser.Name,
+						"Group lacks of the expected user")
+
+					if nssLibrary != "" {
+						userHome = authdUser.Homedir
+
+						requireGetEntEqualsUser(t, nssLibrary, socketPath, user, authdUser)
+						requireGetEntEqualsGroup(t, nssLibrary, socketPath, group.Name, group)
+					}
+				}
+
+				if !tc.wantUserAlreadyExist {
+					// Check if user home has been created, but only if the user is a new one.
+					stat, err := os.Stat(userHome)
+					require.NoError(t, err, "Error checking for %q", userHome)
+					require.True(t, stat.IsDir(), "%q is not a directory", userHome)
+				}
+			}
+
+			if tc.wantLocalGroups || tc.oldDB != "" {
+				actualGroups, err := os.ReadFile(groupsFile)
+				require.NoError(t, err, "Failed to read the groups file")
+				golden.CheckOrUpdate(t, string(actualGroups), golden.WithSuffix(".groups"))
 			}
 
 			localgroupstestutils.RequireGPasswdOutput(t, gpasswdOutput, golden.Path(t)+".gpasswd_out")
@@ -343,7 +533,7 @@ func sanitizeGoldenFile(t *testing.T, td tapeData, outDir string) string {
 	return sshHostPortRegex.ReplaceAllLiteralString(golden, "${SSH_HOST} port ${SSH_PORT}")
 }
 
-func createSshdServiceFile(t *testing.T, module, execChild, socketPath string) string {
+func createSshdServiceFile(t *testing.T, module, execChild, mkHomeModule, socketPath string) string {
 	t.Helper()
 
 	moduleArgs := []string{
@@ -358,26 +548,25 @@ func createSshdServiceFile(t *testing.T, module, execChild, socketPath string) s
 	if env := testutils.CoverDirEnv(); env != "" {
 		moduleArgs = append(moduleArgs, "--exec-env", env)
 	}
+	if testutils.IsRace() {
+		moduleArgs = append(moduleArgs, "--exec-env", "GORACE")
+	}
 	if testutils.IsAsan() {
-		if o := os.Getenv("ASAN_OPTIONS"); o != "" {
-			moduleArgs = append(moduleArgs, "--exec-env",
-				fmt.Sprintf("ASAN_OPTIONS=%s", o))
-		}
-		if o := os.Getenv("LSAN_OPTIONS"); o != "" {
-			moduleArgs = append(moduleArgs, "--exec-env",
-				fmt.Sprintf("LSAN_OPTIONS=%s", o))
-		}
+		moduleArgs = append(moduleArgs, "--exec-env", "ASAN_OPTIONS")
+		moduleArgs = append(moduleArgs, "--exec-env", "LSAN_OPTIONS")
 	}
 
 	outDir := t.TempDir()
 	pamServiceName := "authd-sshd"
-	moduleControl := "[success=ok new_authtok_reqd=done ignore=2 default=die]"
+	// Keep control values in sync with debian/pam-configs/authd.in.
+	authControl := "[success=ok default=die authinfo_unavail=2 ignore=2]"
+	accountControl := "[default=ignore success=ok]"
 	notifyState := pam_test.ServiceLine{
 		Action: pam_test.Auth, Control: pam_test.Optional, Module: "pam_echo.so",
 		Args: []string{fmt.Sprintf("%s finished for user '%%u'", pam_test.RunnerResultActionAuthenticate.Message(""))},
 	}
 	serviceFile, err := pam_test.CreateService(outDir, pamServiceName, []pam_test.ServiceLine{
-		{Action: pam_test.Auth, Control: pam_test.NewControl(moduleControl), Module: module, Args: moduleArgs},
+		{Action: pam_test.Auth, Control: pam_test.NewControl(authControl), Module: module, Args: moduleArgs},
 		// Success case:
 		notifyState,
 		{Action: pam_test.Auth, Control: pam_test.Sufficient, Module: pam_test.Permit.String()},
@@ -387,7 +576,12 @@ func createSshdServiceFile(t *testing.T, module, execChild, socketPath string) s
 		{Action: pam_test.Auth, Control: pam_test.Optional, Module: "pam_echo.so", Args: []string{"SSH PAM user '%u' using local broker"}},
 		{Action: pam_test.Include, Module: "common-auth"},
 
-		{Action: pam_test.Account, Control: pam_test.SufficientRequisite, Module: module, Args: moduleArgs},
+		{Action: pam_test.Account, Control: pam_test.NewControl(accountControl), Module: module, Args: moduleArgs},
+		{
+			Action: pam_test.Account, Control: pam_test.Optional, Module: "pam_echo.so",
+			Args: []string{fmt.Sprintf("%s finished for user '%%u'", pam_test.RunnerResultActionAcctMgmt.Message(""))},
+		},
+		{Action: pam_test.Session, Control: pam_test.Optional, Module: mkHomeModule, Args: []string{"debug"}},
 		{Action: pam_test.Session, Control: pam_test.Requisite, Module: pam_test.Permit.String()},
 	})
 	require.NoError(t, err, "Setup: Creation of service file %s", pamServiceName)
@@ -396,7 +590,7 @@ func createSshdServiceFile(t *testing.T, module, execChild, socketPath string) s
 	return serviceFile
 }
 
-func startSSHdForTest(t *testing.T, serviceFile, hostKey, user, preloadLibrary string, daemonize bool, interactiveShell bool) (string, string) {
+func startSSHdForTest(t *testing.T, serviceFile, hostKey, user string, preloadLibraries []string, env []string, daemonize bool, interactiveShell bool) (string, string) {
 	t.Helper()
 
 	sshdConnectCommand := fmt.Sprintf(
@@ -411,14 +605,15 @@ func startSSHdForTest(t *testing.T, serviceFile, hostKey, user, preloadLibrary s
 		sshdConnectCommand = "/bin/sh"
 	}
 
-	userHome := t.TempDir()
-	sshdPort := startSSHd(t, hostKey, sshdConnectCommand, []string{
-		fmt.Sprintf("HOME=%s", userHome),
-		fmt.Sprintf("LD_PRELOAD=%s", preloadLibrary),
+	homeBase := t.TempDir()
+	userHome := filepath.Join(homeBase, user)
+	sshdPort := startSSHd(t, hostKey, sshdConnectCommand, append([]string{
+		fmt.Sprintf("HOME=%s", homeBase),
+		fmt.Sprintf("LD_PRELOAD=%s", strings.Join(preloadLibraries, ":")),
 		fmt.Sprintf("AUTHD_TEST_SSH_USER=%s", user),
 		fmt.Sprintf("AUTHD_TEST_SSH_HOME=%s", userHome),
 		fmt.Sprintf("AUTHD_TEST_SSH_PAM_SERVICE=%s", serviceFile),
-	}, daemonize)
+	}, env...), daemonize)
 
 	return sshdPort, userHome
 }
@@ -466,37 +661,6 @@ func sshdCommand(t *testing.T, port, hostKey, forcedCommand string, env []string
 	return sshd, pidFile, logFile
 }
 
-// safeBuffer is used to buffer the sshd output, since we may read this from
-// cleanup sub-functions (that run as different goroutines than the command's exec)
-// we need to use locked read/writes on bytes.Buffer to avoid read/write races when
-// running the tests in race mode.
-// We only override the methods we require in the tests.
-type safeBuffer struct {
-	bytes.Buffer
-	mu sync.RWMutex
-}
-
-func (sb *safeBuffer) Write(p []byte) (n int, err error) {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-
-	return sb.Buffer.Write(p)
-}
-
-func (sb *safeBuffer) ReadFrom(r io.Reader) (n int64, err error) {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-
-	return sb.Buffer.ReadFrom(r)
-}
-
-func (sb *safeBuffer) String() string {
-	sb.mu.RLock()
-	defer sb.mu.RUnlock()
-
-	return sb.Buffer.String()
-}
-
 func startSSHd(t *testing.T, hostKey, forcedCommand string, env []string, daemonize bool) string {
 	t.Helper()
 
@@ -508,7 +672,7 @@ func startSSHd(t *testing.T, hostKey, forcedCommand string, env []string, daemon
 	server.Close()
 
 	sshd, sshdPidFile, sshdLogFile := sshdCommand(t, sshdPort, hostKey, forcedCommand, env, daemonize)
-	sshdStderr := safeBuffer{}
+	sshdStderr := bytes.Buffer{}
 	sshd.Stderr = &sshdStderr
 	if testing.Verbose() {
 		sshd.Stdout = os.Stdout
@@ -518,13 +682,14 @@ func startSSHd(t *testing.T, hostKey, forcedCommand string, env []string, daemon
 	t.Log("Launching sshd with", sshd.Env, sshd.Args)
 	err = sshd.Start()
 	require.NoError(t, err, "Setup: Impossible to start sshd")
+	sshdPid := sshd.Process.Pid
 
 	t.Cleanup(func() {
 		if testing.Verbose() || !t.Failed() {
 			return
 		}
 		sshdLog := filepath.Join(t.TempDir(), "sshd.log")
-		require.NoError(t, os.WriteFile(sshdLog, []byte(sshdStderr.String()), 0600),
+		require.NoError(t, os.WriteFile(sshdLog, sshdStderr.Bytes(), 0600),
 			"TearDown: Saving sshd log")
 		saveArtifactsForDebug(t, []string{sshdLog})
 	})
@@ -551,9 +716,9 @@ func startSSHd(t *testing.T, hostKey, forcedCommand string, env []string, daemon
 			}
 			t.Fatal("SSHd didn't finish in time!")
 		case state := <-sshdExited:
+			t.Logf("SSHd %v stopped (%s)!", sshdPid, state)
 			if !testing.Verbose() {
-				t.Logf("SSHd stopped (%s)\n ##### STDERR #####\n %s \n ##### END #####",
-					state, sshdStderr.String())
+				t.Logf("##### STDERR #####\n %s \n ##### END #####", sshdStderr.String())
 			}
 			expectedExitCode := 255
 			if daemonize {
@@ -567,12 +732,12 @@ func startSSHd(t *testing.T, hostKey, forcedCommand string, env []string, daemon
 		// Sadly we can't wait for SSHd to be ready using net.Dial, since that will make sshd
 		// (when in debug mode) not to accept further connections from the actual test, but we
 		// can assume we're good.
-		t.Logf("SSHd started with pid %d and listening on port %s", sshd.Process.Pid, sshdPort)
+		t.Logf("SSHd started with pid %d and listening on port %s", sshdPid, sshdPort)
 		return sshdPort
 	}
 
 	t.Cleanup(func() {
-		if !t.Failed() && !testutils.IsVerbose() {
+		if !t.Failed() && !testing.Verbose() {
 			return
 		}
 		contents, err := os.ReadFile(sshdLogFile)
@@ -636,7 +801,7 @@ func startSSHd(t *testing.T, hostKey, forcedCommand string, env []string, daemon
 	require.NoError(t, err, "Setup: Reading SSHd pid file failed")
 
 	t.Logf("SSHd started with pid %d (%s) and listening on port %s",
-		sshd.Process.Pid, strings.TrimSpace(string(pidFileContent)), sshdPort)
+		sshdPid, strings.TrimSpace(string(pidFileContent)), sshdPort)
 
 	return sshdPort
 }

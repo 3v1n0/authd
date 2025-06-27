@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/proto/authd"
@@ -35,7 +36,14 @@ const (
 	Gdm
 )
 
-var debug string
+var (
+	debug string
+
+	infoMsgStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{
+		Light: "#909090",
+		Dark:  "#7f7f7f",
+	}).Padding(1, 0, 0, 2)
+)
 
 // sessionInfo contains the global broker session information.
 type sessionInfo struct {
@@ -44,16 +52,16 @@ type sessionInfo struct {
 	encryptionKey *rsa.PublicKey
 }
 
-// UIModel is the global models orchestrator.
-type UIModel struct {
-	// PamMTx is the [pam.ModuleTransaction] used to communicate with PAM.
-	PamMTx pam.ModuleTransaction
-	// Conn is the [grpc.ClientConn] opened with authd daemon.
-	Conn *grpc.ClientConn
+// uiModel is the global models orchestrator.
+type uiModel struct {
+	// pamMTx is the [pam.ModuleTransaction] used to communicate with PAM.
+	pamMTx pam.ModuleTransaction
+	// conn is the [grpc.ClientConn] opened with authd daemon.
+	conn *grpc.ClientConn
 	// PamClientType is the kind of the PAM client we're handling.
-	ClientType PamClientType
-	// SessionMode is the mode of the session invoked by the module.
-	SessionMode authd.SessionMode
+	clientType PamClientType
+	// sessionMode is the mode of the session invoked by the module.
+	sessionMode authd.SessionMode
 
 	// client is the [authd.PAMClient] handle used to communicate with authd.
 	client authd.PAMClient
@@ -69,7 +77,9 @@ type UIModel struct {
 	gdmModel               gdmModel
 	nativeModel            nativeModel
 
-	exitStatus PamReturnStatus
+	// exitStatus is a pointer to the [PamReturnStatus] value where the
+	// exit status will be written to.
+	exitStatus *PamReturnStatus
 }
 
 /* global events */
@@ -113,26 +123,54 @@ type ChangeStage struct {
 	Stage pam_proto.Stage
 }
 
-// Init initializes the main model orchestrator.
-func (m *UIModel) Init() tea.Cmd {
-	var cmds []tea.Cmd
+// StageChanged signals that the model just finished a stage change.
+type StageChanged ChangeStage
 
-	if m.Conn != nil {
-		m.client = authd.NewPAMClient(m.Conn)
+// NewUIModel creates and initializes the main model orchestrator.
+func NewUIModel(mTx pam.ModuleTransaction, clientType PamClientType, mode authd.SessionMode, conn *grpc.ClientConn, exitStatus *PamReturnStatus) tea.Model {
+	var userServiceClient authd.UserServiceClient
+	if conn != nil && isSSHSession(mTx) {
+		userServiceClient = authd.NewUserServiceClient(conn)
 	}
 
-	switch m.ClientType {
+	m := newUIModelForClients(mTx, clientType, mode, authd.NewPAMClient(conn), userServiceClient, exitStatus)
+	m.conn = conn
+	return m
+}
+
+// newUIModelForClients is the internal implementation of [NewUIModel] for testing purposes.
+func newUIModelForClients(mTx pam.ModuleTransaction, clientType PamClientType, mode authd.SessionMode, pamClient authd.PAMClient, userServiceClient authd.UserServiceClient, exitStatus *PamReturnStatus) uiModel {
+	m := uiModel{
+		pamMTx:      mTx,
+		clientType:  clientType,
+		sessionMode: mode,
+		exitStatus:  exitStatus,
+		client:      pamClient,
+	}
+
+	if m.exitStatus != nil {
+		*m.exitStatus = errNoExitStatus
+	}
+
+	switch m.clientType {
 	case Gdm:
-		m.gdmModel = gdmModel{pamMTx: m.PamMTx}
-		cmds = append(cmds, m.gdmModel.Init())
+		m.gdmModel = gdmModel{pamMTx: m.pamMTx}
 	case Native:
-		var nssClient authd.NSSClient
-		if m.Conn != nil && isSSHSession(m.PamMTx) {
-			nssClient = authd.NewNSSClient(m.Conn)
-		}
-		m.nativeModel = nativeModel{pamMTx: m.PamMTx, nssClient: nssClient}
-		cmds = append(cmds, m.nativeModel.Init())
+		m.nativeModel = newNativeModel(m.pamMTx, userServiceClient)
 	}
+
+	m.userSelectionModel = newUserSelectionModel(m.pamMTx, m.clientType)
+	m.brokerSelectionModel = newBrokerSelectionModel(m.client, m.clientType)
+	m.authModeSelectionModel = newAuthModeSelectionModel(m.clientType)
+	m.authenticationModel = newAuthenticationModel(m.client, m.clientType)
+	m.healthCheckCancel = func() {}
+
+	return m
+}
+
+// Init initializes the main model orchestrator.
+func (m uiModel) Init() tea.Cmd {
+	var cmds []tea.Cmd
 
 	if m.client == nil {
 		return sendEvent(pamError{
@@ -141,32 +179,32 @@ func (m *UIModel) Init() tea.Cmd {
 		})
 	}
 
-	m.userSelectionModel = newUserSelectionModel(m.PamMTx, m.ClientType)
+	switch m.clientType {
+	case Gdm:
+		cmds = append(cmds, m.gdmModel.Init())
+	case Native:
+		cmds = append(cmds, m.nativeModel.Init())
+	}
+
 	cmds = append(cmds, m.userSelectionModel.Init())
-
-	m.brokerSelectionModel = newBrokerSelectionModel(m.client, m.ClientType)
 	cmds = append(cmds, m.brokerSelectionModel.Init())
-
-	m.authModeSelectionModel = newAuthModeSelectionModel(m.ClientType)
 	cmds = append(cmds, m.authModeSelectionModel.Init())
-
-	m.authenticationModel = newAuthenticationModel(m.client, m.ClientType)
 	cmds = append(cmds, m.authenticationModel.Init())
-
-	m.healthCheckCancel = func() {}
-	cmds = append(cmds, m.startHealthCheck())
+	cmds = append(cmds, sendEvent(initHealthCheck{}))
 
 	return tea.Batch(cmds...)
 }
 
-func (m *UIModel) startHealthCheck() tea.Cmd {
-	if m.Conn == nil {
+type initHealthCheck struct{}
+
+func (m *uiModel) startHealthCheck() tea.Cmd {
+	if m.conn == nil {
 		return nil
 	}
 
 	var ctx context.Context
 	ctx, m.healthCheckCancel = context.WithCancel(context.Background())
-	healthClient := healthgrpc.NewHealthClient(m.Conn)
+	healthClient := healthgrpc.NewHealthClient(m.conn)
 	hcReq := &healthgrpc.HealthCheckRequest{Service: consts.ServiceName}
 
 	return func() tea.Msg {
@@ -185,7 +223,7 @@ func (m *UIModel) startHealthCheck() tea.Cmd {
 			if r.Status != healthgrpc.HealthCheckResponse_SERVING {
 				return pamError{
 					status: pam.ErrSystem,
-					msg:    fmt.Sprintf("%s stopped serving", m.Conn.Target()),
+					msg:    fmt.Sprintf("%s stopped serving", m.conn.Target()),
 				}
 			}
 
@@ -195,20 +233,11 @@ func (m *UIModel) startHealthCheck() tea.Cmd {
 }
 
 // Update handles events and actions to be done from the main model orchestrator.
-func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m uiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
-		if log.IsLevelEnabled(log.DebugLevel) {
-			debugKey := m.currentStage() != pam_proto.Stage_challenge
-			switch msg.String() {
-			case "enter", "ctrl+c", "esc", "tab", "shift+tab":
-				debugKey = true
-			}
-			if debugKey {
-				log.Debugf(context.TODO(), "Key: %q in stage %q", msg, m.currentStage())
-			}
-		}
+		safeMessageDebugWithPrefix("Key", msg, "in stage %q", m.currentStage())
 
 		switch msg.String() {
 		case "ctrl+c":
@@ -223,26 +252,33 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, sendEvent(ChangeStage{m.previousStage()})
 		}
 
+	case initHealthCheck:
+		safeMessageDebug(msg)
+		return m, m.startHealthCheck()
+
 	// Exit cases
 	case PamReturnStatus:
-		log.Debugf(context.TODO(), "%#v", msg)
-		if m.exitStatus != nil {
+		safeMessageDebug(msg)
+		if m.exitStatus == nil {
+			return m, m.quit()
+		}
+		if *m.exitStatus != errNoExitStatus {
 			// Nothing to do, we're already exiting...
 			return m, nil
 		}
-		m.exitStatus = msg
+		*m.exitStatus = msg
 		return m, m.quit()
 
 	// Events
 	case BrokerListReceived:
-		log.Debugf(context.TODO(), "%#v, brokers: %#v", msg, m.availableBrokers())
+		safeMessageDebug(msg, "brokers: %#v", m.availableBrokers())
 		if m.availableBrokers() == nil {
 			return m, nil
 		}
 		return m, m.userSelectionModel.SelectUser()
 
 	case UsernameSelected:
-		log.Debugf(context.TODO(), "%#v, user: %q", msg, m.username())
+		safeMessageDebug(msg, "user: %q", m.username())
 		if m.username() == "" {
 			return m, nil
 		}
@@ -251,16 +287,16 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, AutoSelectForUser(m.client, m.username())
 
 	case BrokerSelected:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		if m.sessionStartingForBroker == "" {
 			m.sessionStartingForBroker = msg.BrokerID
-			return m, startBrokerSession(m.client, msg.BrokerID, m.username(), m.SessionMode)
+			return m, startBrokerSession(m.client, msg.BrokerID, m.username(), m.sessionMode)
 		}
 		if m.sessionStartingForBroker != msg.BrokerID {
 			return m, tea.Sequence(endSession(m.client, m.currentSession), sendEvent(msg))
 		}
 	case SessionStarted:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		m.sessionStartingForBroker = ""
 		pubASN1, err := base64.StdEncoding.DecodeString(msg.encryptionKey)
 		if err != nil {
@@ -293,22 +329,25 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, sendEvent(GetAuthenticationModesRequested{})
 
 	case ChangeStage:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		return m, m.changeStage(msg.Stage)
 
+	case StageChanged:
+		safeMessageDebug(msg)
+
 	case GetAuthenticationModesRequested:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		if m.currentSession == nil {
 			return m, nil
 		}
 
 		return m, tea.Sequence(
 			getAuthenticationModes(m.client, m.currentSession.sessionID, m.authModeSelectionModel.SupportedUILayouts()),
-			m.changeStage(pam_proto.Stage_authModeSelection),
+			sendEvent(ChangeStage{pam_proto.Stage_authModeSelection}),
 		)
 
 	case AuthModeSelected:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		if m.currentSession == nil {
 			return m, nil
 		}
@@ -328,7 +367,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case UILayoutReceived:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		if m.currentSession == nil {
 			return m, nil
 		}
@@ -344,7 +383,7 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case SessionEnded:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		m.sessionStartingForBroker = ""
 		m.currentSession = nil
 		return m, nil
@@ -366,9 +405,9 @@ func (m *UIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *UIModel) updateClientModel(msg tea.Msg) tea.Cmd {
+func (m *uiModel) updateClientModel(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
-	switch m.ClientType {
+	switch m.clientType {
 	case Gdm:
 		m.gdmModel, cmd = m.gdmModel.Update(msg)
 	case Native:
@@ -378,8 +417,8 @@ func (m *UIModel) updateClientModel(msg tea.Msg) tea.Cmd {
 }
 
 // View renders a text view of the whole UI.
-func (m *UIModel) View() string {
-	if m.ClientType != InteractiveTerminal {
+func (m uiModel) View() string {
+	if m.clientType != InteractiveTerminal {
 		return ""
 	}
 
@@ -402,11 +441,17 @@ func (m *UIModel) View() string {
 		view.WriteString(debug)
 	}
 
+	if view.Len() > 0 && m.canGoBack() {
+		infoMessage := infoMsgStyle.Render(fmt.Sprintf("Press escape key to %s",
+			goBackLabel(m.previousStage())))
+		return lipgloss.JoinVertical(lipgloss.Left, view.String(), infoMessage)
+	}
+
 	return view.String()
 }
 
 // currentStage returns our current stage step.
-func (m *UIModel) currentStage() pam_proto.Stage {
+func (m uiModel) currentStage() pam_proto.Stage {
 	if m.userSelectionModel.Focused() {
 		return pam_proto.Stage_userSelection
 	}
@@ -423,10 +468,12 @@ func (m *UIModel) currentStage() pam_proto.Stage {
 }
 
 // changeStage returns a command acting to change the current stage and reset any previous views.
-func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
+func (m *uiModel) changeStage(s pam_proto.Stage) tea.Cmd {
 	var commands []tea.Cmd
-	if m.currentStage() != s {
-		switch m.currentStage() {
+	currentStage := m.currentStage()
+
+	if currentStage != s {
+		switch currentStage {
 		case pam_proto.Stage_userSelection:
 			m.userSelectionModel.Blur()
 		case pam_proto.Stage_brokerSelection:
@@ -436,14 +483,6 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 		case pam_proto.Stage_challenge:
 			m.authenticationModel.Blur()
 			commands = append(commands, m.authenticationModel.Reset())
-		}
-
-		if m.ClientType == Gdm {
-			commands = append(commands, m.gdmModel.changeStage(s))
-		}
-
-		if m.ClientType == Native {
-			commands = append(commands, m.nativeModel.changeStage(s))
 		}
 	}
 
@@ -470,10 +509,14 @@ func (m *UIModel) changeStage(s pam_proto.Stage) tea.Cmd {
 		})
 	}
 
+	if currentStage != s {
+		commands = append(commands, sendEvent(StageChanged{s}))
+	}
+
 	return tea.Sequence(commands...)
 }
 
-func (m UIModel) previousStage() pam_proto.Stage {
+func (m uiModel) previousStage() pam_proto.Stage {
 	currentStage := m.currentStage()
 	if currentStage > proto.Stage_authModeSelection && len(m.availableAuthModes()) > 1 {
 		return proto.Stage_authModeSelection
@@ -484,7 +527,7 @@ func (m UIModel) previousStage() pam_proto.Stage {
 	return proto.Stage_userSelection
 }
 
-func (m UIModel) canGoBack() bool {
+func (m uiModel) canGoBack() bool {
 	if m.userSelectionModel.Enabled() {
 		return m.currentStage() > proto.Stage_userSelection
 	}
@@ -492,14 +535,16 @@ func (m UIModel) canGoBack() bool {
 }
 
 // MsgFilter is the handler for the UI model.
-func (m *UIModel) MsgFilter(model tea.Model, msg tea.Msg) tea.Msg {
-	if m.ClientType != Gdm {
+func MsgFilter(model tea.Model, msg tea.Msg) tea.Msg {
+	if _, ok := msg.(tea.QuitMsg); !ok {
 		return msg
 	}
 
-	if _, ok := msg.(tea.QuitMsg); ok {
-		m.healthCheckCancel()
-		m.gdmModel = m.gdmModel.stopConversations()
+	m := convertTo[uiModel](model)
+	m.healthCheckCancel()
+
+	if m.clientType == Gdm && !m.gdmModel.conversationsStopped {
+		return tea.Sequence(sendEvent(gdmStopConversations{}), sendEvent(msg))()
 	}
 
 	return msg
@@ -507,25 +552,17 @@ func (m *UIModel) MsgFilter(model tea.Model, msg tea.Msg) tea.Msg {
 
 var errNoExitStatus = pamError{status: pam.ErrSystem, msg: "model did not return anything"}
 
-// ExitStatus exposes the [PamReturnStatus] externally.
-func (m *UIModel) ExitStatus() PamReturnStatus {
-	if m.exitStatus == nil {
-		return errNoExitStatus
-	}
-	return m.exitStatus
-}
-
 // username returns currently selected user name.
-func (m UIModel) username() string {
+func (m uiModel) username() string {
 	return m.userSelectionModel.Username()
 }
 
 // availableBrokers returns currently available brokers.
-func (m UIModel) availableBrokers() []*authd.ABResponse_BrokerInfo {
+func (m uiModel) availableBrokers() []*authd.ABResponse_BrokerInfo {
 	return m.brokerSelectionModel.availableBrokers
 }
 
 // availableBrokers returns currently available brokers.
-func (m UIModel) availableAuthModes() []*authd.GAMResponse_AuthenticationMode {
+func (m uiModel) availableAuthModes() []*authd.GAMResponse_AuthenticationMode {
 	return m.authModeSelectionModel.availableAuthModes
 }

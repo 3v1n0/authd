@@ -16,7 +16,8 @@ import (
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/fileutils"
 	"github.com/ubuntu/authd/internal/testutils"
-	"github.com/ubuntu/authd/internal/users/db"
+	"github.com/ubuntu/authd/internal/users"
+	"github.com/ubuntu/authd/log"
 )
 
 func TestHelp(t *testing.T) {
@@ -26,15 +27,6 @@ func TestHelp(t *testing.T) {
 
 	err := a.Run()
 	require.NoErrorf(t, err, "Run should not return an error with argument --help. Stdout: %v", getStdout())
-}
-
-func TestCompletion(t *testing.T) {
-	a := daemon.NewForTests(t, nil, "completion", "bash")
-
-	getStdout := captureStdout(t)
-
-	err := a.Run()
-	require.NoError(t, err, "Completion should not start the daemon. Stdout: %v", getStdout())
 }
 
 func TestVersion(t *testing.T) {
@@ -57,7 +49,7 @@ func TestVersion(t *testing.T) {
 }
 
 func TestNoUsageError(t *testing.T) {
-	a := daemon.NewForTests(t, nil, "completion", "bash")
+	a := daemon.NewForTests(t, nil, "version")
 
 	getStdout := captureStdout(t)
 	err := a.Run()
@@ -176,10 +168,10 @@ func TestAppRunFailsOnComponentsCreationAndQuit(t *testing.T) {
 				config.Paths.Database = filepath.Join(shortTmp, "db")
 				err := os.MkdirAll(config.Paths.Database, 0700)
 				require.NoError(t, err, "Setup: could not create database directory")
-				err = fileutils.Touch(filepath.Join(config.Paths.Database, db.Z_ForTests_DBName()))
+				err = fileutils.Touch(filepath.Join(config.Paths.Database, consts.DefaultDatabaseFileName))
 				require.NoError(t, err, "Setup: could not create database")
 				//nolint: gosec // This is a file with invalid permission for tests.
-				err = os.Chmod(filepath.Join(config.Paths.Database, db.Z_ForTests_DBName()), 0666)
+				err = os.Chmod(filepath.Join(config.Paths.Database, consts.DefaultDatabaseFileName), 0666)
 				require.NoError(t, err, "Setup: could not set file permissions")
 			}
 
@@ -265,10 +257,12 @@ func TestAppGetRootCmd(t *testing.T) {
 }
 
 func TestConfigLoad(t *testing.T) {
+	wantUsersConfig := &users.Config{UIDMin: 10001, UIDMax: 19000, GIDMax: 9999}
 	customizedSocketPath := filepath.Join(t.TempDir(), "mysocket")
 	var config daemon.DaemonConfig
 	config.Verbosity = 1
 	config.Paths.Socket = customizedSocketPath
+	config.UsersConfig = wantUsersConfig
 
 	a, wait := startDaemon(t, &config)
 	defer wait()
@@ -277,6 +271,7 @@ func TestConfigLoad(t *testing.T) {
 	_, err := os.Stat(customizedSocketPath)
 	require.NoError(t, err, "Socket should exist")
 	require.Equal(t, 1, a.Config().Verbosity, "Verbosity is set from config")
+	require.Equal(t, wantUsersConfig, a.Config().UsersConfig, "Unexpected users config")
 }
 
 func TestAutoDetectConfig(t *testing.T) {
@@ -310,12 +305,13 @@ func TestAutoDetectConfig(t *testing.T) {
 	_, err = os.Stat(customizedSocketPath)
 	require.NoError(t, err, "Socket should exist")
 	require.Equal(t, 1, a.Config().Verbosity, "Verbosity is set from config")
+	require.Equal(t, &users.DefaultConfig, a.Config().UsersConfig, "Default Users Config")
 }
 
 func TestNoConfigSetDefaults(t *testing.T) {
 	a := daemon.New()
-	// Use version to still run preExec to load no config but without running server
-	a.SetArgs("version")
+
+	a.SetArgs("--check-config")
 
 	err := a.Run()
 	require.NoError(t, err, "Run should not return an error")
@@ -323,13 +319,13 @@ func TestNoConfigSetDefaults(t *testing.T) {
 	require.Equal(t, 0, a.Config().Verbosity, "Default Verbosity")
 	require.Equal(t, consts.DefaultBrokersConfPath, a.Config().Paths.BrokersConf, "Default brokers configuration path")
 	require.Equal(t, consts.DefaultDatabaseDir, a.Config().Paths.Database, "Default database directory")
+	require.Equal(t, &users.DefaultConfig, a.Config().UsersConfig, "Default Users Config")
 	require.Equal(t, "", a.Config().Paths.Socket, "No socket address as default")
 }
 
 func TestBadConfigReturnsError(t *testing.T) {
 	a := daemon.New()
-	// Use version to still run preExec to load no config but without running server
-	a.SetArgs("version", "--config", "/does/not/exist.yaml")
+	a.SetArgs("--check-config", "--config", "/does/not/exist.yaml")
 
 	err := a.Run()
 	require.Error(t, err, "Run should return an error on config file")
@@ -404,6 +400,8 @@ func captureStdout(t *testing.T) func() string {
 }
 
 func TestMain(m *testing.M) {
+	log.SetLevel(log.DebugLevel)
+
 	// Start system bus mock.
 	cleanup, err := testutils.StartSystemBusMock()
 	if err != nil {

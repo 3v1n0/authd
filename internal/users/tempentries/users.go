@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/ubuntu/authd/internal/users/db"
 	"github.com/ubuntu/authd/internal/users/localentries"
 	"github.com/ubuntu/authd/internal/users/types"
 	"github.com/ubuntu/authd/log"
@@ -42,7 +43,7 @@ func (r *temporaryUserRecords) userByID(uid uint32) (types.UserEntry, error) {
 
 	user, ok := r.users[uid]
 	if !ok {
-		return types.UserEntry{}, NoDataFoundError{}
+		return types.UserEntry{}, db.NewUIDNotFoundError(uid)
 	}
 
 	return userEntry(user), nil
@@ -55,17 +56,18 @@ func (r *temporaryUserRecords) userByName(name string) (types.UserEntry, error) 
 
 	uid, ok := r.uidByName[name]
 	if !ok {
-		return types.UserEntry{}, NoDataFoundError{}
+		return types.UserEntry{}, db.NewUserNotFoundError(name)
 	}
 
 	return r.userByID(uid)
 }
 
 func userEntry(user userRecord) types.UserEntry {
-	// TODO: Should we set the GID to something else than 0 (i.e. the GID of the root primary group)?
 	return types.UserEntry{
-		Name:  user.name,
-		UID:   user.uid,
+		Name: user.name,
+		UID:  user.uid,
+		// The UID is also the GID of the user private group (see https://wiki.debian.org/UserPrivateGroups#UPGs)
+		GID:   user.uid,
 		Gecos: user.gecos,
 		Dir:   "/nonexistent",
 		Shell: "/usr/sbin/nologin",
@@ -91,6 +93,19 @@ func (r *temporaryUserRecords) uniqueNameAndUID(name string, uid uint32, tmpID s
 			return false, nil
 		}
 	}
+
+	groupEntries, err := localentries.GetGroupEntries()
+	if err != nil {
+		return false, fmt.Errorf("failed to get group entries: %w", err)
+	}
+	for _, group := range groupEntries {
+		if group.GID == uid {
+			// A group with the same ID already exists, so we can't use that ID as the GID of the temporary user.
+			log.Debugf(context.Background(), "ID %d already in use by group %q", uid, group.Name)
+			return false, fmt.Errorf("group with GID %d already exists", uid)
+		}
+	}
+
 	return true, nil
 }
 

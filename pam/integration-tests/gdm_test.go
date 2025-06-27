@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,12 +43,23 @@ const (
 	qrcodeID                 = "qrcodeandcodewithtypo"
 	qrcodeWithoutCodeID      = "qrcodewithtypo"
 	qrcodeWithoutRenderingID = "codewithtypo"
+	totpID                   = "totp"
 )
 
 var testPasswordUILayout = authd.UILayout{
 	Type:    layouts.Form,
 	Label:   ptrValue("Gimme your password"),
 	Entry:   ptrValue(entries.CharsPassword),
+	Button:  ptrValue(""),
+	Code:    ptrValue(""),
+	Content: ptrValue(""),
+	Wait:    ptrValue(""),
+}
+
+var testTOTPWithoutButtonUILayout = authd.UILayout{
+	Type:    layouts.Form,
+	Label:   ptrValue("Enter your one time credential"),
+	Entry:   ptrValue(entries.Chars),
 	Button:  ptrValue(""),
 	Code:    ptrValue(""),
 	Content: ptrValue(""),
@@ -134,6 +146,7 @@ func TestGdmModule(t *testing.T) {
 		protoVersion       uint32
 		brokerName         string
 		eventPollResponses map[gdm.EventType][]*gdm.EventData
+		stagePollResponses map[proto.Stage][]*gdm.EventData
 		moduleArgs         []string
 
 		wantError            error
@@ -147,8 +160,27 @@ func TestGdmModule(t *testing.T) {
 		"Authenticates_user": {
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
+					}),
+				},
+			},
+		},
+		"Authenticates_user_when_using_the_old_challenge_field": {
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
 						Challenge: "goodpass",
+					}),
+				},
+			},
+		},
+		"Authenticates_user_with_upper_case_name": {
+			pamUser: ptrValue(strings.ToUpper(vhsTestUserName(t, "upper-case"))),
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 				},
 			},
@@ -157,8 +189,8 @@ func TestGdmModule(t *testing.T) {
 			moduleArgs: []string{"connection_timeout=invalid"},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 				},
 			},
@@ -167,8 +199,8 @@ func TestGdmModule(t *testing.T) {
 			pamUser: ptrValue(examplebroker.UserIntegrationAuthModesPrefix + "password-integration-gdm"),
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 				},
 			},
@@ -177,14 +209,14 @@ func TestGdmModule(t *testing.T) {
 			wantAuthModeIDs: []string{passwordAuthID, passwordAuthID, passwordAuthID},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "not goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "not goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpasssss",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpasssss",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 				},
 			},
@@ -205,8 +237,8 @@ func TestGdmModule(t *testing.T) {
 			wantAuthModeIDs: []string{passwordAuthID, fido1AuthID, phoneAck1ID},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: layouts.True,
@@ -232,11 +264,11 @@ func TestGdmModule(t *testing.T) {
 			wantAuthModeIDs: []string{passwordAuthID, passwordAuthID, fido1AuthID, phoneAck1ID},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "not goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "not goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: layouts.True,
@@ -262,12 +294,12 @@ func TestGdmModule(t *testing.T) {
 				{Access: auth.Granted},
 			},
 		},
-		"Authenticates_user_switching_to_phone_ack": {
+		"Authenticates_user_switching_to_phone_ack_from_challenge_stage": {
 			wantAuthModeIDs: []string{passwordAuthID, phoneAck1ID},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
 					gdm_test.EventsGroupBegin(),
-					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.IsAuthenticatedCancelledEvent(),
 					gdm_test.AuthModeSelectedEvent(phoneAck1ID),
 					gdm_test.EventsGroupEnd(),
 
@@ -281,7 +313,78 @@ func TestGdmModule(t *testing.T) {
 				&testPhoneAckUILayout,
 			},
 			wantAuthResponses: []*authd.IAResponse{
-				{Access: auth.Cancelled},
+				{Access: auth.Granted},
+			},
+		},
+		"Authenticates_user_switching_to_phone_ack_from_auth_mode_selection_stage": {
+			wantAuthModeIDs: []string{passwordAuthID, phoneAck1ID},
+			stagePollResponses: map[proto.Stage][]*gdm.EventData{
+				proto.Stage_authModeSelection: {
+					gdm_test.IgnoredEvent(), // Password is auto-selected.
+					gdm_test.AuthModeSelectedEvent(phoneAck1ID),
+				},
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: layouts.True,
+					}),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{
+				&testPasswordUILayout,
+				&testPhoneAckUILayout,
+			},
+			wantAuthResponses: []*authd.IAResponse{
+				{Access: auth.Granted},
+			},
+		},
+		"Authenticates_user_switching_to_totp_from_challenge_stage": {
+			wantAuthModeIDs: []string{passwordAuthID, totpID},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.EventsGroupBegin(),
+					gdm_test.IsAuthenticatedCancelledEvent(),
+					gdm_test.AuthModeSelectedEvent(totpID),
+					gdm_test.EventsGroupEnd(),
+
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "temporary pass0",
+					}),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{
+				&testPasswordUILayout,
+				&testTOTPWithoutButtonUILayout,
+			},
+			wantAuthResponses: []*authd.IAResponse{
+				{Access: auth.Granted},
+			},
+		},
+		"Authenticates_user_switching_to_totp_from_auth_mode_selection_stage": {
+			wantAuthModeIDs: []string{passwordAuthID, totpID},
+			stagePollResponses: map[proto.Stage][]*gdm.EventData{
+				proto.Stage_authModeSelection: {
+					gdm_test.IgnoredEvent(), // Password is auto-selected.
+					gdm_test.AuthModeSelectedEvent(totpID),
+				},
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "temporary pass0",
+					}),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{
+				&testPasswordUILayout,
+				&testTOTPWithoutButtonUILayout,
+			},
+			wantAuthResponses: []*authd.IAResponse{
 				{Access: auth.Granted},
 			},
 		},
@@ -289,22 +392,22 @@ func TestGdmModule(t *testing.T) {
 			pamUserPrefix:   examplebroker.UserIntegrationNeedsResetPrefix,
 			wantAuthModeIDs: []string{passwordAuthID, newPasswordAuthID},
 			supportedLayouts: []*authd.UILayout{
-				pam_test.FormUILayout(),
+				pam_test.FormUILayout(pam_test.WithWait(true)),
 				pam_test.NewPasswordUILayout(),
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "authd2404",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "authd2404",
 					}),
 				},
 			},
 			wantUILayouts: []*authd.UILayout{&testPasswordUILayout, &testNewPasswordUILayout},
 			wantAuthResponses: []*authd.IAResponse{
-				{Access: auth.Next},
+				{Access: auth.Next, Msg: "Password reset, 1 step(s) missing"},
 				{Access: auth.Granted},
 			},
 		},
@@ -319,34 +422,34 @@ func TestGdmModule(t *testing.T) {
 				newPasswordAuthID,
 			},
 			supportedLayouts: []*authd.UILayout{
-				pam_test.FormUILayout(),
+				pam_test.FormUILayout(pam_test.WithWait(true)),
 				pam_test.NewPasswordUILayout(),
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
 					// Login with password
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 					// Authenticate with fido device
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
 						Wait: layouts.True,
 					}),
 					// Use bad dictionary password
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "password",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "password",
 					}),
 					// Use password not meeting broker criteria
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "noble2404",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "noble2404",
 					}),
 					// Use previous one
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 					// Finally change the password
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "authd2404",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "authd2404",
 					}),
 				},
 			},
@@ -359,8 +462,8 @@ func TestGdmModule(t *testing.T) {
 				&testNewPasswordUILayout,
 			},
 			wantAuthResponses: []*authd.IAResponse{
-				{Access: auth.Next},
-				{Access: auth.Next},
+				{Access: auth.Next, Msg: "Password reset, 2 step(s) missing"},
+				{Access: auth.Next, Msg: "Password reset, 1 step(s) missing"},
 				{
 					Access: auth.Retry,
 					Msg:    "The password fails the dictionary check - it is based on a dictionary word",
@@ -387,28 +490,28 @@ func TestGdmModule(t *testing.T) {
 				newPasswordAuthID,
 			},
 			supportedLayouts: []*authd.UILayout{
-				pam_test.FormUILayout(),
+				pam_test.FormUILayout(pam_test.WithWait(true)),
 				pam_test.NewPasswordUILayout(),
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "authd",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "authd",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "password",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "password",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "newpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "newpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "authd2404",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "authd2404",
 					}),
 				},
 			},
@@ -416,6 +519,7 @@ func TestGdmModule(t *testing.T) {
 			wantAuthResponses: []*authd.IAResponse{
 				{
 					Access: auth.Next,
+					Msg:    "Password reset, 1 step(s) missing",
 				},
 				{
 					Access: auth.Retry,
@@ -493,16 +597,16 @@ func TestGdmModule(t *testing.T) {
 			},
 			wantUILayouts: []*authd.UILayout{&testQrcodeUILayout},
 		},
-		"Authenticates_user_after_switching_to_qrcode": {
+		"Authenticates_user_after_switching_to_qrcode_from_challenge_stage": {
 			wantAuthModeIDs: []string{passwordAuthID, qrcodeID},
 			supportedLayouts: []*authd.UILayout{
-				pam_test.FormUILayout(),
+				pam_test.FormUILayout(pam_test.WithWait(true)),
 				pam_test.QrCodeUILayout(),
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
 					gdm_test.EventsGroupBegin(),
-					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.IsAuthenticatedCancelledEvent(),
 					gdm_test.AuthModeSelectedEvent(qrcodeID),
 					gdm_test.EventsGroupEnd(),
 
@@ -516,7 +620,35 @@ func TestGdmModule(t *testing.T) {
 				&testQrcodeUILayout,
 			},
 			wantAuthResponses: []*authd.IAResponse{
-				{Access: auth.Cancelled},
+				{Access: auth.Granted},
+			},
+		},
+		"Authenticates_user_after_switching_to_qrcode_from_auth_mode_selection_stage": {
+			wantAuthModeIDs: []string{passwordAuthID, qrcodeID},
+			supportedLayouts: []*authd.UILayout{
+				pam_test.FormUILayout(pam_test.WithWait(true)),
+				pam_test.QrCodeUILayout(),
+			},
+			stagePollResponses: map[proto.Stage][]*gdm.EventData{
+				proto.Stage_authModeSelection: {
+					gdm_test.IgnoredEvent(), // Password is auto-selected.
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
+				},
+			},
+			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
+				gdm.EventType_startAuthentication: {
+					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{
+						Wait: layouts.True,
+					}),
+				},
+			},
+			wantUILayouts: []*authd.UILayout{
+				&testPasswordUILayout,
+				&testQrcodeUILayout,
+			},
+			wantAuthResponses: []*authd.IAResponse{
 				{Access: auth.Granted},
 			},
 		},
@@ -528,18 +660,20 @@ func TestGdmModule(t *testing.T) {
 				qrcodeID,
 				qrcodeID,
 				qrcodeID,
-				qrcodeID,
 			},
 			supportedLayouts: []*authd.UILayout{
-				pam_test.FormUILayout(),
+				pam_test.FormUILayout(pam_test.WithWait(true)),
 				pam_test.QrCodeUILayout(pam_test.WithQrCodeCode(layouts.Optional)),
+			},
+			stagePollResponses: map[proto.Stage][]*gdm.EventData{
+				proto.Stage_authModeSelection: {
+					gdm_test.IgnoredEvent(), // Password is auto-selected.
+					gdm_test.AuthModeSelectedEvent(qrcodeID),
+				},
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.EventsGroupBegin(),
 					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
-					gdm_test.AuthModeSelectedEvent(qrcodeID),
-					gdm_test.EventsGroupEnd(),
 
 					// Start authentication and regenerate the qrcode (1)
 					gdm_test.EventsGroupBegin(),
@@ -576,10 +710,8 @@ func TestGdmModule(t *testing.T) {
 				testQrcodeUILayoutData(2),
 				testQrcodeUILayoutData(3),
 				testQrcodeUILayoutData(4),
-				testQrcodeUILayoutData(5),
 			},
 			wantAuthResponses: []*authd.IAResponse{
-				{Access: auth.Cancelled},
 				{Access: auth.Cancelled},
 				{Access: auth.Cancelled},
 				{Access: auth.Granted},
@@ -593,16 +725,15 @@ func TestGdmModule(t *testing.T) {
 				qrcodeWithoutCodeID,
 				qrcodeWithoutCodeID,
 				qrcodeWithoutCodeID,
-				qrcodeWithoutCodeID,
 			},
 			supportedLayouts: []*authd.UILayout{
-				pam_test.FormUILayout(),
+				pam_test.FormUILayout(pam_test.WithWait(true)),
 				pam_test.QrCodeUILayout(pam_test.WithQrCodeCode("")),
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
 					gdm_test.EventsGroupBegin(),
-					gdm_test.ChangeStageEvent(proto.Stage_authModeSelection),
+					gdm_test.IsAuthenticatedCancelledEvent(),
 					gdm_test.AuthModeSelectedEvent(qrcodeWithoutCodeID),
 					gdm_test.EventsGroupEnd(),
 
@@ -641,10 +772,8 @@ func TestGdmModule(t *testing.T) {
 				testQrcodeWithoutCodeUILayoutData(2),
 				testQrcodeWithoutCodeUILayoutData(3),
 				testQrcodeWithoutCodeUILayoutData(4),
-				testQrcodeWithoutCodeUILayoutData(5),
 			},
 			wantAuthResponses: []*authd.IAResponse{
-				{Access: auth.Cancelled},
 				{Access: auth.Cancelled},
 				{Access: auth.Cancelled},
 				{Access: auth.Granted},
@@ -712,27 +841,26 @@ func TestGdmModule(t *testing.T) {
 				passwordAuthID,
 				passwordAuthID,
 				passwordAuthID,
-				passwordAuthID,
 			},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "not goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "not goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "another not goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "another not goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "even more not goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "even more not goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "not yet goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "not yet goodpass",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "really, it's not a goodpass!",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "really, it's not a goodpass!",
 					}),
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 				},
 			},
@@ -768,11 +896,12 @@ func TestGdmModule(t *testing.T) {
 			pamUser: ptrValue("user-unknown"),
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "",
 					}),
 				},
 			},
+			wantAuthModeIDs: []string{passwordAuthID},
 			wantPamErrorMessages: []string{
 				"user not found",
 			},
@@ -790,8 +919,8 @@ func TestGdmModule(t *testing.T) {
 			wantAuthModeIDs: []string{passwordAuthID, fido1AuthID},
 			eventPollResponses: map[gdm.EventType][]*gdm.EventData{
 				gdm.EventType_startAuthentication: {
-					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-						Challenge: "goodpass",
+					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+						Secret: "goodpass",
 					}),
 					gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Wait{}),
 				},
@@ -845,10 +974,13 @@ func TestGdmModule(t *testing.T) {
 				}
 			})
 			gh.eventPollResponses = tc.eventPollResponses
+			gh.stagePollResponses = tc.stagePollResponses
 
 			gh.supportedLayouts = tc.supportedLayouts
 			if tc.supportedLayouts == nil {
-				gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
+				gh.supportedLayouts = []*authd.UILayout{
+					pam_test.FormUILayout(pam_test.WithWait(true)),
+				}
 			}
 
 			gh.protoVersion = gdm.ProtoVersion
@@ -862,6 +994,9 @@ func TestGdmModule(t *testing.T) {
 			}
 
 			gh.selectedAuthModeIDs = tc.wantAuthModeIDs
+			if gh.selectedAuthModeIDs == nil && tc.wantError != nil {
+				gh.selectedAuthModeIDs = []string{}
+			}
 			if gh.selectedAuthModeIDs == nil {
 				gh.selectedAuthModeIDs = []string{passwordAuthID}
 			}
@@ -878,7 +1013,7 @@ func TestGdmModule(t *testing.T) {
 			}
 
 			var pamFlags pam.Flags
-			if !testutils.IsVerbose() {
+			if !testing.Verbose() {
 				pamFlags = pam.Silent
 			}
 
@@ -908,6 +1043,11 @@ func TestGdmModule(t *testing.T) {
 			require.ErrorIs(t, gh.tx.AcctMgmt(pamFlags), tc.wantAcctMgmtErr,
 				"Account Management PAM Error messages do not match")
 
+			require.Empty(t, gh.selectedAuthModeIDs,
+				"Some Authentication Modes IDs have not been selected")
+			require.Empty(t, gh.selectedUILayouts,
+				"Some UI Layouts have not been selected")
+
 			if tc.wantError != nil {
 				requirePreviousBrokerForUser(t, socketPath, "", pamUser)
 				return
@@ -915,7 +1055,9 @@ func TestGdmModule(t *testing.T) {
 
 			user, err := gh.tx.GetItem(pam.User)
 			require.NoError(t, err, "Can't get the pam user")
-			require.Equal(t, pamUser, user, "PAM user name does not match expected")
+			// authd uses lowercase usernames.
+			require.Equal(t, strings.ToLower(pamUser), user,
+				"PAM user name does not match expected")
 
 			requirePreviousBrokerForUser(t, socketPath, gh.selectedBrokerName, user)
 		})
@@ -947,7 +1089,7 @@ func TestGdmModuleAuthenticateWithoutGdmExtension(t *testing.T) {
 	t.Cleanup(enableGdmExtension)
 
 	var pamFlags pam.Flags
-	if !testutils.IsVerbose() {
+	if !testing.Verbose() {
 		pamFlags = pam.Silent
 	}
 
@@ -975,20 +1117,20 @@ func TestGdmModuleAcctMgmtWithoutGdmExtension(t *testing.T) {
 	gh := newGdmTestModuleHandler(t, serviceFile, pamUser)
 	t.Cleanup(func() { require.NoError(t, gh.tx.End(), "PAM: can't end transaction") })
 
-	gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout()}
+	gh.supportedLayouts = []*authd.UILayout{pam_test.FormUILayout(pam_test.WithWait(true))}
 	gh.protoVersion = gdm.ProtoVersion
 	gh.selectedBrokerName = exampleBrokerName
 	gh.selectedAuthModeIDs = []string{passwordAuthID}
 	gh.eventPollResponses = map[gdm.EventType][]*gdm.EventData{
 		gdm.EventType_startAuthentication: {
-			gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Challenge{
-				Challenge: "goodpass",
+			gdm_test.IsAuthenticatedEvent(&authd.IARequest_AuthenticationData_Secret{
+				Secret: "goodpass",
 			}),
 		},
 	}
 
 	var pamFlags pam.Flags
-	if !testutils.IsVerbose() {
+	if !testing.Verbose() {
 		pamFlags = pam.Silent
 	}
 

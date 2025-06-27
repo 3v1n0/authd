@@ -69,7 +69,8 @@ func (m qrcodeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	model, cmd := m.buttonModel.Update(msg)
-	m.buttonModel = convertTo[*authReselectButtonModel](model)
+	buttonModel := convertTo[authReselectButtonModel](model)
+	m.buttonModel = &buttonModel
 
 	return m, cmd
 }
@@ -141,6 +142,10 @@ func (m qrcodeModel) Blur() {
 
 // Focused returns whether this model is focused.
 func (m qrcodeModel) Focused() bool {
-	// This is always considered focused.
-	return true
+	if m.buttonModel == nil {
+		// This is always considered focused.
+		return true
+	}
+
+	return m.buttonModel.Focused()
 }

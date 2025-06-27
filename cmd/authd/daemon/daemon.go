@@ -19,6 +19,9 @@ import (
 // cmdName is the binary name for the agent.
 const cmdName = "authd"
 
+// oldDBDir is the path of the old DB directory.
+var oldDBDir = consts.OldDBDir
+
 // App encapsulate commands and options of the daemon, which can be controlled by env variables and config files.
 type App struct {
 	rootCmd cobra.Command
@@ -42,7 +45,7 @@ type daemonConfig struct {
 	Brokers     []string
 	Verbosity   int
 	Paths       systemPaths
-	UsersConfig users.Config `mapstructure:",squash"`
+	UsersConfig *users.Config `mapstructure:",squash" yaml:",inline"`
 }
 
 // New registers commands and return a new App.
@@ -53,14 +56,14 @@ func New() *App {
 		Short:/*i18n.G(*/ "Authentication daemon",                                           /*)*/
 		Long:/*i18n.G(*/ "Authentication daemon bridging the system with external brokers.", /*)*/
 		Args:                                                                                cobra.NoArgs,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			// First thing, initialize the journal handler
 			log.InitJournalHandler(false)
 
 			// Command parsing has been successful. Returns to not print usage anymore.
 			a.rootCmd.SilenceUsage = true
-			// TODO: before or after?  cmd.LocalFlags()
-
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
 			// Set config defaults
 			a.config = daemonConfig{
 				Paths: systemPaths{
@@ -68,7 +71,7 @@ func New() *App {
 					Database:    consts.DefaultDatabaseDir,
 					Socket:      "",
 				},
-				UsersConfig: users.DefaultConfig,
+				UsersConfig: &users.DefaultConfig,
 			}
 
 			// Install and unmarshall configuration
@@ -82,7 +85,12 @@ func New() *App {
 			setVerboseMode(a.config.Verbosity)
 			log.Debugf(context.Background(), "Verbosity: %d", a.config.Verbosity)
 
-			if err := maybeMigrateOldDBDir(consts.OldDBDir, a.config.Paths.Database); err != nil {
+			// If we are only checking the configuration, we exit now.
+			if check, _ := cmd.Flags().GetBool("check-config"); check {
+				return nil
+			}
+
+			if err := maybeMigrateOldDBDir(oldDBDir, a.config.Paths.Database); err != nil {
 				return err
 			}
 
@@ -90,13 +98,14 @@ func New() *App {
 				return err
 			}
 
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.serve(a.config)
 		},
 		// We display usage error ourselves
 		SilenceErrors: true,
+		// Don't add a completion subcommand, authd is not a CLI tool.
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
 	}
 	viper := viper.New()
 
@@ -104,6 +113,8 @@ func New() *App {
 
 	installVerbosityFlag(&a.rootCmd, a.viper)
 	installConfigFlag(&a.rootCmd)
+	// Install the --check-config flag to check the configuration and exit.
+	a.rootCmd.Flags().Bool("check-config", false /*i18n.G(*/, "check configuration and exit" /*)*/)
 
 	// subcommands
 	a.installVersion()
@@ -121,7 +132,12 @@ func (a *App) serve(config daemonConfig) error {
 		return fmt.Errorf("error initializing database directory at %q: %v", dbDir, err)
 	}
 
-	m, err := services.NewManager(ctx, dbDir, config.Paths.BrokersConf, config.Brokers, config.UsersConfig)
+	if config.UsersConfig == nil {
+		// This is an assert, since we assume that the daemonConfig on [New] is properly defined.
+		panic("Users config must be set! This is a programmer error.")
+	}
+
+	m, err := services.NewManager(ctx, dbDir, config.Paths.BrokersConf, config.Brokers, *config.UsersConfig)
 	if err != nil {
 		close(a.ready)
 		return err

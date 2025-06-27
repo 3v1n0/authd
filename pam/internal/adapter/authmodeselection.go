@@ -19,6 +19,7 @@ type authModeSelectionModel struct {
 
 	supportedUILayouts        []*authd.UILayout
 	availableAuthModes        []*authd.GAMResponse_AuthenticationMode
+	autoSelectedAuthModeID    string
 	currentAuthModeSelectedID string
 }
 
@@ -57,7 +58,7 @@ func newAuthModeSelectionModel(clientType PamClientType) authModeSelectionModel 
 }
 
 // Init initializes authModeSelectionModel.
-func (m *authModeSelectionModel) Init() tea.Cmd {
+func (m authModeSelectionModel) Init() tea.Cmd {
 	if m.clientType != InteractiveTerminal {
 		// This is handled by the GDM or Native model!
 		return nil
@@ -102,8 +103,24 @@ func (m *authModeSelectionModel) Init() tea.Cmd {
 // Update handles events and actions.
 func (m authModeSelectionModel) Update(msg tea.Msg) (authModeSelectionModel, tea.Cmd) {
 	switch msg := msg.(type) {
+	case listFocused:
+		cmd := m.updateListModel(msg)
+		if m.id != msg.id {
+			return m, cmd
+		}
+
+		safeMessageDebug(msg, "autoselect: %q", m.autoSelectedAuthModeID)
+
+		if m.autoSelectedAuthModeID != "" {
+			authMode := m.autoSelectedAuthModeID
+			m.autoSelectedAuthModeID = ""
+			return m, tea.Sequence(cmd, selectAuthMode(authMode))
+		}
+
+		return m, cmd
+
 	case supportedUILayoutsReceived:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		if len(msg.layouts) == 0 {
 			return m, sendEvent(pamError{
 				status: pam.ErrCredUnavail,
@@ -114,40 +131,44 @@ func (m authModeSelectionModel) Update(msg tea.Msg) (authModeSelectionModel, tea
 		return m, sendEvent(supportedUILayoutsSet{})
 
 	case authModesReceived:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		m.availableAuthModes = msg.authModes
 
 		var allAuthModes []tea_list.Item
-		var firstAuthModeID string
 		for _, a := range m.availableAuthModes {
-			if firstAuthModeID == "" {
-				firstAuthModeID = a.Id
-			}
 			allAuthModes = append(allAuthModes, authModeItem{
 				id:    a.Id,
 				label: a.Label,
 			})
 		}
 
-		cmds := []tea.Cmd{m.SetItems(allAuthModes)}
-		// Autoselect first auth mode if any.
-		if firstAuthModeID != "" {
-			cmds = append(cmds, selectAuthMode(firstAuthModeID))
+		cmd := m.SetItems(allAuthModes)
+
+		// Autoselect first auth mode if any, as soon as we've the focus.
+		if len(m.availableAuthModes) == 0 {
+			return m, cmd
 		}
 
-		return m, tea.Sequence(cmds...)
+		firstAuthModeID := m.availableAuthModes[0].Id
+		if !m.Focused() {
+			m.autoSelectedAuthModeID = firstAuthModeID
+			return m, cmd
+		}
+
+		return m, tea.Sequence(cmd, selectAuthMode(firstAuthModeID))
 
 	case listItemSelected:
 		if !m.Focused() {
-			return m, nil
+			return m, m.updateListModel(msg)
 		}
 
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		authMode := convertTo[authModeItem](msg.item)
-		return m, selectAuthMode(authMode.id)
+		return m, tea.Sequence(m.updateListModel(msg),
+			selectAuthMode(authMode.id))
 
 	case authModeSelected:
-		log.Debugf(context.TODO(), "%#v", msg)
+		safeMessageDebug(msg)
 		// Ensure auth mode id is valid
 		if !validAuthModeID(msg.id, m.availableAuthModes) {
 			log.Infof(context.TODO(), "authentication mode %q is not part of currently available authentication mode", msg.id)
@@ -169,9 +190,13 @@ func (m authModeSelectionModel) Update(msg tea.Msg) (authModeSelectionModel, tea
 		})
 	}
 
+	return m, m.updateListModel(msg)
+}
+
+func (m *authModeSelectionModel) updateListModel(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	m.List, cmd = m.List.Update(msg)
-	return m, cmd
+	return cmd
 }
 
 // authModeItem is the list item corresponding to an authentication mode.
@@ -229,6 +254,7 @@ func getAuthenticationModes(client authd.PAMClient, sessionID string, uiLayouts 
 func (m *authModeSelectionModel) Reset() {
 	log.Debugf(context.TODO(), "%T: Reset", m)
 	m.currentAuthModeSelectedID = ""
+	m.autoSelectedAuthModeID = ""
 }
 
 // SupportedUILayouts returns safely currently loaded supported ui layouts.
