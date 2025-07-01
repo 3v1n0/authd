@@ -188,7 +188,7 @@ func (l *UserDBLocked) GetUserEntries() (entries []types.UserEntry, err error) {
 		return l.userEntries, nil
 	}
 
-	l.userEntries, err = GetPasswdEntries()
+	l.userEntries, err = getUserEntries()
 	return l.userEntries, err
 }
 
@@ -203,7 +203,7 @@ func (l *UserDBLocked) GetGroupEntries() (entries []types.GroupEntry, err error)
 		return l.groupEntries, nil
 	}
 
-	l.groupEntries, err = GetGroupEntries()
+	l.groupEntries, err = getGroupEntries()
 	return l.groupEntries, err
 }
 
