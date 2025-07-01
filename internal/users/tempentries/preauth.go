@@ -22,6 +22,9 @@ const (
 	// too long.
 	MaxPreAuthUsers = 4096
 
+	// MaxPreAuthUserNameLength is the maximum length of the pre-auth user name.
+	MaxPreAuthUserNameLength = 256
+
 	// UserPrefix is the prefix used as login name by the pre-auth temporary users.
 	UserPrefix = "authd-pre-auth-user"
 )
@@ -112,8 +115,9 @@ func (r *PreAuthUserRecords) RegisterPreAuthUser(loginName string, uid uint32) (
 	}
 
 	// To mitigate DoS attacks, we limit the length of the name to 256 characters.
-	if len(loginName) > 255 {
-		return fmt.Errorf("username is too long (maximum 255 characters): %q", loginName)
+	if len(loginName) > MaxPreAuthUserNameLength {
+		return fmt.Errorf("username is too long (maximum %d characters): %q",
+			MaxPreAuthUserNameLength, loginName)
 	}
 
 	r.rwMu.Lock()
