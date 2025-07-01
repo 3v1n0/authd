@@ -73,6 +73,8 @@ type UserDBLocked struct {
 	groupEntries []types.GroupEntry
 	// localGroupEntries holds the current group entries.
 	localGroupEntries []types.GroupEntry
+	// localGroupInvalidEntries holds the current group invalid entries.
+	localGroupInvalidEntries []*string
 
 	// options to set the local entries context.
 	options options
@@ -193,7 +195,8 @@ func (l *UserDBLocked) GetLocalGroupEntries() (entries []types.GroupEntry, err e
 		return l.localGroupEntries, nil
 	}
 
-	l.localGroupEntries, err = parseLocalGroups(l.options.inputGroupPath)
+	l.localGroupEntries, l.localGroupInvalidEntries, err = parseLocalGroups(
+		l.options.inputGroupPath)
 	return l.localGroupEntries, err
 }
 
