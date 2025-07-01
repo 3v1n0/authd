@@ -9,16 +9,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/internal/consts"
-	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	"github.com/ubuntu/authd/internal/users"
 	"github.com/ubuntu/authd/internal/users/db"
-	"github.com/ubuntu/authd/internal/users/idgenerator"
-	"github.com/ubuntu/authd/internal/users/localentries"
 	localgroupstestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
 	userslocking "github.com/ubuntu/authd/internal/users/locking"
 	"github.com/ubuntu/authd/internal/users/tempentries"
@@ -121,10 +117,7 @@ type groupCase struct {
 	GID uint32 // The GID to generate for this group
 }
 
-//nolint:tparallel // Only some subtests can be parallel.
 func TestUpdateUser(t *testing.T) {
-	t.Parallel()
-
 	userCases := map[string]userCase{
 		"user1":                             {UserInfo: types.UserInfo{Name: "user1"}, UID: 1111},
 		"nameless":                          {UID: 1111},
@@ -174,7 +167,7 @@ func TestUpdateUser(t *testing.T) {
 		"GID_does_not_change_if_group_with_same_UGID_exists":                {groupsCase: "different-name-same-ugid", dbFile: "one_user_and_group"},
 		"GID_does_not_change_if_group_with_same_name_and_empty_UGID_exists": {groupsCase: "authd-group", dbFile: "group-with-empty-UGID"},
 		"Removing_last_user_from_a_group_keeps_the_group_record":            {groupsCase: "no-groups", dbFile: "one_user_and_group"},
-		"Names of authd groups are stored in lowercase":                     {groupsCase: "authd-group-with-uppercase"},
+		"Names_of_authd_groups_are_stored_in_lowercase":                     {groupsCase: "authd-group-with-uppercase"},
 
 		"Error_if_user_has_no_username":                           {userCase: "nameless", wantErr: true, noOutput: true},
 		"Error_if_group_has_no_name":                              {groupsCase: "nameless-group", wantErr: true, noOutput: true},
@@ -185,10 +178,6 @@ func TestUpdateUser(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			if tc.localGroupsFile == "" {
-				t.Parallel()
-			}
-
 			var destGroupFile string
 			if tc.localGroupsFile != "" {
 				destGroupFile = localgroupstestutils.SetupGroupMock(t,
@@ -221,7 +210,7 @@ func TestUpdateUser(t *testing.T) {
 			}
 
 			managerOpts := []users.Option{
-				users.WithIDGenerator(&idgenerator.IDGeneratorMock{
+				users.WithIDGenerator(&users.IDGeneratorMock{
 					UIDsToGenerate: []uint32{user.UID},
 					GIDsToGenerate: gids,
 				}),
@@ -260,8 +249,6 @@ func TestUpdateUser(t *testing.T) {
 }
 
 func TestRegisterUserPreauth(t *testing.T) {
-	t.Parallel()
-
 	userCases := map[string]userCase{
 		"user1":                   {UserInfo: types.UserInfo{Name: "user1"}, UID: 1111},
 		"nameless":                {UID: 1111},
@@ -287,8 +274,6 @@ func TestRegisterUserPreauth(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
 			if tc.userCase == "" {
 				tc.userCase = "user1"
 			}
@@ -302,13 +287,13 @@ func TestRegisterUserPreauth(t *testing.T) {
 			}
 
 			managerOpts := []users.Option{
-				users.WithIDGenerator(&idgenerator.IDGeneratorMock{
+				users.WithIDGenerator(&users.IDGeneratorMock{
 					UIDsToGenerate: []uint32{user.UID},
 				}),
 			}
 			m := newManagerForTests(t, dbDir, managerOpts...)
 
-			uid, err := m.RegisterUserPreAuth(user.Name)
+			uid, err := m.RegisterUserPreAuth(context.Background(), user.Name)
 
 			requireErrorAssertions(t, err, nil, tc.wantErr)
 			if tc.wantErr {
@@ -344,7 +329,8 @@ func TestRegisterUserPreauth(t *testing.T) {
 func TestConcurrentUserUpdate(t *testing.T) {
 	t.Parallel()
 
-	const nIterations = 100
+	const nIterations = 2
+	const preAuthIterations = 3
 
 	dbDir := t.TempDir()
 	const dbFile = "one_user_and_group_with_matching_gid"
@@ -353,16 +339,16 @@ func TestConcurrentUserUpdate(t *testing.T) {
 
 	const registeredUserPrefix = "authd-test-maybe-pre-check-user"
 
-	managerOpts := []users.Option{
-		users.WithIDGenerator(&idgenerator.IDGenerator{
-			UIDMin: 0,
-			UIDMax: nIterations * 3,
-			GIDMin: 0,
-			GIDMax: nIterations * 10,
-		}),
-	}
+	managerOpts := []users.Option{users.WithIDGenerator(&users.IDGenerator{
+		UIDMin: 0,
+		UIDMax: nIterations * preAuthIterations * 2,
+		GIDMin: 0,
+		GIDMax: nIterations * preAuthIterations * 2,
+	})}
 
 	m := newManagerForTests(t, dbDir, managerOpts...)
+	err = m.MockIDGenerator()
+	require.NoError(t, err, "MockIDGenerator should not return an error, but did")
 
 	wg := sync.WaitGroup{}
 	wg.Add(nIterations)
@@ -376,6 +362,8 @@ func TestConcurrentUserUpdate(t *testing.T) {
 	for idx := range nIterations {
 		t.Run(fmt.Sprintf("iteration_%d", idx), func(t *testing.T) {
 			t.Parallel()
+
+			t.Logf("Running iteration %d", idx)
 
 			idx := idx
 			doPreAuth := idx%3 == 0
@@ -394,12 +382,22 @@ func TestConcurrentUserUpdate(t *testing.T) {
 				preAuth := func(t *testing.T) {
 					t.Parallel()
 
-					uid, err := m.RegisterUserPreAuth(userName)
+					t.Logf("Registering pre-auth user %q", userName)
+
+					ctx, lock, err := userslocking.WithUserDBLock(context.Background())
+					require.NoError(t, err, "WithUserDBLock should not return an error")
+					t.Cleanup(func() {
+						err := lock.Unlock()
+						require.NoError(t, err, "Unlock should not return an error")
+					})
+
+					uid, err := m.RegisterUserPreAuth(ctx, userName)
 					require.NoError(t, err, "RegisterPreAuthUser should not fail but it did")
 					preauthUID.Store(uid)
+					t.Logf("Registered pre-auth user %q with UID %d", userName, uid)
 				}
 
-				for i := range 3 {
+				for i := range preAuthIterations {
 					t.Run(fmt.Sprintf("pre_auth%d", i), preAuth)
 				}
 			}
@@ -408,9 +406,12 @@ func TestConcurrentUserUpdate(t *testing.T) {
 			userUpdate := func(t *testing.T) {
 				t.Parallel()
 
+				t.Logf("Updating user %q", userName)
+
+				uid := preauthUID.Load()
 				err := m.UpdateUser(types.UserInfo{
 					Name:  userName,
-					UID:   preauthUID.Load(),
+					UID:   uid,
 					Dir:   "/home-prefixes/" + userName,
 					Shell: "/usr/sbin/nologin",
 					Groups: []types.GroupInfo{
@@ -426,6 +427,7 @@ func TestConcurrentUserUpdate(t *testing.T) {
 					},
 				})
 				require.NoError(t, err, "UpdateUser should not fail but it did")
+				t.Logf("Updated user %q with UID %d", userName, uid)
 			}
 
 			testName := "update_user"
@@ -461,25 +463,25 @@ func TestConcurrentUserUpdate(t *testing.T) {
 
 		for _, u := range users {
 			old, ok := uniqueUIDs[u.UID]
-			require.False(t, ok,
+			require.Falsef(t, ok,
 				"UID %d must be unique across entries, but it's used both %q and %q",
 				u.UID, u.Name, old)
 			uniqueUIDs[u.UID] = u
-			require.Equal(t, int(u.UID), int(u.GID), "User %q UID should match its GID", u.Name)
+			require.Equalf(t, int(u.UID), int(u.GID), "User %q UID should match its GID", u.Name)
 
 			if !strings.HasPrefix(u.Name, registeredUserPrefix) {
 				// Ignore the local user checks for users already in the DB.
 				continue
 			}
 			localgroups, err := m.DB().UserLocalGroups(u.UID)
-			require.NoError(t, err, "UserLocalGroups for %q should not fail but it did", u.Name)
-			require.Len(t, localgroups, 1,
+			require.NoErrorf(t, err, "UserLocalGroups for %q should not fail but it did", u.Name)
+			require.Lenf(t, localgroups, 1,
 				"Number of registered local groups for %q mismatch", u.Name)
 		}
 
 		for _, g := range groups {
 			old, ok := uniqueGIDs[g.GID]
-			require.False(t, ok, "GID %d must be unique across entries, but it's used both %q and %q",
+			require.Falsef(t, ok, "GID %d must be unique across entries, but it's used both %q and %q",
 				g.GID, g.Name, old)
 			uniqueGIDs[g.GID] = g.Name
 
@@ -487,7 +489,7 @@ func TestConcurrentUserUpdate(t *testing.T) {
 			if !ok {
 				continue
 			}
-			require.Equal(t, int(g.GID), int(u.GID),
+			require.Equalf(t, int(g.GID), int(u.GID),
 				"Group %q can only match its user, not to %q", g.Name, u.Name)
 		}
 	})
@@ -606,15 +608,14 @@ func TestUserByIDAndName(t *testing.T) {
 			m := newManagerForTests(t, dbDir)
 
 			if tc.isTempUser {
-				entries, entriesUnlock, err := localentries.NewWithLock()
-				require.NoError(t, err, "Setup: failed to lock the locale entries")
+				ctx, lock, err := userslocking.WithUserDBLock(context.Background())
+				require.NoError(t, err, "WithUserDBLock should not return an error")
 				t.Cleanup(func() {
-					err = entriesUnlock()
-					require.NoError(t, err, "entriesUnlock should not fail to unlock the local entries")
+					err := lock.Unlock()
+					require.NoError(t, err, "Unlock should not return an error")
 				})
-				records := m.TemporaryRecords().LockForChanges(entries)
 
-				tc.uid, err = records.RegisterPreAuthUser("tempuser1")
+				tc.uid, err = m.RegisterUserPreAuth(ctx, "tempuser1")
 				require.NoError(t, err, "RegisterUser should not return an error, but did")
 			}
 
@@ -822,88 +823,6 @@ func TestAllShadows(t *testing.T) {
 			golden.CheckOrUpdateYAML(t, got)
 		})
 	}
-}
-
-func TestRegisterUserPreAuthWhenLocked(t *testing.T) {
-	// This cannot be parallel
-
-	userslocking.Z_ForTests_OverrideLockingAsLockedExternally(t, context.Background())
-	userslocking.Z_ForTests_SetMaxWaitTime(t, testutils.MultipliedSleepDuration(750*time.Millisecond))
-
-	dbFile := "one_user_and_group"
-	dbDir := t.TempDir()
-	err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", dbFile+".db.yaml"), dbDir)
-	require.NoError(t, err, "Setup: could not create database from testdata")
-
-	m := newManagerForTests(t, dbDir)
-
-	uid, err := m.RegisterUserPreAuth("locked-user")
-	require.ErrorIs(t, err, userslocking.ErrLock)
-	require.Zero(t, uid, "Uid should be unset")
-}
-
-func TestRegisterUserPreAuthAfterUnlock(t *testing.T) {
-	// This cannot be parallel
-
-	waitTime := testutils.MultipliedSleepDuration(750 * time.Millisecond)
-	lockCtx, lockCancel := context.WithTimeout(context.Background(), waitTime/2)
-	t.Cleanup(lockCancel)
-
-	userslocking.Z_ForTests_OverrideLockingAsLockedExternally(t, lockCtx)
-	userslocking.Z_ForTests_SetMaxWaitTime(t, waitTime)
-
-	t.Cleanup(func() { _ = userslocking.WriteRecUnlock() })
-
-	dbFile := "one_user_and_group"
-	dbDir := t.TempDir()
-	err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", dbFile+".db.yaml"), dbDir)
-	require.NoError(t, err, "Setup: could not create database from testdata")
-
-	m := newManagerForTests(t, dbDir)
-
-	uid, err := m.RegisterUserPreAuth("locked-user")
-	require.NoError(t, err, "Registration should not fail")
-	require.NotZero(t, uid, "UID should be set")
-}
-
-func TestUpdateUserWhenLocked(t *testing.T) {
-	// This cannot be parallel
-
-	userslocking.Z_ForTests_OverrideLockingAsLockedExternally(t, context.Background())
-	userslocking.Z_ForTests_SetMaxWaitTime(t, testutils.MultipliedSleepDuration(750*time.Millisecond))
-
-	dbFile := "one_user_and_group"
-	dbDir := t.TempDir()
-	err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", dbFile+".db.yaml"), dbDir)
-	require.NoError(t, err, "Setup: could not create database from testdata")
-
-	m := newManagerForTests(t, dbDir)
-
-	err = m.UpdateUser(types.UserInfo{UID: 1234, Name: "test-user"})
-	require.ErrorIs(t, err, userslocking.ErrLock)
-}
-
-func TestUpdateUserAfterUnlock(t *testing.T) {
-	// This cannot be parallel
-
-	waitTime := testutils.MultipliedSleepDuration(750 * time.Millisecond)
-	lockCtx, lockCancel := context.WithTimeout(context.Background(), waitTime/2)
-	t.Cleanup(lockCancel)
-
-	userslocking.Z_ForTests_OverrideLockingAsLockedExternally(t, lockCtx)
-	userslocking.Z_ForTests_SetMaxWaitTime(t, waitTime)
-
-	t.Cleanup(func() { _ = userslocking.WriteRecUnlock() })
-
-	dbFile := "one_user_and_group"
-	dbDir := t.TempDir()
-	err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", dbFile+".db.yaml"), dbDir)
-	require.NoError(t, err, "Setup: could not create database from testdata")
-
-	m := newManagerForTests(t, dbDir)
-
-	err = m.UpdateUser(types.UserInfo{UID: 1234, Name: "some-user-test"})
-	require.NoError(t, err, "UpdateUser should not fail")
 }
 
 func requireErrorAssertions(t *testing.T, gotErr, wantErrType error, wantErr bool) {

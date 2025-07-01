@@ -61,3 +61,34 @@ func TestGetGroupByName_NotFound(t *testing.T) {
 		})
 	}
 }
+
+func TestGetGroupByID(t *testing.T) {
+	t.Parallel()
+
+	for idx := range 10 {
+		t.Run(fmt.Sprintf("iteration_%d", idx), func(t *testing.T) {
+			t.Parallel()
+
+			got, err := GetGroupByID(0)
+			require.NoError(t, err, "GetGroupByID should not return an error")
+			require.Equal(t, got.Name, "root", "Name does not match")
+			require.Equal(t, got.GID, uint32(0), "GID does not match")
+			require.Equal(t, got.Passwd, "x", "Passwd does not match")
+			require.Empty(t, got.Users)
+		})
+	}
+}
+
+func TestGetGroupByID_NotFound(t *testing.T) {
+	t.Parallel()
+
+	for idx := range 10 {
+		t.Run(fmt.Sprintf("iteration_%d", idx), func(t *testing.T) {
+			t.Parallel()
+
+			got, err := GetGroupByID(uint32(999999999))
+			require.ErrorIs(t, err, ErrGroupNotFound)
+			require.Empty(t, got, "Entry should be empty, but is not")
+		})
+	}
+}

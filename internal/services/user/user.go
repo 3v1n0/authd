@@ -190,7 +190,7 @@ func (s Service) userPreCheck(ctx context.Context, username string) (types.UserE
 
 	// Register a temporary user with a unique UID. If the user authenticates successfully, the user will be added to
 	// the database with the same UID.
-	u.UID, err = s.userManager.RegisterUserPreAuth(u.Name)
+	u.UID, err = s.userManager.RegisterUserPreAuth(ctx, u.Name)
 	if err != nil {
 		return types.UserEntry{}, fmt.Errorf("failed to add temporary record for user %q: %v", username, err)
 	}

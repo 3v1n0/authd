@@ -1,6 +1,9 @@
-package idgenerator
+package users
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // IDGeneratorMock is a mock implementation of the IDGenerator interface.
 // revive:disable-next-line:exported // We don't want to call this type just "Mock"
@@ -10,7 +13,7 @@ type IDGeneratorMock struct {
 }
 
 // GenerateUID generates a UID.
-func (g *IDGeneratorMock) GenerateUID() (uint32, error) {
+func (g *IDGeneratorMock) GenerateUID(_ context.Context) (uint32, error) {
 	if len(g.UIDsToGenerate) == 0 {
 		return 0, fmt.Errorf("no more UIDs to generate")
 	}
@@ -20,7 +23,7 @@ func (g *IDGeneratorMock) GenerateUID() (uint32, error) {
 }
 
 // GenerateGID generates a GID.
-func (g *IDGeneratorMock) GenerateGID() (uint32, error) {
+func (g *IDGeneratorMock) GenerateGID(_ context.Context) (uint32, error) {
 	if len(g.GIDsToGenerate) == 0 {
 		return 0, fmt.Errorf("no more GIDs to generate")
 	}
@@ -28,3 +31,6 @@ func (g *IDGeneratorMock) GenerateGID() (uint32, error) {
 	g.GIDsToGenerate = g.GIDsToGenerate[1:]
 	return gid, nil
 }
+
+// ClearPendingIDs clears the pending IDs.
+func (g *IDGeneratorMock) ClearPendingIDs() {}

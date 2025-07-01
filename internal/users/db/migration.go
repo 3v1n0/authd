@@ -8,6 +8,7 @@ import (
 
 	"github.com/ubuntu/authd/internal/users/db/bbolt"
 	"github.com/ubuntu/authd/internal/users/localentries"
+	userslocking "github.com/ubuntu/authd/internal/users/locking"
 	"github.com/ubuntu/authd/log"
 	"github.com/ubuntu/decorate"
 )
@@ -248,14 +249,14 @@ func renameUsersInGroupFile(oldNames, newNames []string) (err error) {
 		return nil
 	}
 
-	lockedEntries, entriesUnlock, err := localentries.NewWithLock()
+	ctx, lock, err := userslocking.WithUserDBLock(context.Background())
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, entriesUnlock()) }()
+	defer func() { err = errors.Join(err, lock.Unlock()) }()
 
-	lockedGroups := localentries.GetGroupsWithLock(lockedEntries)
-	groups, err := lockedGroups.GetEntries()
+	groupManager := localentries.NewGroupManager()
+	groups, err := groupManager.GetEntries()
 	if err != nil {
 		return err
 	}
@@ -269,7 +270,7 @@ func renameUsersInGroupFile(oldNames, newNames []string) (err error) {
 		}
 	}
 
-	return lockedGroups.SaveEntries(groups)
+	return groupManager.SaveEntries(ctx, groups)
 }
 
 func removeGroupsWithNameConflicts(db queryable) error {

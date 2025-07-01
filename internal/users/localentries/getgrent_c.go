@@ -122,6 +122,49 @@ func GetGroupByName(name string) (g types.GroupEntry, err error) {
 	}
 }
 
+// GetGroupByID returns the group with the given GID.
+func GetGroupByID(gid uint32) (g types.GroupEntry, err error) {
+	decorate.OnError(&err, "getgrgid_r")
+
+	var group C.struct_group
+	var groupPtr *C.struct_group
+	buf := make([]C.char, 256)
+
+	pinner := runtime.Pinner{}
+	defer pinner.Unpin()
+
+	pinner.Pin(&group)
+	pinner.Pin(&buf[0])
+
+	for {
+		ret := C.getgrgid_r(C.gid_t(gid), &group, &buf[0], C.size_t(len(buf)), &groupPtr)
+		errno := syscall.Errno(ret)
+
+		if errors.Is(errno, syscall.ERANGE) {
+			buf = make([]C.char, len(buf)*2)
+			pinner.Pin(&buf[0])
+			continue
+		}
+		if (errors.Is(errno, syscall.Errno(0)) && groupPtr == nil) ||
+			errors.Is(errno, syscall.ENOENT) ||
+			errors.Is(errno, syscall.ESRCH) ||
+			errors.Is(errno, syscall.EBADF) ||
+			errors.Is(errno, syscall.EPERM) {
+			return types.GroupEntry{}, ErrGroupNotFound
+		}
+		if !errors.Is(errno, syscall.Errno(0)) {
+			return types.GroupEntry{}, errno
+		}
+
+		return types.GroupEntry{
+			Name:   C.GoString(groupPtr.gr_name),
+			GID:    uint32(groupPtr.gr_gid),
+			Passwd: C.GoString(groupPtr.gr_passwd),
+			Users:  strvToSlice(groupPtr.gr_mem),
+		}, nil
+	}
+}
+
 func strvToSlice(strv **C.char) []string {
 	var users []string
 	for i := C.uint(0); ; i++ {

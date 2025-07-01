@@ -14,8 +14,10 @@ import (
 )
 
 var (
-	overrideLocked  atomic.Bool
-	overrideMaxWait atomic.Int64
+	overrideLockHeldMu sync.Mutex
+	overrideLockHeld   bool
+	overrideLockCond   *sync.Cond
+	overrideMaxWait    atomic.Int64
 
 	overriddenMu              sync.Mutex
 	overriddenWriteLockImpl   []func() error
@@ -24,6 +26,36 @@ var (
 
 func init() {
 	overrideMaxWait.Store(int64(maxWait))
+	overrideLockCond = sync.NewCond(&overrideLockHeldMu)
+}
+
+func lockOverrideImpl() error {
+	overrideLockHeldMu.Lock()
+	defer overrideLockHeldMu.Unlock()
+
+	for overrideLockHeld {
+		overrideLockCond.Wait()
+	}
+
+	overrideLockHeld = true
+
+	log.Debug(context.Background(), "Local entries locked!")
+	return nil
+}
+
+func unlockOverrideImpl() error {
+	overrideLockHeldMu.Lock()
+	defer overrideLockHeldMu.Unlock()
+
+	if !overrideLockHeld {
+		return ErrUnlock
+	}
+
+	overrideLockHeld = false
+	overrideLockCond.Signal()
+
+	log.Debug(context.Background(), "Local entries unlocked!")
+	return nil
 }
 
 // Z_ForTests_OverrideLocking is a function to override the locking functions
@@ -38,25 +70,11 @@ func Z_ForTests_OverrideLocking() {
 	overriddenMu.Lock()
 	defer overriddenMu.Unlock()
 
-	overriddenWriteLockImpl = append(overriddenWriteLockImpl, writeLockImpl)
-	writeLockImpl = func() error {
-		if !overrideLocked.CompareAndSwap(false, true) {
-			return fmt.Errorf("%w: already locked", ErrLock)
-		}
+	overriddenWriteLockImpl = append(overriddenWriteLockImpl, lockImpl)
+	lockImpl = lockOverrideImpl
 
-		log.Debug(context.Background(), "TestOverride: Local entries locked!")
-		return nil
-	}
-
-	overriddenWriteUnlockImpl = append(overriddenWriteUnlockImpl, writeUnlockImpl)
-	writeUnlockImpl = func() error {
-		if !overrideLocked.CompareAndSwap(true, false) {
-			return fmt.Errorf("%w: already unlocked", ErrUnlock)
-		}
-
-		log.Debug(context.Background(), "TestOverride: Local entries unlocked!")
-		return nil
-	}
+	overriddenWriteUnlockImpl = append(overriddenWriteUnlockImpl, unlockImpl)
+	unlockImpl = unlockOverrideImpl
 }
 
 // Z_ForTests_OverrideLockingWithCleanup is a function to override the locking
@@ -78,7 +96,7 @@ func Z_ForTests_OverrideLockingWithCleanup(t *testing.T) {
 // user database is locked by an external process.
 //
 // When called, it marks the user database as locked, causing any subsequent
-// locking attempts by authd (via [WriteRecLock]) to block until the provided
+// locking attempts by authd (via [WriteLock]) to block until the provided
 // context is cancelled.
 //
 // This does not use real file locking. The lock can be released either
@@ -101,30 +119,25 @@ func Z_ForTests_OverrideLockingAsLockedExternally(t *testing.T, ctx context.Cont
 	// and then blocks until the unlock operation is called.
 	lockCh := make(chan struct{}, 1)
 
-	overriddenWriteLockImpl = append(overriddenWriteLockImpl, writeLockImpl)
-	writeLockImpl = func() error {
-		for {
-			maxWait := time.Duration(overrideMaxWait.Load())
+	overriddenWriteLockImpl = append(overriddenWriteLockImpl, lockImpl)
+	lockImpl = func() error {
+		maxWait := time.Duration(overrideMaxWait.Load())
 
-			select {
-			case lockCh <- struct{}{}:
-				log.Debug(ctx, "TestOverrideExternallyLocked: Local entries external lock released!")
-			case <-time.After(maxWait):
-				return fmt.Errorf("failed waiting for %v: %w", maxWait, ErrLockTimeout)
-			}
-
-			if overrideLocked.CompareAndSwap(false, true) {
-				log.Debug(ctx, "TestOverrideExternallyLocked: Local entries locked!")
-				break
-			}
+		select {
+		case lockCh <- struct{}{}:
+			log.Debug(ctx, "TestOverrideExternallyLocked: Local entries external lock released!")
+		case <-time.After(maxWait):
+			return fmt.Errorf("failed waiting for %v: %w", maxWait, ErrLockTimeout)
 		}
-		return nil
+
+		return lockOverrideImpl()
 	}
 
-	overriddenWriteUnlockImpl = append(overriddenWriteUnlockImpl, writeUnlockImpl)
-	writeUnlockImpl = func() error {
-		if !overrideLocked.CompareAndSwap(true, false) {
-			return ErrUnlock
+	overriddenWriteUnlockImpl = append(overriddenWriteUnlockImpl, unlockImpl)
+	unlockImpl = func() error {
+		err := unlockOverrideImpl()
+		if err != nil {
+			return err
 		}
 
 		<-lockCh
@@ -133,21 +146,17 @@ func Z_ForTests_OverrideLockingAsLockedExternally(t *testing.T, ctx context.Cont
 	}
 
 	done := atomic.Bool{}
-	writeUnlockImpl := writeUnlockImpl
 	cleanup := func() {
 		if !done.CompareAndSwap(false, true) {
 			return
 		}
-		if !overrideLocked.Load() {
-			return
-		}
-		err := writeUnlockImpl()
+		err := unlockImpl()
 		require.NoError(t, err, "Unlocking should be allowed")
 	}
 
 	t.Cleanup(cleanup)
 
-	err := writeLockImpl()
+	err := lockImpl()
 	require.NoError(t, err, "Locking should be allowed")
 
 	go func() {
@@ -163,7 +172,7 @@ func Z_ForTests_OverrideLockingAsLockedExternally(t *testing.T, ctx context.Cont
 func Z_ForTests_RestoreLocking() {
 	testsdetection.MustBeTesting()
 
-	if overrideLocked.Load() {
+	if overrideLockHeld {
 		panic("Lock has not been released before restoring!")
 	}
 
@@ -176,12 +185,12 @@ func Z_ForTests_RestoreLocking() {
 		return l, v
 	}
 
-	overriddenWriteLockImpl, writeLockImpl = popLast(overriddenWriteLockImpl)
-	overriddenWriteUnlockImpl, writeUnlockImpl = popLast(overriddenWriteUnlockImpl)
+	overriddenWriteLockImpl, lockImpl = popLast(overriddenWriteLockImpl)
+	overriddenWriteUnlockImpl, unlockImpl = popLast(overriddenWriteUnlockImpl)
 }
 
 // Z_ForTests_SetMaxWaitTime sets the max time that we should wait before
-// returning a failure in [WriteRecLock].
+// returning a failure in [WriteLock].
 //
 // nolint:revive,nolintlint // We want to use underscores in the function name here.
 func Z_ForTests_SetMaxWaitTime(t *testing.T, maxWaitTime time.Duration) {
