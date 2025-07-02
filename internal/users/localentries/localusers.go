@@ -41,13 +41,13 @@ func ParseLocalPasswdFile() (entries []types.UserEntry, err error) {
 			continue
 		}
 
-		uid, err := strconv.ParseUint(fields[0], 10, 32)
+		uid, err := strconv.ParseUint(fields[2], 10, 32)
 		if err != nil {
 			log.Warningf(context.Background(), "Skipping invalid entry in %s (invalid UID): %s", passwdFile, line)
 			continue
 		}
 
-		gid, err := strconv.ParseUint(fields[1], 10, 32)
+		gid, err := strconv.ParseUint(fields[3], 10, 32)
 		if err != nil {
 			log.Warningf(context.Background(), "Skipping invalid entry in %s (invalid GID): %s", passwdFile, line)
 		}
