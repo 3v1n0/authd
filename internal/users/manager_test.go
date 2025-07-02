@@ -341,9 +341,9 @@ func TestConcurrentUserUpdate(t *testing.T) {
 
 	managerOpts := []users.Option{users.WithIDGenerator(&users.IDGenerator{
 		UIDMin: 0,
-		UIDMax: nIterations * preAuthIterations * 2,
+		UIDMax: nIterations * preAuthIterations,
 		GIDMin: 0,
-		GIDMax: nIterations * preAuthIterations * 2,
+		GIDMax: nIterations * preAuthIterations,
 	})}
 
 	m := newManagerForTests(t, dbDir, managerOpts...)
