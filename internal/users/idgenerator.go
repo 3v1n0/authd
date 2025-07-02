@@ -158,21 +158,26 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (uint32, error) {
 	return 0, errors.New("no available ID in range")
 }
 
-func (g *IDGenerator) isUIDAvailable(gid uint32) (bool, error) {
+func (g *IDGenerator) isUIDAvailable(uid uint32) (bool, error) {
 	if g.isUIDAvailableMock != nil {
 		// If a mock function is provided, use it to check if the UID is available
-		return g.isUIDAvailableMock(gid)
+		return g.isUIDAvailableMock(uid)
 	}
 
-	_, err := localentries.GetPasswdByID(gid)
-	if errors.Is(err, localentries.ErrUserNotFound) {
-		return true, nil
-	}
-	if err != nil {
+	_, err := localentries.GetPasswdByID(uid)
+	if !errors.Is(err, localentries.ErrUserNotFound) {
+		// We either found the user or there was an error other than "not found"
 		return false, err
 	}
 
-	return false, nil
+	// Also check if there is a group with the same ID, because the UID is
+	// also used as the GID of the user private group.
+	_, err = localentries.GetGroupByID(uid)
+	if errors.Is(err, localentries.ErrGroupNotFound) {
+		return true, nil
+	}
+
+	return false, err
 }
 
 func (g *IDGenerator) isGIDAvailable(gid uint32) (bool, error) {

@@ -124,6 +124,7 @@ func GetPasswdByName(name string) (p types.UserEntry, err error) {
 }
 
 // GetPasswdByID returns the user with the given UID.
+// It returns ErrUserNotFound if the user is not found.
 func GetPasswdByID(uid uint32) (p types.UserEntry, err error) {
 	decorate.OnError(&err, "getpwuid_r")
 

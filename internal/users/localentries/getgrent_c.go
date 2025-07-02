@@ -123,6 +123,7 @@ func GetGroupByName(name string) (g types.GroupEntry, err error) {
 }
 
 // GetGroupByID returns the group with the given GID.
+// It returns ErrGroupNotFound if the group is not found.
 func GetGroupByID(gid uint32) (g types.GroupEntry, err error) {
 	decorate.OnError(&err, "getgrgid_r")
 
