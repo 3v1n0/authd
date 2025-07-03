@@ -135,8 +135,12 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (uint32, error) {
 	var highestUsed uint32
 	if len(usedIDs) > 0 {
 		highestUsed = usedIDs[len(usedIDs)-1]
+	} else if minID > 0 {
+		// If there are no used IDs, start from minID
+		highestUsed = minID - 1
 	} else {
-		highestUsed = minID - 1 // No used IDs
+		// If there are no used IDs and minID is 0, start from 0
+		highestUsed = 0
 	}
 
 	// Try IDs above the highest used
