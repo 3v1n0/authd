@@ -62,6 +62,13 @@ var defaultOptions = options{
 // Option represents an optional function to override [UserDBLocked] default values.
 type Option func(*options)
 
+type invalidEntry struct {
+	// lineNum is the line number in the group file where the invalid line was found.
+	lineNum int
+	// line is the content of the invalid line.
+	line string
+}
+
 // UserDBLocked is a struct that holds the current users and groups while
 // ensuring that the system's user database is locked to prevent concurrent
 // modifications.
@@ -91,7 +98,7 @@ type UserDBLocked struct {
 	// localGroupEntries holds the current group entries.
 	localGroupEntries []types.GroupEntry
 	// localGroupInvalidEntries holds the current group invalid entries.
-	localGroupInvalidEntries []*string
+	localGroupInvalidEntries []invalidEntry
 
 	// options to set the local entries context.
 	options options

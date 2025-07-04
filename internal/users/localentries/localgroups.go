@@ -111,7 +111,7 @@ func UpdateGroups(ctx context.Context, username string, newGroups []string, oldG
 	return saveLocalGroups(ctx, allGroups)
 }
 
-func parseLocalGroups(groupPath string) (groups []types.GroupEntry, invalidEntries []*string, err error) {
+func parseLocalGroups(groupPath string) (groups []types.GroupEntry, invalidEntries []invalidEntry, err error) {
 	defer decorate.OnError(&err, "could not fetch existing local group")
 
 	log.Debugf(context.Background(), "Reading groups from %q", groupPath)
@@ -125,18 +125,18 @@ func parseLocalGroups(groupPath string) (groups []types.GroupEntry, invalidEntri
 	// Format of a line composing the group file is:
 	// group_name:password:group_id:user1,…,usern
 	scanner := bufio.NewScanner(f)
-	for line := 0; scanner.Scan(); line++ {
-		t := strings.TrimSpace(scanner.Text())
-		if t == "" || t[0] == '#' {
-			invalidEntries = append(invalidEntries, &t)
+	for lineNum := 0; scanner.Scan(); lineNum++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || line[0] == '#' {
+			invalidEntries = append(invalidEntries, invalidEntry{lineNum: lineNum, line: line})
 			continue
 		}
 
-		elems := strings.SplitN(t, ":", 4)
+		elems := strings.SplitN(line, ":", 4)
 		if len(elems) < 4 {
 			log.Errorf(context.Background(),
-				"Malformed entry in group file (should have 4 separators, got %d): %q", len(elems), t)
-			invalidEntries = append(invalidEntries, &t)
+				"Malformed entry in group file (should have 4 separators, got %d): %q", len(elems), line)
+			invalidEntries = append(invalidEntries, invalidEntry{lineNum: lineNum, line: line})
 			continue
 		}
 
@@ -145,8 +145,8 @@ func parseLocalGroups(groupPath string) (groups []types.GroupEntry, invalidEntri
 		gid, err := strconv.ParseUint(gidValue, 10, 0)
 		if err != nil || gid > math.MaxUint32 {
 			log.Errorf(context.Background(),
-				"Failed parsing entry %q, unexpected GID value: %v", t, err)
-			invalidEntries = append(invalidEntries, &t)
+				"Failed parsing entry %q, unexpected GID value: %v", line, err)
+			invalidEntries = append(invalidEntries, invalidEntry{lineNum: lineNum, line: line})
 			continue
 		}
 
@@ -155,7 +155,6 @@ func parseLocalGroups(groupPath string) (groups []types.GroupEntry, invalidEntri
 			users = strings.Split(usersValue, ",")
 		}
 
-		invalidEntries = append(invalidEntries, nil)
 		groups = append(groups, types.GroupEntry{
 			Name:   name,
 			Passwd: passwd,
@@ -190,12 +189,9 @@ func formatGroupEntries(ctx context.Context, groups []types.GroupEntry) string {
 		return group.String()
 	})
 
-	for line, entry := range GetUserDBLocked(ctx).localGroupInvalidEntries {
-		if entry == nil {
-			continue
-		}
-		fmt.Println("Inserting", entry, "at", min(line, len(groupLines)-1))
-		groupLines = slices.Insert(groupLines, min(line, len(groupLines)-1), *entry)
+	for _, entry := range GetUserDBLocked(ctx).localGroupInvalidEntries {
+		fmt.Println("Inserting", entry, "at", min(entry.lineNum, len(groupLines)-1))
+		groupLines = slices.Insert(groupLines, min(entry.lineNum, len(groupLines)-1), entry.line)
 	}
 
 	// Add final new line to the group file.
