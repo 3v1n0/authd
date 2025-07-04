@@ -190,7 +190,6 @@ func formatGroupEntries(ctx context.Context, groups []types.GroupEntry) string {
 	})
 
 	for _, entry := range GetUserDBLocked(ctx).localGroupInvalidEntries {
-		fmt.Println("Inserting", entry, "at", min(entry.lineNum, len(groupLines)-1))
 		groupLines = slices.Insert(groupLines, min(entry.lineNum, len(groupLines)-1), entry.line)
 	}
 
