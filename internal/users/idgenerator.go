@@ -43,7 +43,7 @@ type IDGenerator struct {
 
 // Avoid to loop forever if we can't find an UID for the user, it's just better
 // to fail after a limit is reached than hang or crash.
-const maxIDGenerateIterations = 1000000
+const maxIDGenerateIterations = 100000
 
 // GenerateUID generates a random UID in the configured range.
 func (g *IDGenerator) GenerateUID(ctx context.Context, owner IDOwner) (uint32, func(), error) {
@@ -76,6 +76,10 @@ type generateID struct {
 }
 
 func (g *IDGenerator) generateID(ctx context.Context, owner IDOwner, args generateID) (id uint32, cleanup func(), err error) {
+	if args.minID > args.maxID {
+		return 0, nil, errors.New("minID must be less than or equal to maxID")
+	}
+
 	usedIDs, err := args.getUsedIDs(ctx, owner)
 	if err != nil {
 		return 0, nil, err
@@ -86,7 +90,9 @@ func (g *IDGenerator) generateID(ctx context.Context, owner IDOwner, args genera
 
 	usedIDs = normalizeUsedIDs(usedIDs, args.minID, args.maxID)
 
-	for range maxIDGenerateIterations {
+	maxAttempts := min(maxIDGenerateIterations, args.maxID-args.minID)
+
+	for range maxAttempts {
 		id, err := getIDCandidate(args.minID, args.maxID, usedIDs)
 		if err != nil {
 			return 0, nil, err
@@ -113,14 +119,10 @@ func (g *IDGenerator) generateID(ctx context.Context, owner IDOwner, args genera
 	}
 
 	return 0, nil, fmt.Errorf("failed to find a valid %s for after %d attempts",
-		args.idType, maxIDGenerateIterations)
+		args.idType, maxAttempts)
 }
 
 func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (uint32, error) {
-	if minID > maxID {
-		return 0, errors.New("minID must be less than or equal to maxID")
-	}
-
 	// Find the highest used ID, if any
 	var highestUsed uint32
 	if minID > 0 {
