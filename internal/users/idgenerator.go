@@ -56,33 +56,6 @@ const (
 	uidT16MinusOne uint32 = math.MaxUint16
 )
 
-// Systemd used ranges.
-const (
-	// FIXME: Use idgenerator to define them all.
-	// Some are not yet available in noble though.
-
-	// Human users (homed) (nss-systemd).
-	nssSystemdHomedMin uint32 = 60001
-	nssSystemdHomedMax uint32 = 60513
-
-	// Host users mapped into containers (systemd-nspawn).
-	systemdContainersUsersMin uint32 = 60514
-	systemdContainersUsersMax uint32 = 60577
-
-	// Dynamic service users (nss-systemd).
-	nssSystemdDynamicServiceUsersMin = SystemdDynamicUidMin
-	nssSystemdDynamicServiceUsersMax = SystemdDynamicUidMax
-
-	// Container UID ranges (nss-systemd).
-	// According to https://systemd.io/UIDS-GIDS/, systemd-nspawn will check NSS
-	// for collisions before allocating a UID in this range, which would make it
-	// safe for us to use. However, it also says that, for performance reasons,
-	// it will only check for the first UID of the range it allocates, so we do
-	// need to avoid using the whole range.
-	nssSystemdContainerMin = SystemdContainerUidBaseMin
-	nssSystemdContainerMax = SystemdContainerUidBaseMax
-)
-
 // GenerateUID generates a random UID in the configured range.
 func (g *IDGenerator) GenerateUID(lockedEntries *localentries.UserDBLocked, owner IDOwner) (uint32, func(), error) {
 	return g.generateID(lockedEntries, owner, generateID{
@@ -118,11 +91,6 @@ func (g *IDGenerator) generateID(lockedEntries *localentries.UserDBLocked, owner
 		return 0, nil, errors.New("minID must be less than or equal to maxID")
 	}
 
-	args.minID = adjustIDForSafeRanges(args.minID)
-	if args.minID > args.maxID {
-		return 0, nil, errors.New("no usable ID in range")
-	}
-
 	usedIDs, err := args.getUsedIDs(lockedEntries, owner)
 	if err != nil {
 		return 0, nil, err
@@ -130,6 +98,9 @@ func (g *IDGenerator) generateID(lockedEntries *localentries.UserDBLocked, owner
 
 	// Add pending IDs to the used IDs to ensure we don't generate the same ID again
 	usedIDs = append(usedIDs, g.pendingIDs...)
+
+	// Add system reserved IDs to the used IDs, so we don't generate them.
+	usedIDs = append(usedIDs, rootID, nobodyID, uidT32MinusOne, uidT16MinusOne)
 
 	usedIDs = normalizeUsedIDs(usedIDs, args.minID, args.maxID)
 
@@ -139,13 +110,6 @@ func (g *IDGenerator) generateID(lockedEntries *localentries.UserDBLocked, owner
 		id, pos, err := getIDCandidate(args.minID, args.maxID, usedIDs)
 		if err != nil {
 			return 0, nil, err
-		}
-
-		if !isReservedID(id) {
-			// Keep track of the id, but preserving usedIDs sorted, since we
-			// use the binary search to add elements to it.
-			usedIDs = slices.Insert(usedIDs, pos, id)
-			continue
 		}
 
 		available, err := args.isAvailableID(lockedEntries, id)
@@ -163,12 +127,6 @@ func (g *IDGenerator) generateID(lockedEntries *localentries.UserDBLocked, owner
 			continue
 		}
 
-		if id > maxSuggestedID {
-			log.Warningf(context.Background(),
-				"Generated ID %d is outside the signed 32-bit range, "+
-					"it may not work as expected", id)
-		}
-
 		g.pendingIDs = append(g.pendingIDs, id)
 		cleanup = func() {
 			idx := slices.Index(g.pendingIDs, id)
@@ -179,80 +137,6 @@ func (g *IDGenerator) generateID(lockedEntries *localentries.UserDBLocked, owner
 
 	return 0, nil, fmt.Errorf("failed to find a valid %s for after %d attempts",
 		args.idType, maxAttempts)
-}
-
-// isReservedID checks if the ID is a value is not a linux system reserved value.
-// Note that we are not listing here the system IDs (1…999), as this the job
-// for the [Manager], being a wrong configuration.
-// See: https://systemd.io/UIDS-GIDS/
-func isReservedID(id uint32) bool {
-	switch id {
-	case rootID:
-		// The root super-user.
-		log.Warningf(context.Background(),
-			"ID %d cannot be used: it is the root super-user.", id)
-		return false
-
-	case nobodyID:
-		// Nobody user.
-		log.Warningf(context.Background(),
-			"ID %d cannot be used: it is nobody user.", id)
-		return false
-
-	case uidT32MinusOne:
-		// uid_t-1 (32): Special non-valid ID for `setresuid` and `chown`.
-		log.Warningf(context.Background(),
-			"ID %d cannot be used: it is uid_t-1 (32bit).")
-		return false
-
-	case uidT16MinusOne:
-		// uid_t-1 (16): As before, but comes from legacy 16bit programs.
-		log.Warningf(context.Background(),
-			"ID %d cannot be used: it is uid_t-1 (16bit)", id)
-		return false
-
-	default:
-		return true
-	}
-}
-
-// adjustIDForSafeRanges verifies if the ID value can be safely used, by
-// checking if it's part of any of the well known the ID ranges that can't be
-// used, as per being part of the linux (systemd) reserved ranges.
-// See (again) https://systemd.io/UIDS-GIDS/
-func adjustIDForSafeRanges(id uint32) (adjustedID uint32) {
-	initialID := id
-	defer func() {
-		if adjustedID == initialID {
-			return
-		}
-
-		log.Noticef(context.Background(),
-			"ID %d is within a range used by systemd and cannot be used; "+
-				"skipping to the next available ID (%d)", initialID, adjustedID)
-	}()
-
-	// Human users (homed) (nss-systemd) - adjacent to containers users!
-	if id >= nssSystemdHomedMin && id <= nssSystemdHomedMax {
-		id = nssSystemdHomedMax + 1
-	}
-
-	// Host users mapped into containers (systemd-nspawn) - adjacent to homed!
-	if id >= systemdContainersUsersMin && id <= systemdContainersUsersMax {
-		id = systemdContainersUsersMax + 1
-	}
-
-	// Dynamic service users (nss-systemd)
-	if id >= nssSystemdDynamicServiceUsersMin && id <= nssSystemdDynamicServiceUsersMax {
-		id = nssSystemdDynamicServiceUsersMax + 1
-	}
-
-	// Container UID ranges (nss-systemd)
-	if id >= nssSystemdContainerMin && id <= nssSystemdContainerMax {
-		id = nssSystemdContainerMax + 1
-	}
-
-	return id
 }
 
 func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDsPos int, err error) {
@@ -270,14 +154,7 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 	}
 
 	// Try IDs starting from the preferred ID up to the maximum ID.
-	for id := preferredID; ; id++ {
-		// Sanitize the ID to ensure that it's not in a restricted range.
-		id = adjustIDForSafeRanges(id)
-
-		if id > maxID {
-			break
-		}
-
+	for id := preferredID; id <= maxID; id++ {
 		if pos, found := slices.BinarySearch(usedIDs, id); !found {
 			return id, pos, nil
 		}
