@@ -56,6 +56,8 @@ const (
 	uidT16MinusOne uint32 = math.MaxUint16
 )
 
+var reservedIDs = []uint32{rootID, nobodyID, uidT32MinusOne, uidT16MinusOne}
+
 // GenerateUID generates a random UID in the configured range.
 func (g *IDGenerator) GenerateUID(lockedEntries *localentries.UserDBLocked, owner IDOwner) (uint32, func(), error) {
 	return g.generateID(lockedEntries, owner, generateID{
@@ -153,7 +155,7 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 	// Try IDs starting from the preferred ID up to the maximum ID.
 	// Overflows are avoided by the "id < math.MaxUint32" condition.
 	for id := preferredID; id <= maxID && id < math.MaxUint32; id++ {
-		if isReservedID(id) {
+		if slices.Contains(reservedIDs, id) {
 			continue
 		}
 
@@ -170,7 +172,7 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 	// preferredID is a uint32, so the condition must be false when
 	// id == math.MaxUint32).
 	for id := minID; id < preferredID && id <= maxID; id++ {
-		if isReservedID(id) {
+		if slices.Contains(reservedIDs, id) {
 			continue
 		}
 
@@ -183,13 +185,6 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 	}
 
 	return 0, -1, errors.New("no available ID in range")
-}
-
-func isReservedID(id uint32) bool {
-	return id == rootID ||
-		id == nobodyID ||
-		id == uidT32MinusOne ||
-		id == uidT16MinusOne
 }
 
 func (g *IDGenerator) isUIDAvailable(lockedEntries *localentries.UserDBLocked, uid uint32) (bool, error) {
