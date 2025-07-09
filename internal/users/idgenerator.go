@@ -48,7 +48,7 @@ type IDGenerator struct {
 // from other NSS sources when determining which candidates to exclude.
 const maxIDGenerateIterations = 1000
 
-// Reserved IDs.
+// Special Linux UIDs, see https://systemd.io/UIDS-GIDS/
 const (
 	rootID         uint32 = 0
 	nobodyID       uint32 = 65534
@@ -98,9 +98,6 @@ func (g *IDGenerator) generateID(lockedEntries *localentries.UserDBLocked, owner
 
 	// Add pending IDs to the used IDs to ensure we don't generate the same ID again
 	usedIDs = append(usedIDs, g.pendingIDs...)
-
-	// Add system reserved IDs to the used IDs, so we don't generate them.
-	usedIDs = append(usedIDs, rootID, nobodyID, uidT32MinusOne, uidT16MinusOne)
 
 	usedIDs = normalizeUsedIDs(usedIDs, args.minID, args.maxID)
 
@@ -155,7 +152,8 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 
 	// Try IDs starting from the preferred ID up to the maximum ID.
 	for id := preferredID; id <= maxID; id++ {
-		if pos, found := slices.BinarySearch(usedIDs, id); !found {
+		pos, found := slices.BinarySearch(usedIDs, id)
+		if !found && !isReservedID(id) {
 			return id, pos, nil
 		}
 
@@ -166,7 +164,8 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 
 	// Fallback: try IDs from the minimum ID up to the preferred ID.
 	for id := minID; id < preferredID && id <= maxID; id++ {
-		if pos, found := slices.BinarySearch(usedIDs, id); !found {
+		pos, found := slices.BinarySearch(usedIDs, id)
+		if !found && !isReservedID(id) {
 			return id, pos, nil
 		}
 
@@ -176,6 +175,10 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 	}
 
 	return 0, -1, errors.New("no available ID in range")
+}
+
+func isReservedID(id uint32) bool {
+	return id != rootID && id != nobodyID && id != uidT32MinusOne && id != uidT16MinusOne
 }
 
 func (g *IDGenerator) isUIDAvailable(lockedEntries *localentries.UserDBLocked, uid uint32) (bool, error) {
