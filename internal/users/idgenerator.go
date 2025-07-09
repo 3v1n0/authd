@@ -186,7 +186,7 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 }
 
 func isReservedID(id uint32) bool {
-	return id != rootID && id != nobodyID && id != uidT32MinusOne && id != uidT16MinusOne
+	return id == rootID || id == nobodyID || id == uidT32MinusOne || id == uidT16MinusOne
 }
 
 func (g *IDGenerator) isUIDAvailable(lockedEntries *localentries.UserDBLocked, uid uint32) (bool, error) {
