@@ -22,5 +22,7 @@ func CompareNewUserInfoWithUserInfoFromDB(newUserInfo, dbUserInfo types.UserInfo
 	return compareNewUserInfoWithUserInfoFromDB(newUserInfo, dbUserInfo)
 }
 
-func SystemdDynamicUIDMin() uint32 { return systemdDynamicUIDMin }
-func SystemdDynamicUIDMax() uint32 { return systemdDynamicUIDMax }
+const (
+	SystemdDynamicUIDMin = systemdDynamicUIDMin
+	SystemdDynamicUIDMax = systemdDynamicUIDMax
+)
