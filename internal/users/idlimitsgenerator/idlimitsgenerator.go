@@ -26,8 +26,8 @@ package users
 
 const (
 	// dynamic service users (nss-systemd).
-	systemdDynamicUidMin uint32 = {{ .DynamicUidMin }}
-	systemdDynamicUidMax uint32 = {{ .DynamicUidMax }}
+	systemdDynamicUIDMin uint32 = {{ .DynamicUidMin }}
+	systemdDynamicUIDMax uint32 = {{ .DynamicUidMax }}
 )
 `
 
