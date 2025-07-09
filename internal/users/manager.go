@@ -20,12 +20,6 @@ import (
 	"github.com/ubuntu/decorate"
 )
 
-const (
-	// UIDs/GIDs larger than a signed int32 are known to cause issues in various programs,
-	// so they should be avoided (see https://systemd.io/UIDS-GIDS/)
-	maxID = math.MaxInt32
-)
-
 // Config is the configuration for the user manager.
 type Config struct {
 	UIDMin uint32 `mapstructure:"uid_min" yaml:"uid_min"`
@@ -87,11 +81,13 @@ func NewManager(config Config, dbDir string, args ...Option) (m *Manager, err er
 		if config.GIDMin >= config.GIDMax {
 			return nil, fmt.Errorf("GID_MIN (%d) must be less than GID_MAX (%d)", config.GIDMin, config.GIDMax)
 		}
-		if config.UIDMax > maxID {
-			return nil, fmt.Errorf("UID_MAX (%d) must be less than or equal to %d", config.UIDMax, maxID)
+		// UIDs/GIDs larger than a signed int32 are known to cause issues in various programs,
+		// so they should be avoided (see https://systemd.io/UIDS-GIDS/)
+		if config.UIDMax > math.MaxInt32 {
+			return nil, fmt.Errorf("UID_MAX (%d) must be less than or equal to %d", config.UIDMax, math.MaxInt32)
 		}
-		if config.GIDMax > maxID {
-			return nil, fmt.Errorf("GID_MAX (%d) must be less than or equal to %d", config.GIDMax, maxID)
+		if config.GIDMax > math.MaxInt32 {
+			return nil, fmt.Errorf("GID_MAX (%d) must be less than or equal to %d", config.GIDMax, math.MaxInt32)
 		}
 
 		// Check that the ID ranges are not overlapping with systemd dynamic service users.
