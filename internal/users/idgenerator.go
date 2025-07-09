@@ -151,27 +151,35 @@ func getIDCandidate(minID, maxID uint32, usedIDs []uint32) (id uint32, uniqueIDs
 	}
 
 	// Try IDs starting from the preferred ID up to the maximum ID.
-	for id := preferredID; id <= maxID; id++ {
-		pos, found := slices.BinarySearch(usedIDs, id)
-		if !found && !isReservedID(id) {
-			return id, pos, nil
+	// Overflows are avoided by the "id < math.MaxUint32" condition.
+	for id := preferredID; id <= maxID && id < math.MaxUint32; id++ {
+		if isReservedID(id) {
+			continue
 		}
 
-		if id == math.MaxUint32 {
-			break // Avoid overflow
+		pos, found := slices.BinarySearch(usedIDs, id)
+		if found {
+			continue
 		}
+
+		return id, pos, nil
 	}
 
 	// Fallback: try IDs from the minimum ID up to the preferred ID.
+	// Overflows are avoided by "id < preferredID" condition, because
+	// preferredID is a uint32, so the condition must be false when
+	// id == math.MaxUint32).
 	for id := minID; id < preferredID && id <= maxID; id++ {
-		pos, found := slices.BinarySearch(usedIDs, id)
-		if !found && !isReservedID(id) {
-			return id, pos, nil
+		if isReservedID(id) {
+			continue
 		}
 
-		// Overflows are avoided by the loop condition (id < preferredID, where
-		// preferredID is a uint32, so the condition must be false when
-		// id == math.MaxUint32).
+		pos, found := slices.BinarySearch(usedIDs, id)
+		if found {
+			continue
+		}
+
+		return id, pos, nil
 	}
 
 	return 0, -1, errors.New("no available ID in range")
