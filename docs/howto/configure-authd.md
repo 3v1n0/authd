@@ -238,8 +238,35 @@ in `allowed_users`:
 owner = ""
 ```
 
-::::
-:::::
+(ref::config-user-groups)=
+## Configure user groups
+
+Some brokers support adding users to groups that are configured in the identity provider.
+
+> See the [group management reference](reference::group-management) for more details.
+
+In addition, you can configure extra groups for authd users.
+On login, the users are added to these groups automatically.
+Specify any extra groups in the `users` section of the broker
+configuration file:
+
+```ini
+[users]
+## A comma-separated list of local groups which authd users will be
+## added to upon login.
+## Example: extra_groups = users
+#extra_groups =
+```
+
+There is also an `owner_extra_groups` option for specifying additional local groups,
+to which only the user with the [owner role](#configure-allowed-users) is added:
+
+```ini
+## Like 'extra_groups', but only the user assigned the owner role
+## will be added to these groups.
+## Example: owner_extra_groups = sudo,lpadmin
+#owner_extra_groups =
+```
 
 ## Restart the broker
 
@@ -293,3 +320,48 @@ If you are using authd inside LXD containers, read our short guide on [how to
 use authd with LXD](howto::use-with-lxd), which outlines additional steps for
 configuring appropriate UID/GID ranges.
 ```
+
+## Configure password quality
+
+You can change authd's local password policy to ensure that users always set
+strong passwords.
+
+If your mobile device management (MDM) solution includes a compliance check for
+the passwords of authd users, you may also need to configure authd's password
+policy so that it matches that of the MDM.
+
+authd depends on the libpwquality library, which supports configuring password
+quality.
+
+To configure the local password policy for authd, create a drop file in
+`/etc/security/pwquality.conf.d/`.
+This will override the default values in `/etc/security/pwquality.conf`.
+
+First, create a directory for the custom configuration file:
+
+```shell
+sudo mkdir -p /etc/security/pwquality.conf.d/
+```
+
+Then edit the file to add your settings.
+
+```shell
+sudoedit /etc/security/pwquality.conf.d/99_custom-options.conf
+```
+
+For example, if your policy requires that passwords have a 14 character minimum,
+edit the drop file to set the value for `minlen`:
+
+```{code-block} diff
+:caption: /etc/security/pwquality.conf.d/99_custom-options.conf
+# This file overrides the defaults set in /etc/security/pwquality.conf
+# Refer to the pwquality file for additional configuration options.
+# Minimum acceptable size for the new password (plus one if
+# credits are not disabled which is the default). (See pam_cracklib manual.)
+# Cannot be set to lower value than 6 (default is 8).
+minlen = 14
+```
+
+> The [man pages](https://manpages.ubuntu.com/manpages/noble/man5/pwquality.conf.5.html)
+provide a full list of configuration options for the libpwquality library.
+
