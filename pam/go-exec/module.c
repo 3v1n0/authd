@@ -39,7 +39,6 @@ typedef enum _ActionType {
 typedef struct
 {
   /* Per module-instance data */
-  pam_handle_t *pamh;
   GDBusServer  *server;
   GMainContext *main_context;
   GCancellable *cancellable;
@@ -50,6 +49,7 @@ typedef struct
 /* Per action data, protected by the static mutex */
 typedef struct _ActionData
 {
+  pam_handle_t    *pamh;
   ModuleData      *module_data;
   GMainContext    *action_context;
 
@@ -443,7 +443,6 @@ setup_shared_module_data (pam_handle_t *pamh)
       return NULL;
     }
 
-  module_data->pamh = pamh;
   module_data->cancellable = g_cancellable_new ();
 
   return module_data;
@@ -554,7 +553,7 @@ on_pam_method_call (GDBusConnection       *connection,
                     void                  *user_data)
 {
   ActionData *action_data = user_data;
-  pam_handle_t *pamh = action_data->module_data->pamh;
+  pam_handle_t *pamh = action_data->pamh;
 
   if (is_debug_logging_enabled ())
     {
@@ -717,7 +716,7 @@ on_pam_method_call (GDBusConnection       *connection,
       prompt_data = g_new0 (PromptInvocationData, 1);
 
       *prompt_data = (PromptInvocationData){
-        .pamh = action_data->module_data->pamh,
+        .pamh = action_data->pamh,
         .cancellable = g_object_ref (action_data->cancellable),
 #ifdef AUTHD_TEST_MODULE
         .main_thread = action_data->main_thread,
@@ -780,7 +779,7 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
   g_autoptr(GDBusNodeInfo) node = NULL;
   g_autoptr(GError) error = NULL;
   ActionData *action_data = user_data;
-  pam_handle_t *pamh = action_data->module_data->pamh;
+  pam_handle_t *pamh = action_data->pamh;
   GCredentials *credentials;
   pid_t client_pid;
 
@@ -868,8 +867,9 @@ on_new_connection (G_GNUC_UNUSED GDBusServer *server,
 }
 
 static GDBusServer *
-setup_dbus_server (ModuleData *module_data,
-                   GError    **error)
+setup_dbus_server (pam_handle_t *pamh,
+                   ModuleData   *module_data,
+                   GError      **error)
 {
   GDBusServer *server = NULL;
   g_autoptr(GMainContextPusher) context_pusher G_GNUC_UNUSED = NULL;
@@ -894,7 +894,7 @@ setup_dbus_server (ModuleData *module_data,
 
   context_pusher = g_main_context_pusher_new (main_context);
 
-  pam_get_item (module_data->pamh, PAM_SERVICE, (const void **) &service_name);
+  pam_get_item (pamh, PAM_SERVICE, (const void **) &service_name);
   guid = g_dbus_generate_guid ();
   server_addr = g_strdup_printf ("unix:abstract=authd-%s-%s", service_name, guid);
 
@@ -1051,7 +1051,11 @@ do_pam_action_thread (pam_handle_t *pamh,
 {
   ModuleData *module_data = NULL;
   g_autoptr(GMutexLocker) G_GNUC_UNUSED locker = NULL;
-  g_auto(ActionData) action_data = {.current_action = action, 0};
+  g_auto(ActionData) action_data = {
+    .current_action = action,
+    .pamh = pamh,
+    0
+  };
   g_autoptr(GMainContextPusher) context_pusher G_GNUC_UNUSED = NULL;
   g_autoptr(GMainContext) main_context = NULL;
   g_autoptr(GError) error = NULL;
@@ -1160,7 +1164,7 @@ do_pam_action_thread (pam_handle_t *pamh,
       return PAM_MODULE_UNKNOWN;
     }
 
-  server = setup_dbus_server (module_data, &error);
+  server = setup_dbus_server (pamh, module_data, &error);
   if (!server)
     {
       notify_error (pamh, action, "can't create D-Bus connection: %s", error->message);
