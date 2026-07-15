@@ -152,7 +152,7 @@ func newUIModelForClients(mTx pam.ModuleTransaction, clientType PamClientType, m
 	}
 
 	m.userSelectionModel = newUserSelectionModel(m.pamMTx, m.clientType)
-	m.brokerSelectionModel = newBrokerSelectionModel(m.client, m.clientType)
+	m.brokerSelectionModel = newBrokerSelectionModel(m.pamMTx, m.client, m.clientType)
 	m.authModeSelectionModel = newAuthModeSelectionModel(m.clientType)
 	m.authenticationModel = newAuthenticationModel(m.client, m.clientType)
 	m.healthCheckCancel = func() {}
@@ -276,7 +276,7 @@ func (m uiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Got user and brokers? Time to auto or manually select.
-		return m, AutoSelectForUser(m.client, m.username())
+		return m, AutoSelectForUser(m.client, m.pamMTx, m.username())
 
 	case BrokerSelected:
 		safeMessageDebug(msg)

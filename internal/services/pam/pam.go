@@ -30,26 +30,47 @@ type Service struct {
 	userManager       *users.Manager
 	brokerManager     *brokers.Manager
 	permissionManager *permissions.Manager
+	config            Config
 
 	authd.UnimplementedPAMServer
 }
 
 // NewService returns a new PAM GRPC service.
-func NewService(ctx context.Context, userManager *users.Manager, brokerManager *brokers.Manager, permissionManager *permissions.Manager) Service {
+func NewService(ctx context.Context, userManager *users.Manager, brokerManager *brokers.Manager, permissionManager *permissions.Manager, pamConfig Config) Service {
 	log.Debug(ctx, "Building new gRPC PAM service")
 
 	return Service{
+		config:            pamConfig,
 		userManager:       userManager,
 		brokerManager:     brokerManager,
 		permissionManager: permissionManager,
 	}
 }
 
+func (s Service) isBrokerEnabledForService(brokerId, serviceName string) bool {
+	if brokerId != brokers.LocalBrokerName {
+		return true
+	}
+
+	cv := s.config.GetServiceConfigValues(serviceName)
+	return !cv.DisableLocalStack
+}
+
 // AvailableBrokers returns the list of all brokers with their details.
-func (s Service) AvailableBrokers(ctx context.Context, _ *authd.Empty) (*authd.ABResponse, error) {
+func (s Service) AvailableBrokers(ctx context.Context, req *authd.ABRequest) (*authd.ABResponse, error) {
 	var r authd.ABResponse
 
+	serviceName := ""
+	// fallback for old clients.
+	// TODO: Check it's really needed...
+	if req != nil {
+		serviceName = req.ServiceName
+	}
+
 	for _, b := range s.brokerManager.AvailableBrokers() {
+		if !s.isBrokerEnabledForService(b.ID, serviceName) {
+			continue
+		}
 		r.BrokersInfos = append(r.BrokersInfos, &authd.ABResponse_BrokerInfo{
 			Id:        b.ID,
 			Name:      b.Name,
@@ -62,7 +83,14 @@ func (s Service) AvailableBrokers(ctx context.Context, _ *authd.Empty) (*authd.A
 
 // GetPreviousBroker returns the previous broker set for a given user, if any.
 // If the user is not in our cache/database, it will try to check if it’s on the system, and return then "local".
-func (s Service) GetPreviousBroker(ctx context.Context, req *authd.GPBRequest) (*authd.GPBResponse, error) {
+func (s Service) GetPreviousBroker(ctx context.Context, req *authd.GPBRequest) (rsp *authd.GPBResponse, err error) {
+	defer func() {
+		if rsp != nil && !s.isBrokerEnabledForService(rsp.PreviousBroker, req.ServiceName) {
+			rsp = nil
+			err = status.Error(codes.PermissionDenied, "local broker is not allowed")
+		}
+	}()
+
 	// Use in memory cache first
 	if b := s.brokerManager.BrokerForUser(req.GetUsername()); b != nil {
 		return &authd.GPBResponse{PreviousBroker: b.ID}, nil
@@ -140,6 +168,9 @@ func (s Service) SelectBroker(ctx context.Context, req *authd.SBRequest) (resp *
 	}
 	if lang == "" {
 		lang = "C"
+	}
+	if !s.isBrokerEnabledForService(brokerID, req.ServiceName) {
+		return nil, status.Error(codes.InvalidArgument, "broker %q is not allowed for service %q")
 	}
 
 	var mode string

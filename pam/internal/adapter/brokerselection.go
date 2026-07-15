@@ -3,10 +3,12 @@ package adapter
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	tea_list "github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/msteinert/pam/v2"
+	"github.com/ubuntu/authd/internal/brokers"
 	"github.com/ubuntu/authd/internal/proto/authd"
 	"github.com/ubuntu/authd/log"
 	"github.com/ubuntu/authd/pam/internal/proto"
@@ -16,6 +18,7 @@ import (
 type brokerSelectionModel struct {
 	List
 
+	pamMTx pam.ModuleTransaction
 	client authd.PAMClient
 
 	availableBrokers []*authd.ABResponse_BrokerInfo
@@ -44,9 +47,10 @@ func selectBroker(brokerID string) tea.Cmd {
 }
 
 // newBrokerSelectionModel initializes an empty list with default options of brokerSelectionModel.
-func newBrokerSelectionModel(client authd.PAMClient, clientType PamClientType) brokerSelectionModel {
+func newBrokerSelectionModel(pamMTx pam.ModuleTransaction, client authd.PAMClient, clientType PamClientType) brokerSelectionModel {
 	return brokerSelectionModel{
 		List:   NewList(clientType, "Select your provider"),
+		pamMTx: pamMTx,
 		client: client,
 	}
 }
@@ -60,10 +64,10 @@ func (m brokerSelectionModel) Init() tea.Cmd {
 func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case supportedUILayoutsSet:
-		return m, getAvailableBrokers(m.client)
+		return m, m.getAvailableBrokers()
 
 	case brokersListReceived:
-		safeMessageDebug(msg)
+		safeMessageDebug(msg, "Brokers %#v", msg.brokers)
 		if len(msg.brokers) == 0 {
 			return m, sendEvent(pamError{
 				status: pam.ErrAuthinfoUnavail,
@@ -125,11 +129,12 @@ func (m brokerSelectionModel) Update(msg tea.Msg) (brokerSelectionModel, tea.Cmd
 }
 
 // AutoSelectForUser requests if any previous broker was used by this user to automatically selects it.
-func AutoSelectForUser(client authd.PAMClient, username string) tea.Cmd {
+func AutoSelectForUser(client authd.PAMClient, pamMtx pam.ModuleTransaction, username string) tea.Cmd {
 	return func() tea.Msg {
 		r, err := client.GetPreviousBroker(context.TODO(),
 			&authd.GPBRequest{
-				Username: username,
+				ServiceName: ServiceName(pamMtx),
+				Username:    username,
 			})
 		// We keep a chance to manually select the broker, not a blocker issue.
 		if err != nil {
@@ -137,6 +142,15 @@ func AutoSelectForUser(client authd.PAMClient, username string) tea.Cmd {
 			return brokerSelectionRequired{}
 		}
 		brokerID := r.GetPreviousBroker()
+
+		if brokerID == brokers.LocalBrokerName && isLocalBrokerAllowed(pamMtx) {
+			return pamError{
+				status: pam.ErrCredUnavail,
+				msg: fmt.Sprintf("Local broker is not allowed for %s",
+					ServiceName(pamMtx)),
+			}
+		}
+
 		if brokerID == "" {
 			return brokerSelectionRequired{}
 		}
@@ -155,9 +169,21 @@ type brokerItem struct {
 func (i brokerItem) FilterValue() string { return "" }
 
 // getAvailableBrokers returns available broker list from authd.
-func getAvailableBrokers(client authd.PAMClient) tea.Cmd {
+func (m brokerSelectionModel) getAvailableBrokers() tea.Cmd {
+	// userName, err := m.pamMTx.GetItem(pam.User)
+	// if cmd := maybeSendPamError(err); cmd != nil {
+	// 	return cmd
+	// }
+	// if userName == "" {
+	// 	// Retry...
+	// 	tea.Sequence(
+	// 		tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return nil }),
+	// 		m.getAvailableBrokers())
+	// }
 	return func() tea.Msg {
-		brokersInfo, err := client.AvailableBrokers(context.TODO(), &authd.Empty{})
+		brokersInfo, err := m.client.AvailableBrokers(context.TODO(), &authd.ABRequest{
+			ServiceName: ServiceName(m.pamMTx),
+		})
 		if err != nil {
 			return pamError{
 				status: pam.ErrSystem,
@@ -165,9 +191,20 @@ func getAvailableBrokers(client authd.PAMClient) tea.Cmd {
 			}
 		}
 
-		return brokersListReceived{
-			brokers: brokersInfo.BrokersInfos,
+		brokersInfos := brokersInfo.BrokersInfos
+		for i, b := range brokersInfos {
+			fmt.Println("GOt broker", i, b.Id)
 		}
+		if !isLocalBrokerAllowed(m.pamMTx) {
+			brokersInfos = slices.DeleteFunc(brokersInfos, func(b *authd.ABResponse_BrokerInfo) bool {
+				return b.Id == brokers.LocalBrokerName
+			})
+		}
+		for i, b := range brokersInfos {
+			fmt.Println("Now returning broker", i, b.Id)
+		}
+
+		return brokersListReceived{brokersInfos}
 	}
 }
 

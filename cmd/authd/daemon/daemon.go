@@ -11,6 +11,7 @@ import (
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/daemon"
 	"github.com/ubuntu/authd/internal/services"
+	"github.com/ubuntu/authd/internal/services/pam"
 	"github.com/ubuntu/authd/internal/users"
 	"github.com/ubuntu/authd/log"
 	"github.com/ubuntu/decorate"
@@ -46,6 +47,7 @@ type daemonConfig struct {
 	Verbosity   int
 	Paths       systemPaths
 	UsersConfig *users.Config `mapstructure:",squash" yaml:",inline"`
+	PamConfig   *pam.Config   `mapstructure:"pam" yaml:"pam"`
 }
 
 // New registers commands and return a new App.
@@ -72,6 +74,7 @@ func New() *App {
 					Socket:      "",
 				},
 				UsersConfig: &users.DefaultConfig,
+				PamConfig:   &pam.DefaultConfig,
 			}
 
 			// Install and unmarshall configuration
@@ -128,8 +131,13 @@ func (a *App) serve(config daemonConfig) error {
 		// This is an assert, since we assume that the daemonConfig on [New] is properly defined.
 		panic("Users config must be set! This is a programmer error.")
 	}
+	if config.PamConfig == nil {
+		// This is an assert, since we assume that the daemonConfig on [New] is properly defined.
+		panic("PAM config must be set! This is a programmer error.")
+	}
 
-	m, err := services.NewManager(ctx, dbDir, config.Paths.BrokersConf, config.Brokers, *config.UsersConfig)
+	m, err := services.NewManager(ctx, dbDir, config.Paths.BrokersConf, config.Brokers,
+		*config.UsersConfig, *config.PamConfig)
 	if err != nil {
 		close(a.ready)
 		return err

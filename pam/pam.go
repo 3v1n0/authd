@@ -353,12 +353,7 @@ func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []
 	logArgsIssues()
 
 	// We ignore AcctMgmt in case we're loading the module through the exec client
-	serviceName, err := mTx.GetItem(pam.Service)
-	if err != nil {
-		log.Warningf(context.TODO(), "Impossible to get PAM service name: %v", err)
-		return pam.ErrIgnore
-	}
-	if serviceName == gdmServiceName && !gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
+	if adapter.ServiceName(mTx) == gdmServiceName && !gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
 		return pam.ErrIgnore
 	}
 

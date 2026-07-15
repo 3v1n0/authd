@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/ubuntu/authd/examplebroker"
 	"github.com/ubuntu/authd/internal/proto/authd"
+	authd_pam "github.com/ubuntu/authd/internal/services/pam"
 	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	localgroupstestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
@@ -193,7 +194,7 @@ func TestNativeAuthenticate(t *testing.T) {
 			},
 			clientOptions: clientOptions{
 				PamUser:        examplebroker.UserIntegrationPreCheckPrefix + "ssh-service-qr-code",
-				PamServiceName: "sshd",
+				PamServiceName: authd_pam.SSHServiceName,
 			},
 		},
 		"Authenticate_user_and_reset_password_while_enforcing_policy": {
@@ -276,7 +277,7 @@ func TestNativeAuthenticate(t *testing.T) {
 			tape: "simple_ssh_auth",
 			clientOptions: clientOptions{
 				PamUser:        examplebroker.UserIntegrationPreCheckPrefix + "ssh-service",
-				PamServiceName: "sshd",
+				PamServiceName: authd_pam.SSHServiceName,
 			},
 		},
 		"Authenticate_user_on_ssh_service_with_custom_name_and_connection_env": {
@@ -365,7 +366,7 @@ func TestNativeAuthenticate(t *testing.T) {
 		"Exit_if_user_is_not_pre-checked_on_ssh_service": {
 			tape: "local_ssh",
 			clientOptions: clientOptions{
-				PamServiceName: "sshd",
+				PamServiceName: authd_pam.SSHServiceName,
 			},
 		},
 		"Exit_authd_if_no_broker_is_configured": {

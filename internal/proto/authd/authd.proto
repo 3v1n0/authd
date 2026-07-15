@@ -7,7 +7,7 @@ message Empty {
 }
 
 service PAM {
-  rpc AvailableBrokers(Empty) returns (ABResponse);
+  rpc AvailableBrokers(ABRequest) returns (ABResponse);
   rpc GetPreviousBroker(GPBRequest) returns (GPBResponse);
 
   rpc SelectBroker(SBRequest) returns (SBResponse);
@@ -19,8 +19,13 @@ service PAM {
   rpc SetDefaultBrokerForUser(SDBFURequest) returns (Empty);
 }
 
+message ABRequest {
+  string serviceName = 1;
+}
+
 message GPBRequest {
   string username = 1;
+  string serviceName = 2;
 }
 
 message GPBResponse {
@@ -52,6 +57,7 @@ message SBRequest {
   string username = 2;
   string lang = 3;
   SessionMode mode = 4;
+  string serviceName = 5;
 }
 
 message SBResponse {

@@ -774,14 +774,14 @@ func (m nativeModel) isLocalBrokerAllowed() bool {
 		return false
 	}
 
-	if isSSHSession(m.pamMTx) {
-		// We don't enable the local broker by default under SSH for now, since
-		// it can open a security hole, to allow basic password access for
-		// non-authd users.
-		// We may allow controlling this through an option in future, but let's
-		// avoid this until explicitly supported.
-		return false
-	}
+	// if isSSHSession(m.pamMTx) {
+	// 	// We don't enable the local broker by default under SSH for now, since
+	// 	// it can open a security hole, to allow basic password access for
+	// 	// non-authd users.
+	// 	// We may allow controlling this through an option in future, but let's
+	// 	// avoid this until explicitly supported.
+	// 	return false
+	// }
 
 	return true
 }

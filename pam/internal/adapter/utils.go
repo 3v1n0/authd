@@ -14,14 +14,12 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/msteinert/pam/v2"
 	"github.com/ubuntu/authd/internal/proto/authd"
+	authd_pam "github.com/ubuntu/authd/internal/services/pam"
 	"github.com/ubuntu/authd/log"
 	"google.golang.org/protobuf/proto"
 )
 
 var (
-	isSSHSessionValue bool
-	isSSHSessionOnce  sync.Once
-
 	isTerminalTTYValue bool
 	isTerminalTTYOnce  sync.Once
 
@@ -63,32 +61,39 @@ func ServiceName(mTx pam.ModuleTransaction) string {
 		if err != nil {
 			log.Errorf(context.Background(), "Failed to get PAM service name: %v!", err)
 		}
+
+		if serviceNameValue == authd_pam.SSHServiceName {
+			return
+		}
+
+		// sanitize the service name in case we're handling a SSHD request from
+		// a differently named service file (it can be changed at compile time).
+		envs, err := mTx.GetEnvList()
+		if err != nil {
+			log.Errorf(context.Background(), "Failed to get PAM environment: %v!", err)
+			return
+		}
+		if _, ok := envs["SSH_CONNECTION"]; ok {
+			serviceNameValue = authd_pam.SSHServiceName
+			return
+		}
+		if _, ok := envs["SSH_AUTH_INFO_0"]; ok {
+			serviceNameValue = authd_pam.SSHServiceName
+			return
+		}
 	})
 	return serviceNameValue
 }
 
-func isSSHSessionFunc(mTx pam.ModuleTransaction) bool {
-	if ServiceName(mTx) == "sshd" {
-		return true
-	}
-
-	envs, err := mTx.GetEnvList()
-	if err != nil {
-		return false
-	}
-	if _, ok := envs["SSH_CONNECTION"]; ok {
-		return true
-	}
-	if _, ok := envs["SSH_AUTH_INFO_0"]; ok {
-		return true
-	}
-	return false
-}
-
 // isSSHSession checks if the module transaction is currently handling a SSH session.
 func isSSHSession(mTx pam.ModuleTransaction) bool {
-	isSSHSessionOnce.Do(func() { isSSHSessionValue = isSSHSessionFunc(mTx) })
-	return isSSHSessionValue
+	return ServiceName(mTx) == authd_pam.SSHServiceName
+}
+
+// isLocalBrokerAllowed returns whether the local broker should be enabled at all.
+// FIXME: This should be up to authd to keep a list of brokers based on service.
+func isLocalBrokerAllowed(mTx pam.ModuleTransaction) bool {
+	return !isSSHSession(mTx)
 }
 
 // GetPamTTY returns the file to that is used by PAM tty or stdin.

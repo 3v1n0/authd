@@ -25,6 +25,7 @@ import (
 	"github.com/ubuntu/authd/internal/grpcutils"
 	"github.com/ubuntu/authd/internal/proto/authd"
 	"github.com/ubuntu/authd/internal/services/errmessages"
+	authd_pam "github.com/ubuntu/authd/internal/services/pam"
 	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/internal/testutils/golden"
 	localgroupstestutils "github.com/ubuntu/authd/internal/users/localentries/testutils"
@@ -94,7 +95,8 @@ func testSSHAuthenticate(t *testing.T, sharedSSHd bool) {
 		nssLibrary, nssEnv = testutils.BuildRustNSSLib(t, true)
 		sshdPreloadLibraries = append(sshdPreloadLibraries, nssLibrary)
 		sshdPreloaderCFlags = append(sshdPreloaderCFlags,
-			"-DAUTHD_TESTS_SSH_USE_AUTHD_NSS")
+			"-DAUTHD_TESTS_SSH_USE_AUTHD_NSS",
+			"-DAUTHD_DEFAULT_SSH_PAM_SERVICE_NAME=", authd_pam.SSHServiceName)
 		nssEnv = append(nssEnv, nssTestEnvBase(t, nssLibrary)...)
 	} else if err != nil {
 		t.Logf("Using the dummy library to implement NSS: %v", err)
@@ -330,7 +332,7 @@ Wait@%dms`, sshDefaultFinalWaitTimeout),
 		"Exit_if_user_is_not_pre-checked_on_ssh_service": {
 			tape:                "local_ssh",
 			user:                examplebroker.UserIntegrationPrefix + "ssh-service-not-allowed",
-			pamServiceName:      "sshd",
+			pamServiceName:      authd_pam.SSHServiceName,
 			wantNotLoggedInUser: true,
 			tapeVariables: map[string]string{
 				vhsCommandFinalAuthWaitVariable: `Wait /Password:/`,

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,12 +48,16 @@ func GenerateTestConfig(t *testing.T, origConf *daemonConfig) string {
 	if conf.Paths.Socket == "" {
 		conf.Paths.Socket = filepath.Join(t.TempDir(), "authd.socket")
 	}
+	fmt.Printf("COnfig is %#v", conf)
 	d, err := yaml.Marshal(conf)
 	require.NoError(t, err, "Setup: could not marshal configuration for tests")
 
 	confPath := filepath.Join(t.TempDir(), "testconfig.yaml")
 	err = os.WriteFile(confPath, d, 0600)
 	require.NoError(t, err, "Setup: could not create configuration for tests")
+
+	b, _ := os.ReadFile(confPath)
+	fmt.Println("Written config\n", string(b))
 
 	return confPath
 }

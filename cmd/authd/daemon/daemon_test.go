@@ -15,6 +15,7 @@ import (
 	"github.com/ubuntu/authd/cmd/authd/daemon"
 	"github.com/ubuntu/authd/internal/consts"
 	"github.com/ubuntu/authd/internal/fileutils"
+	"github.com/ubuntu/authd/internal/services/pam"
 	"github.com/ubuntu/authd/internal/testutils"
 	"github.com/ubuntu/authd/internal/users"
 	"github.com/ubuntu/authd/log"
@@ -266,21 +267,38 @@ func TestAppGetRootCmd(t *testing.T) {
 }
 
 func TestConfigLoad(t *testing.T) {
+	writtenPamConfig := &pam.Config{
+		ConfigValues: pam.ConfigValues{
+			DisableLocalStack: false,
+		},
+		ServicesOverrides: map[string]pam.ConfigValues{
+			"foo": {DisableLocalStack: true},
+			"bar": {DisableLocalStack: true},
+		},
+	}
 	wantUsersConfig := &users.Config{UIDMin: 10001, UIDMax: 19000, GIDMax: 9999}
 	customizedSocketPath := filepath.Join(t.TempDir(), "mysocket")
 	var config daemon.DaemonConfig
 	config.Verbosity = 1
 	config.Paths.Socket = customizedSocketPath
+	config.PamConfig = writtenPamConfig
 	config.UsersConfig = wantUsersConfig
 
 	a, wait := startDaemon(t, &config)
 	defer wait()
 	defer a.Quit()
 
+	// The default value should be there!
+	wantPamConfig := writtenPamConfig
+	wantPamConfig.ServicesOverrides[pam.SSHServiceName] = pam.ConfigValues{
+		DisableLocalStack: true,
+	}
+
 	_, err := os.Stat(customizedSocketPath)
 	require.NoError(t, err, "Socket should exist")
 	require.Equal(t, 1, a.Config().Verbosity, "Verbosity is set from config")
 	require.Equal(t, wantUsersConfig, a.Config().UsersConfig, "Default Users Config")
+	require.Equal(t, wantPamConfig, a.Config().PamConfig, "Default PAM Config")
 }
 
 func TestAutoDetectConfig(t *testing.T) {
@@ -315,6 +333,7 @@ func TestAutoDetectConfig(t *testing.T) {
 	require.NoError(t, err, "Socket should exist")
 	require.Equal(t, 1, a.Config().Verbosity, "Verbosity is set from config")
 	require.Equal(t, &users.DefaultConfig, a.Config().UsersConfig, "Default PAM disabled services")
+	require.Equal(t, &pam.DefaultConfig, a.Config().PamConfig, "Default PAM disabled services")
 }
 
 func TestNoConfigSetDefaults(t *testing.T) {
@@ -329,6 +348,7 @@ func TestNoConfigSetDefaults(t *testing.T) {
 	require.Equal(t, consts.DefaultBrokersConfPath, a.Config().Paths.BrokersConf, "Default brokers configuration path")
 	require.Equal(t, consts.DefaultDatabaseDir, a.Config().Paths.Database, "Default database directory")
 	require.Equal(t, &users.DefaultConfig, a.Config().UsersConfig, "Default PAM Config")
+	require.Equal(t, &pam.DefaultConfig, a.Config().PamConfig, "Default PAM Config")
 	require.Equal(t, "", a.Config().Paths.Socket, "No socket address as default")
 }
 

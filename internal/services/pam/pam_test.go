@@ -74,9 +74,9 @@ func TestNewService(t *testing.T) {
 	require.NoError(t, err, "Setup: could not create user manager")
 
 	pm := permissions.New()
-	service := pam.NewService(context.Background(), m, globalBrokerManager, &pm)
+	service := pam.NewService(context.Background(), m, globalBrokerManager, &pm, pam.DefaultConfig)
 
-	brokers, err := service.AvailableBrokers(context.Background(), &authd.Empty{})
+	brokers, err := service.AvailableBrokers(context.Background(), &authd.ABRequest{})
 	require.NoError(t, err, "can’t create the service directly")
 	require.NotEmpty(t, brokers.BrokersInfos, "Service is created and can query the broker manager")
 }
@@ -85,11 +85,24 @@ func TestAvailableBrokers(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
+		serviceName        string
 		currentUserNotRoot bool
+		config             *pam.Config
 
 		wantErr bool
 	}{
 		"Success_getting_available_brokers": {},
+		"Success_getting_available_brokers_for_ssh_service": {
+			serviceName: pam.SSHServiceName,
+		},
+		"Success_getting_available_brokers_for_custom_service_without_local_broker": {
+			serviceName: "no-local-please",
+			config: &pam.Config{ServicesOverrides: map[string]pam.ConfigValues{
+				"no-local-please":       {DisableLocalStack: true},
+				"yes-local-please":      {DisableLocalStack: true},
+				"other-no-local-please": {DisableLocalStack: false},
+			}},
+		},
 
 		"Error_when_not_root": {currentUserNotRoot: true, wantErr: true},
 	}
@@ -98,9 +111,11 @@ func TestAvailableBrokers(t *testing.T) {
 			t.Parallel()
 
 			pm := newPermissionManager(t, tc.currentUserNotRoot)
-			client := newPamClient(t, nil, globalBrokerManager, &pm)
 
-			abResp, err := client.AvailableBrokers(context.Background(), &authd.Empty{})
+			client := newPamClientWithConfig(t, nil, globalBrokerManager, &pm, tc.config)
+			abResp, err := client.AvailableBrokers(context.Background(), &authd.ABRequest{
+				ServiceName: tc.serviceName,
+			})
 
 			if tc.wantErr {
 				require.Error(t, err, "AvailableBrokers should return an error, but did not")
@@ -731,7 +746,7 @@ func initBrokers() (brokerConfigPath string, cleanup func(), err error) {
 // newPAMClient returns a new GRPC PAM client for tests connected to brokerManager with the given database and
 // permissionmanager.
 // If the one passed is nil, this function will create the database and close it upon test teardown.
-func newPamClient(t *testing.T, m *users.Manager, brokerManager *brokers.Manager, pm *permissions.Manager) (client authd.PAMClient) {
+func newPamClientWithConfig(t *testing.T, m *users.Manager, brokerManager *brokers.Manager, pm *permissions.Manager, config *pam.Config) (client authd.PAMClient) {
 	t.Helper()
 
 	// socket path is limited in length.
@@ -749,7 +764,11 @@ func newPamClient(t *testing.T, m *users.Manager, brokerManager *brokers.Manager
 		t.Cleanup(func() { _ = m.Stop() })
 	}
 
-	service := pam.NewService(context.Background(), m, brokerManager, pm)
+	if config == nil {
+		config = &pam.DefaultConfig
+	}
+
+	service := pam.NewService(context.Background(), m, brokerManager, pm, *config)
 
 	grpcServer := grpc.NewServer(permissions.WithUnixPeerCreds(), grpc.ChainUnaryInterceptor(enableCheckGlobalAccess(service), errmessages.RedactErrorInterceptor))
 	authd.RegisterPAMServer(grpcServer, service)
@@ -769,6 +788,12 @@ func newPamClient(t *testing.T, m *users.Manager, brokerManager *brokers.Manager
 	t.Cleanup(func() { _ = conn.Close() }) // We don't care about the error on cleanup
 
 	return authd.NewPAMClient(conn)
+}
+
+func newPamClient(t *testing.T, m *users.Manager, brokerManager *brokers.Manager, pm *permissions.Manager) (client authd.PAMClient) {
+	t.Helper()
+
+	return newPamClientWithConfig(t, m, brokerManager, pm, nil)
 }
 
 // newPermissionManager factors out permission manager creation for tests.
