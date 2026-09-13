@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -267,4 +268,15 @@ func (b *Broker) SetSessionMFAFlowActive(sessionID string, flow *himmelblau.MFAF
 	}
 	s.mfaFlowActive = flow
 	return b.updateSession(sessionID, s)
+}
+
+// HandleIsAuthenticated runs handleIsAuthenticated synchronously with the
+// given context so tests can exercise cancellation handling directly;
+// through IsAuthenticated the outer ctx.Done() select returns first.
+func (b *Broker) HandleIsAuthenticated(ctx context.Context, sessionID string, authData map[string]string) (string, any) {
+	session, err := b.getSession(sessionID)
+	if err != nil {
+		return AuthDenied, unexpectedErrMsg("session not found")
+	}
+	return b.handleIsAuthenticated(ctx, &session, authData)
 }

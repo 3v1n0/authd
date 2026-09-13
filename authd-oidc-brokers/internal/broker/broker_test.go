@@ -5684,6 +5684,39 @@ func TestEntraAuthNonMFAError(t *testing.T) {
 	require.Equal(t, broker.AuthDenied, access, "non-MFAError from InitiateEntraAuth must deny")
 }
 
+// TestEntraAuthCancelledInitiation verifies that a request cancelled during
+// initiation (e.g. during the provider's transient-error backoff) is
+// reported as AuthCancelled instead of a denial or retry.
+func TestEntraAuthCancelledInitiation(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockEntraAuthProvider{
+		MockProvider: &testutils.MockProvider{},
+		initErr:      context.Canceled,
+	}
+
+	b := newBrokerForTests(t, &brokerForTestConfig{
+		ownerAllowed:          true,
+		firstUserBecomesOwner: true,
+		provider:              provider,
+		issuerURL:             defaultIssuerURL,
+	})
+
+	sessionID, key := newSessionForTests(t, b, "test-user@example.com", sessionmode.Login)
+	updateAuthModes(t, b, sessionID, authmodes.EntraAuth)
+
+	// The guard reads the request context, so the context must actually be
+	// cancelled. IsAuthenticated's own select would race ctx.Done() against
+	// the worker result, so drive handleIsAuthenticated directly.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	authData := map[string]string{broker.AuthDataSecret: encryptSecret(t, "password", key)}
+	access, data := b.HandleIsAuthenticated(ctx, sessionID, authData)
+	require.Equal(t, broker.AuthCancelled, access, "cancelled initiation must not be reported as a denial or retry")
+	require.Nil(t, data, "cancellation must not carry an error payload")
+}
+
 // TestEntraAuthNilFlowOrChallenge verifies that a nil flow/challenge
 // returned by InitiateEntraAuth (provider contract violation) returns
 // AuthDenied.
