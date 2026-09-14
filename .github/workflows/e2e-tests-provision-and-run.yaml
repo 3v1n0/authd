@@ -7,7 +7,7 @@ on:
         description: 'Hash of build-relevant files, used as cache key and concurrency group'
         type: string
         required: true
-      ubuntu-version:
+      ubuntu-release:
         required: true
         type: string
       force-fresh-image:
@@ -69,9 +69,9 @@ jobs:
         if: ${{ !inputs.force-fresh-image }}
         uses: actions/cache/restore@v6
         with:
-          path: ${{ env.ARTIFACTS_DIR }}/${{ env.VM_NAME_BASE }}-${{ inputs.ubuntu-version }}.qcow2
+          path: ${{ env.ARTIFACTS_DIR }}/${{ env.VM_NAME_BASE }}-${{ inputs.ubuntu-release }}.qcow2
           key: >-
-            e2e-runner-vm-${{ inputs.ubuntu-version }}-${{ hashFiles(
+            e2e-runner-vm-${{ inputs.ubuntu-release }}-${{ hashFiles(
               'e2e-tests/vm/**',
               '.github/actions/e2e-tests/set-up-ssh-keys/**',
               '.github/workflows/e2e-tests-provision-and-run.yaml',
@@ -103,7 +103,7 @@ jobs:
           export PATH="$(realpath "${{ env.E2E_TESTS_DIR }}/vm/helpers"):${PATH}"
           mkdir -p ${{ env.ARTIFACTS_DIR }}
           env VM_NAME_BASE="${{ env.VM_NAME_BASE }}" \
-            RELEASE="${{ inputs.ubuntu-version }}" \
+            RELEASE="${{ inputs.ubuntu-release }}" \
             ARTIFACTS_DIR="${{ env.ARTIFACTS_DIR }}" \
             SSH_PUBLIC_KEY_FILE="${{ steps.set-ssh-keys.outputs.keys-path }}/id_rsa.pub" \
             ./${{ env.E2E_TESTS_DIR }}/vm/provision-ubuntu.sh
@@ -115,16 +115,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -eu
-          gh cache delete e2e-runner-${{ inputs.ubuntu-version }} || true
+          gh cache delete e2e-runner-${{ inputs.ubuntu-release }} || true
           echo "Previous cache (if any) deleted"
 
       - name: Cache the VM image
         uses: actions/cache/save@v6
         if: always() && steps.provision-vm.outcome == 'success'
         with:
-          path: ${{ env.ARTIFACTS_DIR }}/${{ env.VM_NAME_BASE }}-${{ inputs.ubuntu-version }}.qcow2
+          path: ${{ env.ARTIFACTS_DIR }}/${{ env.VM_NAME_BASE }}-${{ inputs.ubuntu-release }}.qcow2
           key: >-
-            e2e-runner-vm-${{ inputs.ubuntu-version }}-${{ hashFiles(
+            e2e-runner-vm-${{ inputs.ubuntu-release }}-${{ hashFiles(
               'e2e-tests/vm/**',
               '.github/actions/e2e-tests/set-up-ssh-keys/**',
               '.github/workflows/e2e-tests-provision-and-run.yaml',
@@ -139,9 +139,9 @@ jobs:
       - name: Upload VM image as OCI artifact
         if: steps.provision-vm.outcome == 'success' || steps.restore-cache.outputs.cache-hit == 'true'
         env:
-          IMAGE_PATH: ${{ env.ARTIFACTS_DIR }}/${{ env.VM_NAME_BASE }}-${{ inputs.ubuntu-version }}.qcow2
+          IMAGE_PATH: ${{ env.ARTIFACTS_DIR }}/${{ env.VM_NAME_BASE }}-${{ inputs.ubuntu-release }}.qcow2
           OCI_REPO: ghcr.io/${{ github.repository }}/e2e-runner
-          OCI_TAG: ${{ inputs.ubuntu-version }}
+          OCI_TAG: ${{ inputs.ubuntu-release }}
         run: |
           set -euo pipefail
 
@@ -167,7 +167,7 @@ jobs:
     uses: ./.github/workflows/debian-build.yaml
     with:
       files-hash: ${{ inputs.files-hash }}
-      ubuntu-version: ${{ inputs.ubuntu-version }}
+      ubuntu-version: ${{ inputs.ubuntu-release }}
     secrets: inherit
 
   e2e-test:
@@ -180,7 +180,7 @@ jobs:
       fail-fast: false
     uses: ./.github/workflows/e2e-tests-run.yaml
     with:
-      ubuntu-version: ${{ inputs.ubuntu-version }}
+      ubuntu-release: ${{ inputs.ubuntu-release }}
       broker: ${{ matrix.broker }}
       broker-snap-channel: ${{ inputs.broker-snap-channel }}
       authd-ppa: ${{ inputs.authd-ppa }}
