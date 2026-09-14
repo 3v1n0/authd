@@ -14,6 +14,7 @@ to use the defaults:
 - all test cases in the selected suites
 - the branch-built authd package
 - the `authd-edge` PPA for packages other than authd
+- optional Ubuntu archive suites for the matching release
 
 e2e-brokers: google
 e2e-ubuntu-releases: noble
@@ -21,6 +22,7 @@ e2e-tests: allowed_users.robot login_gdm.robot
 e2e-test-case: Test login with GDM
 e2e-authd-apt-source: resolute-proposed
 e2e-apt-source: authd-dev
+e2e-apt-source-base: resolute-updates
 
 The `e2e-ubuntu-releases` marker limits the Ubuntu releases tested by the
 workflow. It accepts a space- or comma-separated list of `noble`, `resolute`,
@@ -45,4 +47,7 @@ marker to select more than one test case.
 The two source markers are independent. For example, `e2e-apt-source:
 resolute-proposed` updates all other packages from proposed while
 `e2e-authd-apt-source: authd-edge` installs authd from the edge PPA.
+The `e2e-apt-source-base` marker selects the archive suite from which the
+stable authd migration baseline is installed. Use it with `e2e-apt-source` to
+test a migration from one archive suite to another.
 -->
