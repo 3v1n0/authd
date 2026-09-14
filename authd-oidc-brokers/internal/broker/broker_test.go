@@ -4154,6 +4154,8 @@ func TestEntraAuthRoutesAADSTSErrors(t *testing.T) {
 	}{
 		"Account_locked":                               {aadsts: 50053, wantAccess: broker.AuthDenied, wantMsg: "locked"},
 		"Password_expired":                             {aadsts: 50055, wantAccess: broker.AuthDenied, wantMsg: "expired"},
+		"External_server_retryable":                    {aadsts: 90006, wantAccess: broker.AuthRetry, wantMsg: "temporary error"},
+		"Tenant_throttling":                            {aadsts: 90055, wantAccess: broker.AuthRetry, wantMsg: "temporary error"},
 		"Invalid_credentials_retry":                    {aadsts: 50126, wantAccess: broker.AuthRetry, wantMsg: "Incorrect password"},
 		"Previous_MFA_request_not_completed":           {aadsts: 500121, wantAccess: broker.AuthRetry, wantMsg: "previous MFA prompt was not completed"},
 		"Conditional_access_blocked":                   {aadsts: 53003, wantAccess: broker.AuthNext, wantNextModes: []string{authmodes.Device, authmodes.DeviceQr}, wantMsg: "Conditional Access"},
@@ -5680,6 +5682,39 @@ func TestEntraAuthNonMFAError(t *testing.T) {
 	access, _, err := b.IsAuthenticated(sessionID, authData)
 	require.NoError(t, err)
 	require.Equal(t, broker.AuthDenied, access, "non-MFAError from InitiateEntraAuth must deny")
+}
+
+// TestEntraAuthCancelledInitiation verifies that a request cancelled during
+// initiation (e.g. during the provider's transient-error backoff) is
+// reported as AuthCancelled instead of a denial or retry.
+func TestEntraAuthCancelledInitiation(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockEntraAuthProvider{
+		MockProvider: &testutils.MockProvider{},
+		initErr:      context.Canceled,
+	}
+
+	b := newBrokerForTests(t, &brokerForTestConfig{
+		ownerAllowed:          true,
+		firstUserBecomesOwner: true,
+		provider:              provider,
+		issuerURL:             defaultIssuerURL,
+	})
+
+	sessionID, key := newSessionForTests(t, b, "test-user@example.com", sessionmode.Login)
+	updateAuthModes(t, b, sessionID, authmodes.EntraAuth)
+
+	// The guard reads the request context, so the context must actually be
+	// cancelled. IsAuthenticated's own select would race ctx.Done() against
+	// the worker result, so drive handleIsAuthenticated directly.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	authData := map[string]string{broker.AuthDataSecret: encryptSecret(t, "password", key)}
+	access, data := b.HandleIsAuthenticated(ctx, sessionID, authData)
+	require.Equal(t, broker.AuthCancelled, access, "cancelled initiation must not be reported as a denial or retry")
+	require.Nil(t, data, "cancellation must not carry an error payload")
 }
 
 // TestEntraAuthNilFlowOrChallenge verifies that a nil flow/challenge

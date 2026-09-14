@@ -8,11 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/canonical/authd/log"
 	"github.com/golang-jwt/jwt/v5"
@@ -377,12 +379,21 @@ func InitiateMFAFlow(ctx context.Context, clientID, tenantID string, data *Devic
 		}
 	}
 
-	var flow *MFAFlowState
-	if withDeviceScope {
-		flow, err = initiateMFAFlowForEnrollment(brokerClientApp, username, password, opts)
-	} else {
-		flow, err = initiateMFAFlow(brokerClientApp, username, password, opts)
+	initiate := func() (*MFAFlowState, error) {
+		if withDeviceScope {
+			return initiateMFAFlowForEnrollment(brokerClientApp, username, password, opts)
+		}
+		return initiateMFAFlow(brokerClientApp, username, password, opts)
 	}
+
+	// Use one- and two-second exponential backoff with bounded jitter so
+	// tenant-wide throttling does not synchronize retries.
+	const retryJitterRange = 500 * time.Millisecond
+	delays := []time.Duration{
+		time.Second + rand.N(retryJitterRange),   //nolint:gosec // retry jitter is not security-sensitive
+		2*time.Second + rand.N(retryJitterRange), //nolint:gosec // retry jitter is not security-sensitive
+	}
+	flow, err := retryTransientInitiate(ctx, delays, initiate)
 	if err != nil {
 		return nil, nil, err
 	}
