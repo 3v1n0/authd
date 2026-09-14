@@ -158,11 +158,11 @@ jobs:
       statuses: write
     strategy:
       matrix:
-        ubuntu-version: ['noble', 'resolute', 'devel']
+        ubuntu-release: ['noble', 'resolute', 'devel']
       fail-fast: false
     uses: ./.github/workflows/e2e-tests-provision-and-run.yaml
     with:
-      ubuntu-version: ${{ matrix.ubuntu-version }}
+      ubuntu-release: ${{ matrix.ubuntu-release }}
       files-hash: ${{ needs.prepare-e2e.outputs.files-hash }}
       force-fresh-image: ${{ github.event_name == 'schedule' }}
       broker-snap-channel: ${{ inputs.broker-snap-channel || '' }}
