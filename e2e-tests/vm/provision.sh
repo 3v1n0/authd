@@ -7,7 +7,7 @@ CONFIG_FILE="${SCRIPT_DIR}/config.env"
 
 usage(){
     cat << EOF
-Usage: $0 [--config-file <config file>] [--release <release>] [--data-dir <directory>] [--broker <broker>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--broker-snap <snap>] [--force]
+Usage: $0 [--config-file <config file>] [--release <release>] [--data-dir <directory>] [--broker <broker>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--apt-source-base <source>] [--broker-snap <snap>] [--force]
 
 Options:
   --config-file <config file>  Path to the configuration file (default: config.env)
@@ -17,6 +17,7 @@ Options:
   --authd-deb <deb>            Path to the authd deb file to install
   --apt-source <source>        PPA or Ubuntu archive suite for all packages except authd
   --authd-apt-source <source> PPA or Ubuntu archive suite from which to install authd
+  --apt-source-base <source>  Ubuntu archive suite for the stable authd migration baseline
   --broker-snap <snap>         Path to the broker snap file to install (default: install from the edge channel)
   --force                      Force provisioning: remove existing VM and artifacts and create a fresh VM
   -h, --help                   Show this help message and exit
@@ -50,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --authd-deb)
             AUTHD_DEB="$2"
+            shift 2
+            ;;
+        --apt-source-base)
+            APT_SOURCE_BASE="$2"
             shift 2
             ;;
         --apt-source)
@@ -111,6 +116,7 @@ set -x
   ${DATA_DIR_ARG:+--data-dir "${DATA_DIR_ARG}"} \
   ${BROKER:+--broker "${BROKER}"} \
   ${AUTHD_DEB:+--authd-deb "${AUTHD_DEB}"} \
+  ${APT_SOURCE_BASE:+--apt-source-base "${APT_SOURCE_BASE}"} \
   ${APT_SOURCE:+--apt-source "${APT_SOURCE}"} \
   ${AUTHD_APT_SOURCE:+--authd-apt-source "${AUTHD_APT_SOURCE}"} \
   ${BROKER_SNAP:+--broker-snap "${BROKER_SNAP}"} \

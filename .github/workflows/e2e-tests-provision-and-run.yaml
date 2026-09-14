@@ -34,6 +34,11 @@ on:
         type: string
         required: false
         default: ''
+      apt-source-base:
+        description: 'If set, install the stable authd baseline from this Ubuntu archive suite'
+        type: string
+        required: false
+        default: ''
       brokers:
         description: 'JSON array of brokers to test'
         type: string
@@ -77,6 +82,7 @@ jobs:
           SELECTED_RELEASES: ${{ inputs.ubuntu-releases }}
           APT_SOURCE: ${{ inputs.apt-source }}
           AUTHD_APT_SOURCE: ${{ inputs.authd-apt-source }}
+          APT_SOURCE_BASE: ${{ inputs.apt-source-base }}
         run: bash ./.github/scripts/resolve-release.sh
 
   provision-vm:
@@ -258,6 +264,17 @@ jobs:
             inputs.authd-apt-source == needs.resolve_release.outputs.codename
           ) &&
           inputs.authd-apt-source || ''
+        }}
+      apt-source-base: >-
+        ${{
+          (
+            startsWith(
+              inputs.apt-source-base,
+              format('{0}-', needs.resolve_release.outputs.codename)
+            ) ||
+            inputs.apt-source-base == needs.resolve_release.outputs.codename
+          ) &&
+          inputs.apt-source-base || ''
         }}
       e2e-tests: ${{ inputs.e2e-tests }}
       e2e-test-cases: ${{ inputs.e2e-test-cases }}
