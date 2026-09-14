@@ -50,6 +50,31 @@ if ((${#brokers[@]} == 0)); then
     brokers=(authd-msentraid)
 fi
 
+ubuntu_releases=()
+declare -A seen_ubuntu_releases=()
+while IFS= read -r selected; do
+    [[ -n "${selected}" ]] || continue
+
+    case "${selected}" in
+        noble|resolute|devel)
+            ubuntu_release="${selected}"
+            ;;
+        *)
+            echo "::warning::Ignoring unknown Ubuntu release '${selected}' in e2e-ubuntu-releases marker"
+            continue
+            ;;
+    esac
+
+    if [[ -z "${seen_ubuntu_releases[${ubuntu_release}]:-}" ]]; then
+        seen_ubuntu_releases["${ubuntu_release}"]=1
+        ubuntu_releases+=("${ubuntu_release}")
+    fi
+done < <(marker_values e2e-ubuntu-releases)
+
+if ((${#ubuntu_releases[@]} == 0)); then
+    ubuntu_releases=(noble resolute devel)
+fi
+
 tests=()
 while IFS= read -r test; do
     [[ -n "${test}" ]] || continue
@@ -87,6 +112,7 @@ json_array() {
 
 {
     printf 'brokers=%s\n' "$(json_array "${brokers[@]}")"
+    printf 'ubuntu_releases=%s\n' "$(json_array "${ubuntu_releases[@]}")"
     printf 'tests=%s\n' "$(json_array "${tests[@]}")"
     printf 'test_cases=%s\n' "$(json_array "${test_cases[@]}")"
     printf 'authd_ppa=%s\n' "${authd_ppa}"
