@@ -92,22 +92,22 @@ Run `./e2e-tests/run-tests.sh --help` for all available options, including
 
 ## Running in GitHub CI
 
-By default, GitHub CI runs the end-to-end tests against `authd-msentraid` on all
-supported Ubuntu releases (`noble`, `resolute`, and `devel`), using the complete
-test suite and the authd package and broker snap built from the current branch.
-The authd package dependencies (gnome-shell) are resolved from the [authd-edge
-PPA][authd-edge-ppa], or from the PPA selected with `AUTHD_PPA`. Migration
-suites start with the last stable authd and broker releases before installing
-the branch-built package or snap. To use locally built packages in those suites,
-set `AUTHD_DEB` and `BROKER_SNAP` to their host paths when running
-`run-tests.sh`. Set `AUTHD_PPA` as well when the authd package dependencies
-should come from a different PPA.
+By default, GitHub CI runs the end-to-end tests against `authd-msentraid` on
+all supported Ubuntu releases (`noble`, `resolute`, and `devel`), using the
+complete test suite and the authd package and broker snap built from the
+current branch.  The authd package dependencies (gnome-shell) are resolved from
+the [authd-edge PPA][authd-edge-ppa], or from the PPA selected with
+`AUTHD_PPA`. Migration suites start with the last stable authd and broker
+releases before installing the branch-built package or snap. To use locally
+built packages in those suites, set `AUTHD_DEB` and `BROKER_SNAP` to their host
+paths when running `run-tests.sh`. Set `AUTHD_PPA` as well when the authd
+package dependencies should come from a different PPA.
 
-The E2E workflow runs for a pull request only when it has the `e2e-tests` label.
-The pull request template contains commented examples for selecting Ubuntu
-releases, brokers, test suites, test cases, and the authd PPA. Copy the relevant
-line into the visible part of the pull request description to enable it; leave
-it commented to use the default.
+The E2E workflow runs for a pull request only when it has the `e2e-tests`
+label.  The pull request template contains commented examples for selecting
+Ubuntu releases, brokers, test suites, test cases, and the authd PPA. Copy the
+relevant line into the visible part of the pull request description to enable
+it; leave it commented to use the default.
 
 To resolve authd package dependencies from the [authd-dev PPA][authd-dev-ppa]
 instead, add `e2e-ppa: authd-dev` to the pull request description.
