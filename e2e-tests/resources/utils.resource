@@ -266,6 +266,9 @@ Update Authd
     ELSE
         SSH.Execute    apt-get install -y authd    timeout=120
     END
+    # Installing authd does not upgrade an already-installed gnome-shell when
+    # its version still satisfies authd's constraints.
+    SSH.Execute    apt-get install -y gnome-shell    timeout=120
 
 
 Sync System Time
