@@ -291,6 +291,11 @@ restore_snapshot_and_sync_time "$PRE_AUTHD_SNAPSHOT"
 PPA="${AUTHD_PPA:-ubuntu-enterprise-desktop/authd-edge}"
 $SSH "add-apt-repository -y ppa:${PPA}"
 
+# Request gnome-shell explicitly because installing authd does not upgrade an
+# already-installed dependency when its version still satisfies authd's
+# constraints.
+$SSH "apt-get install -y gnome-shell"
+
 # Configure authd to be verbose. We do this before installing authd to avoid
 # having to restart the service after installation (just a simple optimization).
 $SSH bash -euo pipefail -s <<-EOF
