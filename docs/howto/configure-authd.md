@@ -516,11 +516,8 @@ followed by an MFA challenge, such as a number-matching prompt or a one-time
 code, or use a passwordless method instead, such as a FIDO2 security key or
 passwordless sign-in in the Microsoft Authenticator app.
 
-A security key challenge does not always mean a key can complete it: Entra ID
-sends the same challenge for a passkey synced to a phone, a browser profile or
-the Microsoft Authenticator app. The Entra ID password is therefore offered
-beside the security-key step. With no key connected, authd offers the password
-first and keeps the security-key step selectable.
+When a local security key cannot complete a FIDO2 challenge, authd can fall back
+to Entra ID password authentication if the account supports it.
 
 ```{admonition} Local password after a passwordless login
 :class: note
