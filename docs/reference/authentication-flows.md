@@ -62,22 +62,10 @@ an invalid configuration and the broker fails to start. See
    authd asks them to create a local password on first login. Only a salted
    hash of this password is stored for subsequent offline logins.
 
-A FIDO2 credential registered with Entra ID does not always live on a security
-key that this computer can reach. A passkey synced to a phone, a browser
-profile or the Microsoft Authenticator app is one example. Entra ID sends the
-same security key challenge in both cases, so the broker cannot treat the
-challenge as proof that a local ceremony can succeed. It offers the Entra ID
-password beside the security-key step instead.
-
-- With a key connected, the security-key step is offered first and the Entra
-  ID password is listed next. A key that needs a PIN collects it first.
-- With no key connected, the Entra ID password is offered first and the
-  security-key step stays selectable. Selecting it waits up to 60 seconds for
-  a key to be connected, then falls back.
-- Once the Entra ID password has been accepted, the security key is a second
-  factor and no longer has an alternative. A challenge that cannot be
-  completed then uses the device code flow when it is enabled, or denies the
-  login.
+A FIDO2 challenge may refer to a passkey that is not available on this
+computer, such as one stored on a phone or in a browser on another device. If
+a local security key cannot complete the challenge, authd can fall back to
+Entra ID password authentication when the account supports it.
 
 ### Compatibility and requirements
 
