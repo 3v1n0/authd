@@ -250,19 +250,71 @@ func (p *mockMFACancelProvider) AcquireTokenByMFAFlow(ctx context.Context, _, _ 
 // initialization.
 type mockPasswordRequiredThenSuccessProvider struct {
 	*mockEntraAuthProvider
+	passwordlessFidoFallback bool
+	passwordlessDAGFallback  bool
 }
 
 func (p *mockPasswordRequiredThenSuccessProvider) InitiateEntraAuth(_ context.Context, _, _ string, _, password string, _ []byte, withDeviceScope bool, authOpts ...himmelblau.AuthOption) (*himmelblau.MFAFlowState, *himmelblau.MFAChallengeInfo, error) {
 	p.recordedInitAuthOpts = append(p.recordedInitAuthOpts, authOpts)
 	p.recordedInitPasswords = append(p.recordedInitPasswords, password)
 	p.recordedInitDevScopes = append(p.recordedInitDevScopes, withDeviceScope)
-	if len(p.recordedInitPasswords) == 1 {
+	if password == "" && (!slices.Contains(authOpts, himmelblau.AuthOptionPasswordlessSecurityKey) || (!p.passwordlessFidoFallback && !p.passwordlessDAGFallback)) {
+		category := himmelblau.MFAErrorPasswordRequired
+		if p.passwordlessDAGFallback {
+			category = himmelblau.MFAErrorDAGFallbackDisabled
+		}
 		return nil, nil, &himmelblau.MFAError{
-			Category: himmelblau.MFAErrorPasswordRequired,
-			Message:  "password required",
+			Category: category,
+			Message:  "passwordless method unavailable",
 		}
 	}
 	return p.flowState, p.challengeInfo, nil
+}
+
+// TestEntraAuthProbeDoesNotOfferPasswordForPasswordlessOnlyAccounts verifies
+// that the local FIDO fallback does not send an account with no Entra password
+// to a password prompt.
+func TestEntraAuthProbeDoesNotOfferPasswordForPasswordlessOnlyAccounts(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockPasswordRequiredThenSuccessProvider{
+		mockEntraAuthProvider: &mockEntraAuthProvider{
+			MockProvider: &testutils.MockProvider{},
+			flowState:    &himmelblau.MFAFlowState{},
+			challengeInfo: &himmelblau.MFAChallengeInfo{
+				Message:       "Use your security key",
+				Method:        "FidoKey",
+				FidoChallenge: "fido-challenge",
+				FidoAllowList: []string{"Y3JlZA=="},
+			},
+		},
+		passwordlessDAGFallback: true,
+	}
+
+	b := newBrokerForTests(t, &brokerForTestConfig{
+		Config:                 broker.Config{DataDir: t.TempDir()},
+		ownerAllowed:           true,
+		firstUserBecomesOwner:  true,
+		provider:               provider,
+		fidoAuthenticator:      &mockFIDOAuthenticator{devicePresent: false},
+		issuerURL:              defaultIssuerURL,
+		registerDevice:         true,
+		deviceAuthFlowDisabled: true,
+	})
+
+	sessionID, _ := newSessionForTests(t, b, "passwordless-only@example.com", sessionmode.Login)
+	require.NoError(t, b.SetAvailableMode(sessionID, authmodes.EntraAuth))
+	_, err := b.SelectAuthenticationMode(sessionID, authmodes.EntraAuth)
+	require.NoError(t, err)
+
+	access, _, err := b.IsAuthenticated(sessionID, "{}")
+	require.NoError(t, err)
+	require.Equal(t, broker.AuthNext, access)
+	require.Equal(t, []string{authmodes.EntraAuthFido}, b.GetNextAuthModes(sessionID))
+	require.Equal(t, [][]himmelblau.AuthOption{
+		{himmelblau.AuthOptionFido},
+		{himmelblau.AuthOptionFido, himmelblau.AuthOptionPasswordlessSecurityKey},
+	}, provider.recordedInitAuthOpts)
 }
 
 // mockMFAWrongCodeThenSuccessProvider simulates an incorrect or expired
@@ -2382,10 +2434,15 @@ func TestEntraAuthProbePromptsForPasswordWhenRequired(t *testing.T) {
 	require.Equal(t, broker.AuthNext, access)
 	require.Equal(t, []string{authmodes.EntraAuth, authmodes.Device, authmodes.DeviceQr}, b.GetNextAuthModes(sessionID),
 		"the probe narrows the modes before any credential is submitted, so the device code flow must stay reachable")
-	require.Equal(t, []string{""}, provider.recordedInitPasswords,
-		"the first call should be a passwordless probe")
-	require.Equal(t, []bool{false}, provider.recordedInitDevScopes,
-		"passwordless probing must never request device-scoped auth")
+	require.Equal(t, []string{"", ""}, provider.recordedInitPasswords,
+		"the passwordless probe and local-FIDO fallback must not submit a password")
+	require.Equal(t, []bool{false, false}, provider.recordedInitDevScopes,
+		"passwordless probing and local-FIDO fallback must never request device-scoped auth")
+	require.Equal(t, [][]himmelblau.AuthOption{
+		{himmelblau.AuthOptionFido},
+		{himmelblau.AuthOptionFido, himmelblau.AuthOptionPasswordlessSecurityKey},
+	}, provider.recordedInitAuthOpts,
+		"the local security-key transport should be enabled only for the fallback probe")
 	require.Equal(t, "{}", data,
 		"PASSWORD_REQUIRED should transition directly to the real password form, not an intermediate message-only next state")
 
@@ -2400,12 +2457,63 @@ func TestEntraAuthProbePromptsForPasswordWhenRequired(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, broker.AuthNext, access)
 	require.Equal(t, []string{authmodes.EntraMFAWait}, b.GetNextAuthModes(sessionID))
-	require.Equal(t, []string{"", "password"}, provider.recordedInitPasswords,
-		"the second call should submit the user-entered password")
-	require.Equal(t, []bool{false, true}, provider.recordedInitDevScopes,
+	require.Equal(t, []string{"", "", "password"}, provider.recordedInitPasswords,
+		"only the final call should submit the user-entered password")
+	require.Equal(t, []bool{false, false, true}, provider.recordedInitDevScopes,
 		"device-scoped auth should be used only after a password was submitted")
+	require.Equal(t, [][]himmelblau.AuthOption{
+		{himmelblau.AuthOptionFido},
+		{himmelblau.AuthOptionFido, himmelblau.AuthOptionPasswordlessSecurityKey},
+		{himmelblau.AuthOptionFido},
+	}, provider.recordedInitAuthOpts)
 	require.NoFileExists(t, b.PasswordFilepathForSession(sessionID),
 		"the offline password must not be cached until MFA succeeds")
+}
+
+func TestEntraAuthProbeRetriesWithLocalFIDOForFIDOOnlyAccounts(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockPasswordRequiredThenSuccessProvider{
+		mockEntraAuthProvider: &mockEntraAuthProvider{
+			MockProvider: &testutils.MockProvider{},
+			flowState:    &himmelblau.MFAFlowState{},
+			challengeInfo: &himmelblau.MFAChallengeInfo{
+				Message:       "Use your security key",
+				Method:        "FidoKey",
+				FidoChallenge: "fido-challenge",
+				FidoAllowList: []string{"Y3JlZA=="},
+				HasPassword:   true,
+			},
+		},
+		passwordlessFidoFallback: true,
+	}
+
+	b := newBrokerForTests(t, &brokerForTestConfig{
+		Config:                broker.Config{DataDir: t.TempDir()},
+		ownerAllowed:          true,
+		firstUserBecomesOwner: true,
+		provider:              provider,
+		fidoAuthenticator:     &mockFIDOAuthenticator{devicePresent: false},
+		issuerURL:             defaultIssuerURL,
+		registerDevice:        true,
+	})
+
+	sessionID, _ := newSessionForTests(t, b, "test-user@email.com", sessionmode.Login)
+	require.NoError(t, b.SetAvailableMode(sessionID, authmodes.EntraAuth))
+	_, err := b.SelectAuthenticationMode(sessionID, authmodes.EntraAuth)
+	require.NoError(t, err)
+
+	access, _, err := b.IsAuthenticated(sessionID, "{}")
+	require.NoError(t, err)
+	require.Equal(t, broker.AuthNext, access)
+	require.Equal(t, []string{authmodes.EntraAuth, authmodes.EntraAuthFido},
+		b.GetNextAuthModes(sessionID),
+		"FIDO-only accounts should reach the local security-key flow after the Remote NGC probe")
+	require.Equal(t, [][]himmelblau.AuthOption{
+		{himmelblau.AuthOptionFido},
+		{himmelblau.AuthOptionFido, himmelblau.AuthOptionPasswordlessSecurityKey},
+	}, provider.recordedInitAuthOpts)
+	require.Equal(t, []string{"", ""}, provider.recordedInitPasswords)
 }
 
 // TestEntraAuthAccessPassDoesNotCacheUnverifiedPassword covers an account that
@@ -2527,6 +2635,7 @@ func TestEntraAuthPasswordlessSuccessDoesNotCacheOfflinePassword(t *testing.T) {
 		ownerAllowed:          true,
 		firstUserBecomesOwner: true,
 		provider:              provider,
+		fidoAuthenticator:     &mockFIDOAuthenticator{devicePresent: false},
 		issuerURL:             defaultIssuerURL,
 		registerDevice:        true,
 	})
@@ -2544,6 +2653,10 @@ func TestEntraAuthPasswordlessSuccessDoesNotCacheOfflinePassword(t *testing.T) {
 		"passwordless initiation should not submit a password")
 	require.Equal(t, []bool{false}, provider.recordedInitDevScopes,
 		"passwordless initiation must not request device-scoped auth even when device registration is enabled")
+	require.Equal(t, [][]himmelblau.AuthOption{
+		{himmelblau.AuthOptionFido},
+	}, provider.recordedInitAuthOpts,
+		"Remote NGC should be probed without selecting the local security-key transport")
 
 	require.NoError(t, b.SetAvailableMode(sessionID, authmodes.EntraMFAWait))
 	_, err = b.SelectAuthenticationMode(sessionID, authmodes.EntraMFAWait)
@@ -6259,6 +6372,7 @@ func newFIDOChallengeProvider(mfaTokenResult *oauth2.Token) *mockEntraAuthProvid
 			Method:        "FidoKey",
 			FidoChallenge: "fido-challenge",
 			FidoAllowList: []string{"Y3JlZA=="},
+			HasPassword:   true,
 		},
 		mfaTokenResult: mfaTokenResult,
 	}

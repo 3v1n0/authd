@@ -51,8 +51,8 @@ an invalid configuration and the broker fails to start. See
    such as a FIDO2 security key (for example, a YubiKey), passwordless sign-in
    through the Microsoft Authenticator app, or a Temporary Access Pass, the
    matching challenge is offered. For passwordless FIDO2 challenges, Entra ID
-   password entry is also available. If no passwordless method is enrolled, the
-   user enters their Entra ID password.
+   password entry is also available if the account supports it. If no
+   passwordless method is enrolled, the user enters their Entra ID password.
 3. **MFA challenge**: A password sign-in is followed by an MFA challenge: the
    user approves a push notification or a number-matching prompt, enters a
    time-based one-time password, or touches a FIDO2 security key. A
@@ -64,8 +64,11 @@ an invalid configuration and the broker fails to start. See
 
 A FIDO2 challenge may refer to a passkey that is not available on this
 computer, such as one stored on a phone or in a browser on another device. If
-a local security key cannot complete the challenge, authd can fall back to
-Entra ID password authentication when the account supports it.
+a local security key cannot complete the challenge, authd first uses an
+available Microsoft Authenticator number-matching flow and then falls back to
+Entra ID password authentication when the account supports it. Authenticator
+number matching is probed before selecting the local security-key transport so
+an unsupported synced or cross-device passkey does not cause a password prompt.
 
 ### Compatibility and requirements
 
