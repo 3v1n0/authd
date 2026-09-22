@@ -6,6 +6,7 @@ set -euo pipefail
 : "${APT_SOURCE:=}"
 : "${AUTHD_APT_SOURCE:=}"
 : "${APT_SOURCE_BASE:=}"
+: "${AUTHD_APT_SOURCE_BASE:=}"
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
 
 # shellcheck source=../../e2e-tests/vm/lib/libprovision.sh
@@ -55,4 +56,5 @@ validate_archive_source() {
 validate_archive_source "${APT_SOURCE}" target
 validate_archive_source "${AUTHD_APT_SOURCE}" authd
 validate_archive_source "${APT_SOURCE_BASE}" base
+validate_archive_source "${AUTHD_APT_SOURCE_BASE}" authd-base
 printf 'codename=%s\n' "${codename}" >>"${GITHUB_OUTPUT}"

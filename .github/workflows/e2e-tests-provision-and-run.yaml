@@ -35,7 +35,12 @@ on:
         required: false
         default: ''
       apt-source-base:
-        description: 'If set, install the stable authd baseline from this Ubuntu archive suite'
+        description: 'If set, install the stable system package baseline from this Ubuntu archive suite'
+        type: string
+        required: false
+        default: ''
+      authd-apt-source-base:
+        description: 'If set, install the stable authd baseline from this PPA or Ubuntu archive suite'
         type: string
         required: false
         default: ''
@@ -83,6 +88,7 @@ jobs:
           APT_SOURCE: ${{ inputs.apt-source }}
           AUTHD_APT_SOURCE: ${{ inputs.authd-apt-source }}
           APT_SOURCE_BASE: ${{ inputs.apt-source-base }}
+          AUTHD_APT_SOURCE_BASE: ${{ inputs.authd-apt-source-base }}
         run: bash ./.github/scripts/resolve-release.sh
 
   provision-vm:
@@ -275,6 +281,18 @@ jobs:
             inputs.apt-source-base == needs.resolve_release.outputs.codename
           ) &&
           inputs.apt-source-base || ''
+        }}
+      authd-apt-source-base: >-
+        ${{
+          (
+            startsWith(inputs.authd-apt-source-base, 'ppa:') ||
+            startsWith(
+              inputs.authd-apt-source-base,
+              format('{0}-', needs.resolve_release.outputs.codename)
+            ) ||
+            inputs.authd-apt-source-base == needs.resolve_release.outputs.codename
+          ) &&
+          inputs.authd-apt-source-base || ''
         }}
       e2e-tests: ${{ inputs.e2e-tests }}
       e2e-test-cases: ${{ inputs.e2e-test-cases }}
