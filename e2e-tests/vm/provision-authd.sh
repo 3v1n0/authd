@@ -272,6 +272,11 @@ AUTHD_STABLE_SNAPSHOT="authd-stable-installed"
 BROKER_STABLE_SNAPSHOT="${BROKER}-stable-installed"
 AUTHD_SNAPSHOT="authd-installed"
 BROKER_SNAPSHOT="${BROKER}-installed"
+STABLE_AUTHD_SOURCE="${AUTHD_APT_SOURCE_BASE:-ppa:ubuntu-enterprise-desktop/authd}"
+# Stable snapshot names are used by the test suite, so track their source pair
+# separately and rebuild both snapshots when either source changes.
+STABLE_SNAPSHOT_SOURCE_KEY="${APT_SOURCE_BASE:-<none>}|${STABLE_AUTHD_SOURCE}"
+STABLE_SNAPSHOT_SOURCE_FILE="${ARTIFACTS_DIR}/${VM_NAME}.${BROKER}.stable-snapshot-source"
 
 function install_broker() {
     local broker="$1"
@@ -477,12 +482,19 @@ else
     force_create_snapshot "$PRE_AUTHD_SNAPSHOT"
 fi
 
-if [ -z "${FORCE:-}" ] && has_snapshot "${AUTHD_STABLE_SNAPSHOT}"; then
+if [ -n "${FORCE:-}" ] ||
+    [ ! -f "${STABLE_SNAPSHOT_SOURCE_FILE}" ] ||
+    [ "$(cat "${STABLE_SNAPSHOT_SOURCE_FILE}")" != "${STABLE_SNAPSHOT_SOURCE_KEY}" ] ||
+    ! has_snapshot "${AUTHD_STABLE_SNAPSHOT}" ||
+    ! has_snapshot "${BROKER_STABLE_SNAPSHOT}"; then
+    REBUILD_STABLE_SNAPSHOTS=true
+fi
+
+if [ -z "${REBUILD_STABLE_SNAPSHOTS:-}" ] && has_snapshot "${AUTHD_STABLE_SNAPSHOT}"; then
     restore_snapshot_and_sync_time "${AUTHD_STABLE_SNAPSHOT}"
 else
     # Install authd stable and create the migration baseline. When a system
     # source is selected, pin all packages to it and authd to its own source.
-    STABLE_AUTHD_SOURCE="${AUTHD_APT_SOURCE_BASE:-ppa:ubuntu-enterprise-desktop/authd}"
     if [ -n "${APT_SOURCE_BASE:-}" ] || [ -n "${AUTHD_APT_SOURCE_BASE:-}" ]; then
         if [ -n "${APT_SOURCE_BASE:-}" ]; then
             add_apt_source "${APT_SOURCE_BASE}"
@@ -504,17 +516,19 @@ else
         $SSH apt-get update
         $SSH "apt-get install -y authd"
     fi
-    unset STABLE_AUTHD_SOURCE
     force_create_snapshot "${AUTHD_STABLE_SNAPSHOT}"
 fi
 
-if [ -z "${FORCE:-}" ] && has_snapshot "${BROKER_STABLE_SNAPSHOT}"; then
+if [ -z "${REBUILD_STABLE_SNAPSHOTS:-}" ] && has_snapshot "${BROKER_STABLE_SNAPSHOT}"; then
     restore_snapshot_and_sync_time "${BROKER_STABLE_SNAPSHOT}"
 else
     install_broker "${BROKER}" --channel "stable"
     # Snapshot this broker installation
     force_create_snapshot "${BROKER_STABLE_SNAPSHOT}"
 fi
+
+printf '%s\n' "${STABLE_SNAPSHOT_SOURCE_KEY}" > "${STABLE_SNAPSHOT_SOURCE_FILE}"
+unset REBUILD_STABLE_SNAPSHOTS
 
 # Remove the authd-stable-installed snapshot which is no longer needed
 # virsh snapshot-delete --domain "${VM_NAME}" --snapshotname "authd-stable-installed"

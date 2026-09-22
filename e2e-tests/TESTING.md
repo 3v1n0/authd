@@ -95,7 +95,9 @@ the authd target with `--authd-apt-source`:
 ```
 
 The base sources install the stable snapshot. The target sources install the
-version under test and update the system packages.
+version under test and update the system packages. Provisioning records the
+normalized base-source pair and rebuilds both stable snapshots when either
+source changes. Use `--force` to rebuild them regardless.
 
 ### 4. Set up YARF
 
