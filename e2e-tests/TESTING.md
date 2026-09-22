@@ -78,25 +78,24 @@ APT policy pins authd to its selected source while allowing authd dependencies
 to use the system source and normal archive fallbacks. Provisioning upgrades
 the whole system from the system source, not only authd dependencies.
 
-To test migration from one archive suite to another, pass the stable baseline
-with `--apt-source-base`, the system package target with `--apt-source`, and
+To test migration from one source set to another, pass the stable system
+baseline with `--apt-source-base`, the stable authd baseline with
+`--authd-apt-source-base`, the system package target with `--apt-source`, and
 the authd target with `--authd-apt-source`:
-
-To test migration from one archive suite to another, pass the stable baseline
-suite with `--apt-source-base` and the target suite with `--apt-source`:
 
 ```bash
 ./e2e-tests/vm/provision.sh \
   --release resolute \
   --broker authd-google \
   --apt-source-base resolute-updates \
+  --authd-apt-source-base authd \
   --apt-source resolute-proposed \
-  --authd-apt-source resolute-proposed \
+  --authd-apt-source authd-edge \
   --force
 ```
 
-The base suite installs the stable authd snapshot. The target sources install
-the version under test and update the system packages.
+The base sources install the stable snapshot. The target sources install the
+version under test and update the system packages.
 
 ### 4. Set up YARF
 
@@ -143,14 +142,16 @@ those suites, set `AUTHD_DEB` and `BROKER_SNAP` to their host paths when
 running `run-tests.sh`. `APT_SOURCE` selects the source for all packages except
 authd, and `AUTHD_APT_SOURCE` independently selects the authd source. Both
 variables accept the three authd PPA names or an Ubuntu archive suite.
-`APT_SOURCE_BASE` selects the Ubuntu archive suite for the stable authd
-migration baseline.
+`APT_SOURCE_BASE` selects the Ubuntu archive suite for the stable baseline of
+all packages except authd. `AUTHD_APT_SOURCE_BASE` independently selects the
+source for the stable authd baseline. If it is unset, the stable authd PPA is
+used, regardless of `APT_SOURCE_BASE`.
 
 The E2E workflow runs for a pull request only when it has the `e2e-tests` label.
 The pull request template contains commented examples for selecting Ubuntu
-releases, brokers, test suites, test cases, and the two package sources. Copy
-the relevant line into the visible part of the pull request description to
-enable it; leave it commented to use the default.
+releases, brokers, test suites, test cases, and package sources. Copy the
+relevant line into the visible part of the pull request description to enable
+it; leave it commented to use the default.
 
 To update all packages except authd from an Ubuntu archive suite, add an
 `e2e-apt-source:` line with the full suite name. For example:
@@ -169,20 +170,23 @@ e2e-authd-apt-source: resolute-updates
 Either marker also accepts `authd`, `authd-edge`, or `authd-dev` to select the
 stable, edge, or development PPA. PPA selections apply to every release. An
 archive selection is used only by the matrix job whose Ubuntu release matches
-To test migration from an archive update suite to a proposed suite, also add
-an `e2e-apt-source-base:` line with the stable baseline suite:
+the suite prefix.
+
+To test migration from an archive update suite to a proposed suite with authd
+from a different source, add both base markers:
 
 ```text
 e2e-apt-source-base: resolute-updates
+e2e-authd-apt-source-base: authd
 e2e-apt-source: resolute-proposed
+e2e-authd-apt-source: authd-edge
 ```
 
-The base source is used to install the stable authd snapshot. The target source
-is used to install the package under test and update the system packages.
-The archive sources are used only by the matrix job whose Ubuntu release
-matches
-the suite prefix (the `devel` job is matched using the current Ubuntu codename,
-not the literal `devel` label); other release jobs use their defaults. If
+`e2e-apt-source-base` must be an Ubuntu archive suite. The authd base marker
+accepts an authd PPA or an Ubuntu archive suite. The archive sources are used
+only by the matrix job whose Ubuntu release matches the suite prefix (the
+`devel` job is matched using the current Ubuntu codename, not the literal
+`devel` label); other release jobs use their defaults. If
 `e2e-authd-apt-source` is omitted, the branch-built authd package remains the
 package under test.
 
@@ -222,12 +226,13 @@ e2e-brokers: google
 Editing the pull request description does not automatically re-run the
 workflow. If you change an `e2e-ubuntu-releases:`, `e2e-tests:`,
 `e2e-test-case:`, `e2e-brokers:`, `e2e-apt-source:`, or
-`e2e-authd-apt-source:`, or `e2e-apt-source-base:` line after the workflow has
-already run, re-run the
+`e2e-authd-apt-source:`, `e2e-apt-source-base:`, or
+`e2e-authd-apt-source-base:` line after the workflow has already run, re-run the
 workflow. It fetches the current pull request description from GitHub. If you
 start the workflow with `workflow_dispatch`, use its separate
 `e2e-ubuntu-releases`, `e2e-brokers`, `e2e-tests`, `e2e-test-case`,
-`e2e-apt-source`, `e2e-authd-apt-source`, and `e2e-apt-source-base`
+`e2e-apt-source`, `e2e-authd-apt-source`, `e2e-apt-source-base`, and
+`e2e-authd-apt-source-base`
 inputs instead.
 
 [yarf]: https://github.com/canonical/yarf
