@@ -23,8 +23,9 @@ type EntraAuthProvider interface {
 	// When withDeviceScope is true, the MFA flow adds Intune enrollment
 	// resources to the token request (needed for PRT-based token exchange).
 	// When false, it uses only MS Graph scopes.
-	// authOpts toggles optional flow behaviors (e.g. AuthOptionFido to let
-	// Entra ID negotiate a FIDO/security-key challenge).
+	// authOpts toggles optional flow behaviors. AuthOptionFido advertises FIDO
+	// capability; AuthOptionPasswordlessSecurityKey explicitly selects the
+	// local security-key transport for a passwordless request.
 	InitiateEntraAuth(
 		ctx context.Context,
 		clientID string,
@@ -159,6 +160,9 @@ type MFAChallengeInfo struct {
 	// FidoAllowList contains the credential IDs (base64-encoded) that Entra ID
 	// accepts for the FIDO assertion. Empty for non-FIDO challenges.
 	FidoAllowList []string
+	// HasPassword reports whether Entra supports password authentication for
+	// the account that produced this continuation.
+	HasPassword bool
 }
 
 // MFAErrorCategory classifies an MFA error so the broker can route
@@ -188,6 +192,11 @@ const (
 	MFAErrorDenied
 	// MFAErrorRequired means MFA is required to complete authentication.
 	MFAErrorRequired
+	// MFAErrorDAGFallbackDisabled means the native MFA flow could not find a
+	// supported method and the caller disabled Device Authorization fallback.
+	// A passwordless probe uses this to distinguish passwordless-only accounts
+	// from accounts that can fall back to an Entra password.
+	MFAErrorDAGFallbackDisabled
 	// MFAErrorRetryableCode means a submitted one-time code was incorrect or
 	// expired while the MFA flow itself remains valid, so the user can simply
 	// re-enter the code without restarting the flow. See newMFAError for how
@@ -229,9 +238,15 @@ func (e *MFAError) IsMFADenied() bool {
 	return e.Category == MFAErrorDenied
 }
 
-// IsMFARequired returns true if the error indicates MFA is required.
+// IsMFARequired returns true for errors that need a separate MFA-capable flow.
 func (e *MFAError) IsMFARequired() bool {
-	return e.Category == MFAErrorRequired
+	return e.Category == MFAErrorRequired || e.Category == MFAErrorDAGFallbackDisabled
+}
+
+// IsMFADAGFallbackDisabled returns true when Device Authorization fallback
+// was disabled before the native MFA flow could be created.
+func (e *MFAError) IsMFADAGFallbackDisabled() bool {
+	return e.Category == MFAErrorDAGFallbackDisabled
 }
 
 // IsMFARetryableCode returns true if the error indicates a submitted one-time

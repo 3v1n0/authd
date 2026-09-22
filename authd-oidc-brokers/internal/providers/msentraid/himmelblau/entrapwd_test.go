@@ -202,10 +202,11 @@ func TestMFAError_IsMFARequired(t *testing.T) {
 		err  *MFAError
 		want bool
 	}{
-		"Required":      {err: &MFAError{Category: MFAErrorRequired}, want: true},
-		"Poll_continue": {err: &MFAError{Category: MFAErrorPollContinue}, want: false},
-		"Denied":        {err: &MFAError{Category: MFAErrorDenied}, want: false},
-		"Other":         {err: &MFAError{Category: MFAErrorOther}, want: false},
+		"Required":              {err: &MFAError{Category: MFAErrorRequired}, want: true},
+		"DAG_fallback_disabled": {err: &MFAError{Category: MFAErrorDAGFallbackDisabled}, want: true},
+		"Poll_continue":         {err: &MFAError{Category: MFAErrorPollContinue}, want: false},
+		"Denied":                {err: &MFAError{Category: MFAErrorDenied}, want: false},
+		"Other":                 {err: &MFAError{Category: MFAErrorOther}, want: false},
 	}
 
 	for name, tc := range tests {
