@@ -271,6 +271,10 @@ Update Authd
     Configure APT Policy    ${apt_source}    ${authd_policy_source}
 
     SSH.Execute    apt-get update    timeout=300
+    # authd constrains gnome-shell with a compatibility rule. Explicitly
+    # install it from the selected source because the base image's archive
+    # version may not satisfy authd's rule.
+    SSH.Execute    apt-get install -y gnome-shell    timeout=120
     IF    $authd_deb != ''
         SSH.Copy To VM    ${authd_deb}    /home/ubuntu/authd-under-test.deb
         SSH.Execute    apt-mark unhold authd || true

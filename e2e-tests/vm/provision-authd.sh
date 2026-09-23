@@ -463,6 +463,10 @@ EOF
 
 # Refresh metadata and update the whole system from the selected system source.
 $SSH apt-get update
+# authd constrains gnome-shell with a compatibility rule. Explicitly
+# install it from the selected source because the base image's archive version
+# may not satisfy authd's rule.
+$SSH apt-get install -y gnome-shell
 if [ -n "${AUTHD_DEB:-}" ]; then
     # Keep a stable authd package out of the system upgrade until the local
     # package is installed. The package is absent in the normal target image,
