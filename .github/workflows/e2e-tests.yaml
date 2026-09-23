@@ -154,6 +154,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          E2E_EVENT_PULL_REQUEST_BODY: ${{ github.event.pull_request.body || '' }}
           E2E_BROKERS: ${{ inputs.e2e-brokers || '' }}
           E2E_UBUNTU_RELEASES: ${{ inputs.e2e-ubuntu-releases || '' }}
           E2E_TESTS: ${{ inputs.e2e-tests || '' }}
@@ -166,10 +167,14 @@ jobs:
           set -euo pipefail
 
           if [[ "${GITHUB_EVENT_NAME}" == 'pull_request' ]]; then
-            E2E_TESTS_DESCRIPTION=$(
+            # Fetch the live PR body so edits made after the event are included.
+            if ! E2E_TESTS_DESCRIPTION=$(
               gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" \
                 --jq '.body // ""'
-            )
+            ); then
+              echo "::warning::Could not fetch the current pull request description; falling back to the event body, which may not include later edits."
+              E2E_TESTS_DESCRIPTION="${E2E_EVENT_PULL_REQUEST_BODY}"
+            fi
           else
             E2E_TESTS_DESCRIPTION=$(
               printf 'e2e-brokers: %s\ne2e-ubuntu-releases: %s\ne2e-tests: %s\ne2e-test-case: %s\ne2e-apt-source: %s\ne2e-authd-apt-source: %s\ne2e-apt-source-base: %s\ne2e-authd-apt-source-base: %s\n' \
