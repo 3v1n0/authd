@@ -134,6 +134,12 @@ parse_apt_source_marker e2e-apt-source apt_source "${AUTHD_DEFAULT_APT_SOURCE}"
 authd_apt_source=
 parse_apt_source_marker e2e-authd-apt-source authd_apt_source
 
+apt_source_base=
+parse_apt_source_marker e2e-apt-source-base apt_source_base
+
+authd_apt_source_base=
+parse_apt_source_marker e2e-authd-apt-source-base authd_apt_source_base
+
 json_array() {
     if (($# == 0)); then
         printf '[]'
@@ -149,4 +155,6 @@ json_array() {
     printf 'test_cases=%s\n' "$(json_array "${test_cases[@]}")"
     printf 'apt_source=%s\n' "${apt_source}"
     printf 'authd_apt_source=%s\n' "${authd_apt_source}"
+    printf 'apt_source_base=%s\n' "${apt_source_base}"
+    printf 'authd_apt_source_base=%s\n' "${authd_apt_source_base}"
 } >>"${GITHUB_OUTPUT}"

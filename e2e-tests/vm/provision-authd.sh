@@ -10,7 +10,7 @@ DATA_DIR_ARG=
 
 usage(){
     cat << EOF
-Usage: $0 [--config-file <file>] [--release <release>] [--data-dir <directory>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--broker-snap <snap>]
+Usage: $0 [--config-file <file>] [--release <release>] [--data-dir <directory>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--apt-source-base <source>] [--authd-apt-source-base <source>] [--broker-snap <snap>]
 
 Options:
    --config-file <file>  Path to the configuration file (default: config.env)
@@ -27,6 +27,12 @@ Options:
    --authd-apt-source <source>
                         PPA or Ubuntu archive suite from which to install
                         authd
+   --apt-source-base <source>
+                        Ubuntu archive suite from which to install the stable
+                        system package baseline for migration tests
+   --authd-apt-source-base <source>
+                        PPA or Ubuntu archive suite from which to install the
+                        stable authd baseline for migration tests
    --broker-snap <snap> Path to the broker snap file to install (default: install from the edge channel)
   -h, --help             Show this help message and exit
 
@@ -58,6 +64,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --authd-deb)
             AUTHD_DEB="$2"
+            shift 2
+            ;;
+        --apt-source-base)
+            APT_SOURCE_BASE_ARG="$2"
+            shift 2
+            ;;
+        --authd-apt-source-base)
+            AUTHD_APT_SOURCE_BASE_ARG="$2"
             shift 2
             ;;
         --apt-source)
@@ -158,8 +172,30 @@ DATA_DIR="${DATA_DIR_ARG:-${AUTHD_E2E_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/sh
 if [[ -n "${DATA_DIR_ARG}" || -n "${AUTHD_E2E_DATA_DIR:-}" ]]; then
     ARTIFACTS_DIR="${DATA_DIR}/${RELEASE}"
 fi
+requested_apt_source_base="${APT_SOURCE_BASE_ARG:-${APT_SOURCE_BASE:-}}"
+requested_authd_apt_source_base="${AUTHD_APT_SOURCE_BASE_ARG:-${AUTHD_APT_SOURCE_BASE:-}}"
 requested_apt_source="${APT_SOURCE_ARG:-${APT_SOURCE:-${AUTHD_DEFAULT_APT_SOURCE}}}"
 requested_authd_apt_source="${AUTHD_APT_SOURCE_ARG:-${AUTHD_APT_SOURCE:-}}"
+
+APT_SOURCE_BASE=
+if [ -n "${requested_apt_source_base}" ]; then
+    if ! APT_SOURCE_BASE="$(normalize_apt_source "${requested_apt_source_base}")"; then
+        echo "Invalid base APT source '${requested_apt_source_base}'." >&2
+        exit 1
+    fi
+    if is_ppa_source "${APT_SOURCE_BASE}"; then
+        echo "Base APT source must be an Ubuntu archive suite." >&2
+        exit 1
+    fi
+fi
+
+AUTHD_APT_SOURCE_BASE=
+if [ -n "${requested_authd_apt_source_base}" ]; then
+    if ! AUTHD_APT_SOURCE_BASE="$(normalize_apt_source "${requested_authd_apt_source_base}")"; then
+        echo "Invalid authd base APT source '${requested_authd_apt_source_base}'." >&2
+        exit 1
+    fi
+fi
 
 if ! APT_SOURCE="$(normalize_apt_source "${requested_apt_source}")"; then
     echo "Invalid APT source '${requested_apt_source}'." >&2
@@ -177,13 +213,16 @@ if [ -n "${requested_authd_apt_source}" ]; then
         exit 1
     fi
 fi
-unset requested_apt_source requested_authd_apt_source
+unset requested_apt_source_base requested_authd_apt_source_base requested_apt_source requested_authd_apt_source
 
 VM_NAME_BASE="${VM_NAME_BASE:-e2e-runner}"
 
 assert_env_vars RELEASE BROKER
 
-if ! is_ppa_source "${APT_SOURCE}"; then
+if [ -n "${APT_SOURCE_BASE:-}" ] ||
+    { [ -n "${AUTHD_APT_SOURCE_BASE:-}" ] && ! is_ppa_source "${AUTHD_APT_SOURCE_BASE}"; }; then
+    VM_RELEASE=$(resolve_devel_release "${RELEASE}")
+elif ! is_ppa_source "${APT_SOURCE}"; then
     VM_RELEASE=$(resolve_devel_release "${RELEASE}")
 elif [ -n "${AUTHD_APT_SOURCE:-}" ] && ! is_ppa_source "${AUTHD_APT_SOURCE}"; then
     VM_RELEASE=$(resolve_devel_release "${RELEASE}")
@@ -203,6 +242,8 @@ validate_archive_source() {
     fi
 }
 
+validate_archive_source "${APT_SOURCE_BASE:-}" base
+validate_archive_source "${AUTHD_APT_SOURCE_BASE:-}" authd-base
 validate_archive_source "${APT_SOURCE}" target
 validate_archive_source "${AUTHD_APT_SOURCE:-}" authd
 
@@ -231,6 +272,11 @@ AUTHD_STABLE_SNAPSHOT="authd-stable-installed"
 BROKER_STABLE_SNAPSHOT="${BROKER}-stable-installed"
 AUTHD_SNAPSHOT="authd-installed"
 BROKER_SNAPSHOT="${BROKER}-installed"
+STABLE_AUTHD_SOURCE="${AUTHD_APT_SOURCE_BASE:-ppa:ubuntu-enterprise-desktop/authd}"
+# Stable snapshot names are used by the test suite, so track their source pair
+# separately and rebuild both snapshots when either source changes.
+STABLE_SNAPSHOT_SOURCE_KEY="${APT_SOURCE_BASE:-<none>}|${STABLE_AUTHD_SOURCE}"
+STABLE_SNAPSHOT_SOURCE_FILE="${ARTIFACTS_DIR}/${VM_NAME}.${BROKER}.stable-snapshot-source"
 
 function install_broker() {
     local broker="$1"
@@ -352,6 +398,21 @@ ${authd_fallback_policy}
 	EOF
 }
 
+function configure_authd_only_policy() {
+    local authd_source="$1"
+    local authd_pin
+
+    authd_pin="$(source_pin "${authd_source}")"
+    $SSH bash -euo pipefail -s <<-EOF
+		mkdir -p /etc/apt/preferences.d
+		cat > /etc/apt/preferences.d/99-e2e-authd-source <<-PREFERENCE
+		Package: authd
+		Pin: release ${authd_pin}
+		Pin-Priority: 1001
+		PREFERENCE
+	EOF
+}
+
 function configure_local_authd_policy() {
     $SSH bash -euo pipefail -s <<-'EOF'
 		authd_version="$(dpkg-query -W -f='${Version}' authd)"
@@ -421,26 +482,53 @@ else
     force_create_snapshot "$PRE_AUTHD_SNAPSHOT"
 fi
 
-if [ -z "${FORCE:-}" ] && has_snapshot "${AUTHD_STABLE_SNAPSHOT}"; then
+if [ -n "${FORCE:-}" ] ||
+    [ ! -f "${STABLE_SNAPSHOT_SOURCE_FILE}" ] ||
+    [ "$(cat "${STABLE_SNAPSHOT_SOURCE_FILE}")" != "${STABLE_SNAPSHOT_SOURCE_KEY}" ] ||
+    ! has_snapshot "${AUTHD_STABLE_SNAPSHOT}" ||
+    ! has_snapshot "${BROKER_STABLE_SNAPSHOT}"; then
+    REBUILD_STABLE_SNAPSHOTS=true
+fi
+
+if [ -z "${REBUILD_STABLE_SNAPSHOTS:-}" ] && has_snapshot "${AUTHD_STABLE_SNAPSHOT}"; then
     restore_snapshot_and_sync_time "${AUTHD_STABLE_SNAPSHOT}"
 else
-    # Install authd stable and create a snapshot
-    PPA="ubuntu-enterprise-desktop/authd"
-    # Launchpad is sometimes slow to respond, so we add retries to avoid
-    # transient failures in the tests.
-    cmd="add-apt-repository -y ppa:${PPA}"
-    retry --times 5 --delay 3 -- "$SSH" -- "$cmd"
-    $SSH "apt-get install -y authd"
+    # Install authd stable and create the migration baseline. When a system
+    # source is selected, pin all packages to it and authd to its own source.
+    if [ -n "${APT_SOURCE_BASE:-}" ] || [ -n "${AUTHD_APT_SOURCE_BASE:-}" ]; then
+        if [ -n "${APT_SOURCE_BASE:-}" ]; then
+            add_apt_source "${APT_SOURCE_BASE}"
+        fi
+        if [ "${STABLE_AUTHD_SOURCE}" != "${APT_SOURCE_BASE:-}" ]; then
+            add_apt_source "${STABLE_AUTHD_SOURCE}"
+        fi
+        $SSH apt-get update
+        if [ -n "${APT_SOURCE_BASE:-}" ]; then
+            configure_apt_policy "${APT_SOURCE_BASE}" "${STABLE_AUTHD_SOURCE}"
+            $SSH apt-get install -y authd
+            $SSH apt-get full-upgrade -y
+        else
+            configure_authd_only_policy "${STABLE_AUTHD_SOURCE}"
+            $SSH apt-get install -y authd
+        fi
+    else
+        add_apt_source "${STABLE_AUTHD_SOURCE}"
+        $SSH apt-get update
+        $SSH "apt-get install -y authd"
+    fi
     force_create_snapshot "${AUTHD_STABLE_SNAPSHOT}"
 fi
 
-if [ -z "${FORCE:-}" ] && has_snapshot "${BROKER_STABLE_SNAPSHOT}"; then
+if [ -z "${REBUILD_STABLE_SNAPSHOTS:-}" ] && has_snapshot "${BROKER_STABLE_SNAPSHOT}"; then
     restore_snapshot_and_sync_time "${BROKER_STABLE_SNAPSHOT}"
 else
     install_broker "${BROKER}" --channel "stable"
     # Snapshot this broker installation
     force_create_snapshot "${BROKER_STABLE_SNAPSHOT}"
 fi
+
+printf '%s\n' "${STABLE_SNAPSHOT_SOURCE_KEY}" > "${STABLE_SNAPSHOT_SOURCE_FILE}"
+unset REBUILD_STABLE_SNAPSHOTS
 
 # Remove the authd-stable-installed snapshot which is no longer needed
 # virsh snapshot-delete --domain "${VM_NAME}" --snapshotname "authd-stable-installed"
