@@ -7,15 +7,17 @@ LIB_DIR="${SCRIPT_DIR}/lib"
 SSH="${SCRIPT_DIR}/ssh.sh"
 LIBVIRT_XML_TEMPLATE="${SCRIPT_DIR}/e2e-runner-template.xml"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/authd-e2e-tests"
-DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests"
+DATA_DIR_ARG=
 
 usage(){
     cat << EOF
-Usage: $0 [--config-file <file>] [--release <release>] [--force]
+Usage: $0 [--config-file <file>] [--release <release>] [--data-dir <directory>] [--force]
 
 Options:
    --config-file <file>  Path to the configuration file (default: config.env)
    --release <release>   Ubuntu release to provision (e.g. noble, resolute); overrides config file
+   --data-dir <directory>
+                         Base directory for VM artifacts (or AUTHD_E2E_DATA_DIR)
    --force               Force provisioning: remove existing VM and artifacts and create a fresh VM
    --no-snapshot         Do not create a snapshot after initial setup
   -h, --help             Show this help message and exit
@@ -32,6 +34,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --release)
             RELEASE_ARG="$2"
+            shift 2
+            ;;
+        --data-dir)
+            DATA_DIR_ARG="$2"
             shift 2
             ;;
         --force)
@@ -65,6 +71,21 @@ fi
 # Set default config file if not provided
 if [ -z "${CONFIG_FILE:-}" ]; then
     CONFIG_FILE="${SCRIPT_DIR}/config.env"
+    # A linked worktree does not have its own copy of the gitignored config.
+    # Reuse the config from the main worktree when it is available.
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        _git_common_dir=
+        if command -v git >/dev/null 2>&1; then
+            _git_common_dir="$(git -C "${SCRIPT_DIR}" rev-parse --git-common-dir 2>/dev/null || true)"
+        fi
+        if [[ "${_git_common_dir}" == /* ]]; then
+            _linked_config="$(dirname "${_git_common_dir}")/e2e-tests/vm/config.env"
+            if [[ -f "${_linked_config}" ]]; then
+                CONFIG_FILE="${_linked_config}"
+            fi
+        fi
+        unset _git_common_dir _linked_config
+    fi
 fi
 
 # Load the configuration file (if it exists)
@@ -102,6 +123,11 @@ fi
 # Resolve the actual release name if "devel" is specified
 # shellcheck disable=SC2153 # RELEASE is not misspelled
 RELEASE_NAME=$(resolve_devel_release "${RELEASE}")
+
+DATA_DIR="${DATA_DIR_ARG:-${AUTHD_E2E_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests}}"
+if [[ -n "${DATA_DIR_ARG}" || -n "${AUTHD_E2E_DATA_DIR:-}" ]]; then
+    ARTIFACTS_DIR="${DATA_DIR}/${RELEASE}"
+fi
 
 # Cache sudo password early
 sudo -v
