@@ -71,6 +71,21 @@ fi
 # Set default config file if not provided
 if [ -z "${CONFIG_FILE:-}" ]; then
     CONFIG_FILE="${SCRIPT_DIR}/config.env"
+    # A linked worktree does not have its own copy of the gitignored config.
+    # Reuse the config from the main worktree when it is available.
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        _git_common_dir=
+        if command -v git >/dev/null 2>&1; then
+            _git_common_dir="$(git -C "${SCRIPT_DIR}" rev-parse --git-common-dir 2>/dev/null || true)"
+        fi
+        if [[ "${_git_common_dir}" == /* ]]; then
+            _linked_config="$(dirname "${_git_common_dir}")/e2e-tests/vm/config.env"
+            if [[ -f "${_linked_config}" ]]; then
+                CONFIG_FILE="${_linked_config}"
+            fi
+        fi
+        unset _git_common_dir _linked_config
+    fi
 fi
 
 # Load the configuration file (if it exists)
