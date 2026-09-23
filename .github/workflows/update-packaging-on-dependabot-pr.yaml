@@ -323,6 +323,12 @@ jobs:
           # avoids putting it directly in shell syntax.
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |-
+          # The API creates a commit even when all additions match the branch.
+          if git diff-files --quiet -- Cargo.lock debian/control debian/copyright; then
+            echo "Generated packaging files already match the PR branch."
+            exit 0
+          fi
+
           BASE_SHA=$(git rev-parse HEAD)
           COMMIT_RESPONSE=$(jq -n \
             --arg repository "${REPOSITORY}" \
