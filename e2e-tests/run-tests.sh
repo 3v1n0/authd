@@ -314,4 +314,16 @@ env \
         "${TESTS_TO_RUN[@]}" \
         || test_result=$?
 
+if [ "${test_result:-0}" -eq 0 ]; then
+    vm_state="$(virsh domstate "${VM_NAME}")"
+    if [ "${vm_state}" = "shut off" ]; then
+        echo "E2E tests passed; ${VM_NAME} is already stopped"
+    else
+        echo "E2E tests passed; stopping ${VM_NAME}"
+        virsh destroy "${VM_NAME}"
+    fi
+else
+    echo "E2E tests failed; leaving ${VM_NAME} running for investigation" >&2
+fi
+
 exit "${test_result:-0}"
