@@ -443,7 +443,7 @@ Log Installed Package Information
     ${authd_dependencies}=    SSH.Execute
     ...    { printf '%s\\n' authd gnome-shell; apt-cache depends authd | awk '/^[[:space:]|]+(Pre-Depends|Depends|Recommends|Breaks): / {print $2}'; } | sort -u | while read -r package; do if ! dpkg-query --show "$package" 2>/dev/null; then printf '%s (not installed)\\n' "$package"; fi; done
     ${authd_apt_policy}=    SSH.Execute    apt-cache policy authd
-    ${gnome_shell_apt_policy}=    SSH.Execute    apt-cache policy gnome-shell
+    ${gnome_shell_apt_policy}=    SSH.Execute    apt-cache policy gnome-shell yaru-theme-gnome-shell
 
     # Keep stable package versions separate so migration setup does not
     # overwrite the under-test versions stored on the root suite.
