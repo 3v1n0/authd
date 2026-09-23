@@ -15,11 +15,11 @@ name: Update packaging files on Dependabot PR
 # authd-oidc-brokers/, GitHub Actions, and submodules are not part of the
 # Debian package, so they do not need entries in debian/copyright.
 #
-# Cargo.lock and debian/control are generated in Ubuntu Noble, the oldest
-# supported release and the package build environment. Noble's default Cargo
-# is too old to parse Cargo.toml, so the pinned Cargo bin directory is placed
-# first in PATH. debian/copyright is generated in ubuntu:devel, which provides
-# python3-anytree and matches the licenserecon check.
+# Cargo.lock is generated in Ubuntu Noble, the oldest supported release.
+# Noble's default Cargo is too old to parse Cargo.toml, so the pinned Cargo
+# bin directory is placed first in PATH. debian/control's
+# XS-Vendored-Sources-Rust field and debian/copyright are generated in
+# ubuntu:devel from the same filtered vendor tree.
 # Generation jobs run Cargo, cargo-vendor-filterer, Go, and a repository
 # script, which may execute dependency build code, so they have read-only
 # permissions. The separate commit-and-push job has the write token but only
@@ -41,9 +41,6 @@ permissions:
   contents: read
 
 env:
-  # Keep these aligned with debian-build.yaml.
-  # Noble's Rust 1.75 supports cargo-vendor-filterer only up to 0.5.16.
-  CARGO_VENDOR_FILTERER_NOBLE_VERSION: 0.5.16
   # The ubuntu:devel image provides OpenSSL 4, which requires 0.5.18.
   CARGO_VENDOR_FILTERER_DEVEL_VERSION: 0.5.18
 
@@ -55,7 +52,7 @@ defaults:
 
 jobs:
   generate-cargo:
-    name: Regenerate Cargo.lock and XS-Vendored-Sources-Rust
+    name: Regenerate Cargo.lock
     # Run only for Dependabot updates to the root Rust or Go dependencies.
     # Check the PR author instead of github.actor because a maintainer may
     # trigger a run. Dependabot PRs use branches in this repository, so the
@@ -99,62 +96,23 @@ jobs:
           fi
           echo "CARGO_NOBLE_VERSION=${CARGO_NOBLE_VERSION}" >> "${GITHUB_ENV}"
 
-      - name: Install build dependencies
+      - name: Install Cargo
         if: env.IS_CARGO_PR == 'true'
         run: |
-          apt-get update -y
-          # build-essential builds cargo-vendor-filterer.
           apt-get install -y --no-install-recommends \
-            build-essential \
-            dh-cargo \
-            libssl-dev \
-            pkg-config \
             "cargo-${CARGO_NOBLE_VERSION}"
 
-          # dh-cargo installs an old unversioned Cargo. Use the pinned Cargo
-          # directly; the dh-cargo wrapper would force offline/vendor mode,
-          # but this step needs network access.
+          # Use the pinned Cargo directly; the system Cargo may be older.
+          # This step needs network access.
           echo "/usr/lib/rust-${CARGO_NOBLE_VERSION}/bin" >> "${GITHUB_PATH}"
 
-      - name: Regenerate Cargo.lock and XS-Vendored-Sources-Rust
-        # Go-only updates cannot change Cargo.lock or
-        # XS-Vendored-Sources-Rust. Skip Rust generation and upload the
-        # checked-out files unchanged.
+      - name: Regenerate Cargo.lock
+        # Go-only updates cannot change Cargo.lock. Skip Rust generation and
+        # upload the checked-out files unchanged.
         if: env.IS_CARGO_PR == 'true'
         run: |
           cargo --version
-
-          cargo install --locked --root=/usr \
-            cargo-vendor-filterer@"${CARGO_VENDOR_FILTERER_NOBLE_VERSION}"
-
           cargo generate-lockfile
-
-          # Use a temporary vendor tree to compute XS-Vendored-Sources-Rust.
-          # The copyright job recreates it from Cargo.lock instead of
-          # transferring the tree between jobs.
-          rm -rf vendor_rust
-          cargo vendor-filterer vendor_rust
-
-          echo "Running dh-cargo-vendored-sources"
-          export CARGO_VENDOR_DIR=vendor_rust
-          VENDORED_SOURCES=$(/usr/share/cargo/bin/dh-cargo-vendored-sources 2>&1) \
-            || cmd_status=$?
-          echo "${VENDORED_SOURCES}"
-
-          OUTPUT=$(echo "${VENDORED_SOURCES}" | grep ^XS-Vendored-Sources-Rust: || true)
-          if [ -z "${OUTPUT}" ]; then
-            if [ "${cmd_status:-0}" -ne 0 ]; then
-              # Propagate an unexpected dh-cargo failure.
-              echo "dh-cargo-vendored-sources failed unexpectedly (exit code ${cmd_status})"
-              exit "${cmd_status}"
-            fi
-
-            echo "XS-Vendored-Sources-Rust is up to date. No change is needed."
-          else
-            sed -i "s/^XS-Vendored-Sources-Rust:.*/${OUTPUT}/" debian/control
-          fi
-
-          rm -rf vendor_rust
 
       - name: Upload Cargo.lock and debian/control
         uses: actions/upload-artifact@v7
@@ -222,11 +180,12 @@ jobs:
             exit 1
           fi
 
-      - name: Install cargo and cargo-vendor-filterer
+      - name: Install Cargo, dh-cargo, and cargo-vendor-filterer
         run: |
           apt-get install -y --no-install-recommends \
             build-essential \
             cargo \
+            dh-cargo \
             libssl-dev \
             pkg-config
 
@@ -235,17 +194,23 @@ jobs:
 
       - name: Vendor the Rust dependencies
         run: |
-          # ubuntu:devel's Cargo may rewrite Cargo.lock while vendoring. Keep
-          # the Noble-generated file so it still matches
-          # XS-Vendored-Sources-Rust.
+          # Keep the Noble-generated lockfile unchanged while recreating the
+          # vendor tree with the Devel vendoring stack.
           cp Cargo.lock Cargo.lock.noble
 
           # Cargo.lock fully determines this tree, so recreate it instead of
-          # transferring the tree from generate-cargo.
+          # transferring the tree from the other job.
           rm -rf vendor_rust
           cargo vendor-filterer vendor_rust
 
           mv Cargo.lock.noble Cargo.lock
+
+      - name: Regenerate XS-Vendored-Sources-Rust
+        run: |
+          export CARGO_VENDOR_DIR=vendor_rust
+          OUTPUT=$(/usr/share/cargo/bin/dh-cargo-vendored-sources --output-expected)
+          sed -i "s/^XS-Vendored-Sources-Rust:.*/XS-Vendored-Sources-Rust: ${OUTPUT}/" debian/control
+          /usr/share/cargo/bin/dh-cargo-vendored-sources
 
       - name: Install licensecheck and python3-anytree
         run: |
