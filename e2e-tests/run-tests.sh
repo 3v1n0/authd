@@ -25,6 +25,8 @@ Prerequisites:
   - YARF must be installed via the setup_yarf.sh script
 
 Optional environment variables:
+  AUTHD_E2E_TEST_RUNS_DIR
+                      Directory for test run artifacts (default: \${XDG_RUNTIME_DIR:-/tmp}/authd-e2e-test-runs)
   AUTHD_DEB           Host path to the authd package for migration tests
   APT_SOURCE          PPA or Ubuntu archive suite for all packages except authd
   AUTHD_APT_SOURCE    PPA or Ubuntu archive suite for authd installation
@@ -37,6 +39,7 @@ Options:
   -b, --broker <broker>        Broker to test (can also be set via BROKER environment variable)
   -r, --release <release>      Ubuntu release to test (e.g., 'resolute', can also be set via RELEASE environment variable)
   -o, --output-dir DIR         Directory to store test outputs (default: temporary directory)
+      --test-runs-dir DIR      Directory for test run artifacts (overrides AUTHD_E2E_TEST_RUNS_DIR)
   -t, --test <name>            Run only the named test case (can be repeated)
   -h, --help                   Show this help message and exit
       --rerunfailed            Re-run only the tests that failed in the previous run
@@ -46,7 +49,6 @@ EOF
 ROOT_DIR=$(dirname "$(readlink -f "$0")")
 TESTS_DIR="${ROOT_DIR}/tests"
 LISTENER_DIR="${ROOT_DIR}/listener"
-TEST_RUNS_DIR="${XDG_RUNTIME_DIR}/authd-e2e-test-runs"
 # shellcheck source=vm/lib/libprovision.sh
 source "${ROOT_DIR}/vm/lib/libprovision.sh"
 
@@ -79,6 +81,8 @@ if [[ -n "${_scan_broker:-}" ]]; then
     fi
 fi
 unset _scan_broker _scan_args _env_file _git_common_dir
+
+TEST_RUNS_DIR="${AUTHD_E2E_TEST_RUNS_DIR:-${XDG_RUNTIME_DIR:-/tmp}/authd-e2e-test-runs}"
 
 # Parse command line arguments
 TESTS_TO_RUN=()
@@ -113,6 +117,15 @@ while [[ $# -gt 0 ]]; do
             ;;
         --output-dir|-o)
             OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --test-runs-dir)
+            if [[ $# -lt 2 ]]; then
+                echo >&2 "Error: $1 requires an argument"
+                usage
+                exit 1
+            fi
+            TEST_RUNS_DIR="$2"
             shift 2
             ;;
         --test|-t)

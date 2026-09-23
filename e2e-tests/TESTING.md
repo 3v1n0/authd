@@ -5,6 +5,17 @@ They cover a wide range of scenarios, both for authd and the brokers.
 
 ## Setting up the environment
 
+The E2E scripts use these optional path variables:
+
+- `AUTHD_E2E_DATA_DIR`: base directory for VM images, snapshots, and related
+  artifacts. It defaults to `${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests`.
+- `AUTHD_E2E_TEST_RUNS_DIR`: directory for test and YARF console output. It
+  defaults to `${XDG_RUNTIME_DIR:-/tmp}/authd-e2e-test-runs`.
+
+These variables are useful when the test process runs in a sandbox. The same
+paths can be supplied explicitly with `vm/provision.sh --data-dir` and
+`run-tests.sh` or `yarf-console.sh --test-runs-dir`.
+
 ### 1. Install dependencies
 
 ```bash
@@ -95,7 +106,7 @@ the full suite. To run one test case from a suite, pass its exact name with
 ```
 
 Run `./e2e-tests/run-tests.sh --help` for all available options, including
-`--rerunfailed` and `--output-dir`.
+`--rerunfailed`, `--output-dir`, and `--test-runs-dir`.
 
 ## Running in GitHub CI
 

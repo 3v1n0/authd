@@ -6,15 +6,17 @@ SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 LIB_DIR="${SCRIPT_DIR}/lib"
 SSH="${SCRIPT_DIR}/ssh.sh"
 SCP="${SCRIPT_DIR}/scp.sh"
-DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests"
+DATA_DIR_ARG=
 
 usage(){
     cat << EOF
-Usage: $0 [--config-file <file>] [--release <release>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--broker-snap <snap>]
+Usage: $0 [--config-file <file>] [--release <release>] [--data-dir <directory>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--broker-snap <snap>]
 
 Options:
    --config-file <file>  Path to the configuration file (default: config.env)
    --release <release>   Ubuntu release to provision (e.g. noble, resolute); overrides config file
+   --data-dir <directory>
+                        Base directory for VM artifacts (or AUTHD_E2E_DATA_DIR)
    --force              Force installation of authd and brokers even if snapshots already exist.
                         The existing snapshots will be deleted and recreated with the new installation.
    --broker <broker>    The broker to install ("authd-google", "authd-msentraid", ...)
@@ -40,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --release)
             RELEASE_ARG="$2"
+            shift 2
+            ;;
+        --data-dir)
+            DATA_DIR_ARG="$2"
             shift 2
             ;;
         --force)
@@ -148,6 +154,10 @@ fi
 
 # CLI options override config file values
 RELEASE="${RELEASE_ARG:-${RELEASE:-}}"
+DATA_DIR="${DATA_DIR_ARG:-${AUTHD_E2E_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests}}"
+if [[ -n "${DATA_DIR_ARG}" || -n "${AUTHD_E2E_DATA_DIR:-}" ]]; then
+    ARTIFACTS_DIR="${DATA_DIR}/${RELEASE}"
+fi
 requested_apt_source="${APT_SOURCE_ARG:-${APT_SOURCE:-${AUTHD_DEFAULT_APT_SOURCE}}}"
 requested_authd_apt_source="${AUTHD_APT_SOURCE_ARG:-${AUTHD_APT_SOURCE:-}}"
 

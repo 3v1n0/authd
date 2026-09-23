@@ -38,17 +38,19 @@ Optional:
   AUTHD_DEB, APT_SOURCE, AUTHD_APT_SOURCE
                                         Forwarded to the console so keywords
                                         that reference them work as in a run.
+  AUTHD_E2E_TEST_RUNS_DIR              Directory for console artifacts
 
 Options:
   -b, --broker <broker>     Broker to use (or BROKER env var)
   -r, --release <release>   Ubuntu release (or RELEASE env var)
   -o, --output-dir DIR      Directory for console artifacts (default: temp dir)
+      --test-runs-dir DIR   Directory for console artifacts (overrides AUTHD_E2E_TEST_RUNS_DIR)
   -h, --help                Show this help message and exit
 EOF
 }
 
 ROOT_DIR=$(dirname "$(readlink -f "$0")")
-TEST_RUNS_DIR="${XDG_RUNTIME_DIR}/authd-e2e-test-runs"
+TEST_RUNS_DIR="${AUTHD_E2E_TEST_RUNS_DIR:-${XDG_RUNTIME_DIR:-/tmp}/authd-e2e-test-runs}"
 # shellcheck source=vm/lib/libprovision.sh
 source "${ROOT_DIR}/vm/lib/libprovision.sh"
 
@@ -109,6 +111,15 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --test-runs-dir)
+            if [[ $# -lt 2 ]]; then
+                echo >&2 "Error: $1 requires an argument"
+                usage
+                exit 1
+            fi
+            TEST_RUNS_DIR="$2"
             shift 2
             ;;
         -h|--help)
