@@ -269,9 +269,8 @@ jobs:
       - name: Check whether the packaging files changed
         id: diff
         run: |
-          # Compare the worktree with the index directly. This avoids Git
-          # interpreting the paths as a no-index comparison.
-          if git diff-files --quiet -- Cargo.lock debian/control debian/copyright; then
+          # Compare file contents with HEAD
+          if git diff --quiet HEAD -- Cargo.lock debian/control debian/copyright; then
             echo "Nothing to commit."
             echo "changed=false" >> "${GITHUB_OUTPUT}"
           else
@@ -324,7 +323,8 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |-
           # The API creates a commit even when all additions match the branch.
-          if git diff-files --quiet -- Cargo.lock debian/control debian/copyright; then
+          # Compare contents with HEAD
+          if git diff --quiet HEAD -- Cargo.lock debian/control debian/copyright; then
             echo "Generated packaging files already match the PR branch."
             exit 0
           fi
