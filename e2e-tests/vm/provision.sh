@@ -7,11 +7,12 @@ CONFIG_FILE="${SCRIPT_DIR}/config.env"
 
 usage(){
     cat << EOF
-Usage: $0 [--config-file <config file>] [--release <release>] [--broker <broker>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--broker-snap <snap>] [--force]
+Usage: $0 [--config-file <config file>] [--release <release>] [--data-dir <directory>] [--broker <broker>] [--authd-deb <deb>] [--apt-source <source>] [--authd-apt-source <source>] [--broker-snap <snap>] [--force]
 
 Options:
   --config-file <config file>  Path to the configuration file (default: config.env)
   --release <release>          Ubuntu release to provision (e.g. noble, resolute); overrides config file
+  --data-dir <directory>       Base directory for VM artifacts (or AUTHD_E2E_DATA_DIR)
   --broker <broker>            The broker to install ("authd-google", "authd-msentraid", ...)
   --authd-deb <deb>            Path to the authd deb file to install
   --apt-source <source>        PPA or Ubuntu archive suite for all packages except authd
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --release)
             RELEASE_ARG="$2"
+            shift 2
+            ;;
+        --data-dir)
+            DATA_DIR_ARG="$2"
             shift 2
             ;;
         --force)
@@ -73,6 +78,22 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# A linked worktree does not have its own copy of the gitignored config.
+# Reuse the config from the main worktree when it is available.
+if [[ "${CONFIG_FILE}" == "${SCRIPT_DIR}/config.env" && ! -f "${CONFIG_FILE}" ]]; then
+    _git_common_dir=
+    if command -v git >/dev/null 2>&1; then
+        _git_common_dir="$(git -C "${SCRIPT_DIR}" rev-parse --git-common-dir 2>/dev/null || true)"
+    fi
+    if [[ "${_git_common_dir}" == /* ]]; then
+        _linked_config="$(dirname "${_git_common_dir}")/e2e-tests/vm/config.env"
+        if [[ -f "${_linked_config}" ]]; then
+            CONFIG_FILE="${_linked_config}"
+        fi
+    fi
+    unset _git_common_dir _linked_config
+fi
+
 # Print executed commands to ease debugging
 set -x
 
@@ -80,12 +101,14 @@ set -x
 "${SCRIPT_DIR}/provision-ubuntu.sh" \
   --config-file "${CONFIG_FILE}" \
   ${RELEASE_ARG:+--release "${RELEASE_ARG}"} \
+  ${DATA_DIR_ARG:+--data-dir "${DATA_DIR_ARG}"} \
   ${FORCE:+--force}
 
 # Provision authd in the VM
 "${SCRIPT_DIR}/provision-authd.sh" \
   --config-file "${CONFIG_FILE}" \
   ${RELEASE_ARG:+--release "${RELEASE_ARG}"} \
+  ${DATA_DIR_ARG:+--data-dir "${DATA_DIR_ARG}"} \
   ${BROKER:+--broker "${BROKER}"} \
   ${AUTHD_DEB:+--authd-deb "${AUTHD_DEB}"} \
   ${APT_SOURCE:+--apt-source "${APT_SOURCE}"} \
