@@ -5,6 +5,8 @@ set -euo pipefail
 : "${SELECTED_RELEASES:?SELECTED_RELEASES must be set}"
 : "${APT_SOURCE:=}"
 : "${AUTHD_APT_SOURCE:=}"
+: "${APT_SOURCE_BASE:=}"
+: "${AUTHD_APT_SOURCE_BASE:=}"
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
 
 # shellcheck source=../../e2e-tests/vm/lib/libprovision.sh
@@ -16,7 +18,14 @@ validate_archive_source() {
     local source="$1"
     local source_name="$2"
 
-    if [[ -z "${source}" || "${source}" == ppa:* ]]; then
+    if [[ -z "${source}" ]]; then
+        return
+    fi
+    if [[ "${source}" == ppa:* ]]; then
+        if [[ "${source_name}" == "base" ]]; then
+            echo "::error::Archive base source '${source}' must be an Ubuntu archive suite." >&2
+            exit 1
+        fi
         return
     fi
 
@@ -46,4 +55,6 @@ validate_archive_source() {
 
 validate_archive_source "${APT_SOURCE}" target
 validate_archive_source "${AUTHD_APT_SOURCE}" authd
+validate_archive_source "${APT_SOURCE_BASE}" base
+validate_archive_source "${AUTHD_APT_SOURCE_BASE}" authd-base
 printf 'codename=%s\n' "${codename}" >>"${GITHUB_OUTPUT}"

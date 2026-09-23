@@ -94,6 +94,16 @@ on:
         required: false
         default: ''
         type: string
+      e2e-apt-source-base:
+        description: 'e2e-apt-source-base: Optional Ubuntu archive suite for the stable system package baseline, such as resolute-updates'
+        required: false
+        default: ''
+        type: string
+      e2e-authd-apt-source-base:
+        description: 'e2e-authd-apt-source-base: Optional authd PPA or Ubuntu archive suite for the stable authd baseline, such as authd'
+        required: false
+        default: ''
+        type: string
   schedule:
     - cron: '0 0 * * 1' # Runs every Monday at midnight
 
@@ -129,6 +139,8 @@ jobs:
       test_cases: ${{ steps.parse_e2e_options.outputs.test_cases }}
       apt_source: ${{ steps.parse_e2e_options.outputs.apt_source }}
       authd_apt_source: ${{ steps.parse_e2e_options.outputs.authd_apt_source }}
+      apt_source_base: ${{ steps.parse_e2e_options.outputs.apt_source_base }}
+      authd_apt_source_base: ${{ steps.parse_e2e_options.outputs.authd_apt_source_base }}
     steps:
       - uses: actions/checkout@v7
       - name: Compute hash of build-relevant files
@@ -142,26 +154,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          E2E_EVENT_PULL_REQUEST_BODY: ${{ github.event.pull_request.body || '' }}
           E2E_BROKERS: ${{ inputs.e2e-brokers || '' }}
           E2E_UBUNTU_RELEASES: ${{ inputs.e2e-ubuntu-releases || '' }}
           E2E_TESTS: ${{ inputs.e2e-tests || '' }}
           E2E_TEST_CASE: ${{ inputs.e2e-test-case || '' }}
           E2E_APT_SOURCE: ${{ inputs.e2e-apt-source || '' }}
           E2E_AUTHD_APT_SOURCE: ${{ inputs.e2e-authd-apt-source || '' }}
+          E2E_APT_SOURCE_BASE: ${{ inputs.e2e-apt-source-base || '' }}
+          E2E_AUTHD_APT_SOURCE_BASE: ${{ inputs.e2e-authd-apt-source-base || '' }}
         run: |
           set -euo pipefail
 
           if [[ "${GITHUB_EVENT_NAME}" == 'pull_request' ]]; then
-            E2E_TESTS_DESCRIPTION=$(
+            # Fetch the live PR body so edits made after the event are included.
+            if ! E2E_TESTS_DESCRIPTION=$(
               gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" \
                 --jq '.body // ""'
-            )
+            ); then
+              echo "::warning::Could not fetch the current pull request description; falling back to the event body, which may not include later edits."
+              E2E_TESTS_DESCRIPTION="${E2E_EVENT_PULL_REQUEST_BODY}"
+            fi
           else
             E2E_TESTS_DESCRIPTION=$(
-              printf 'e2e-brokers: %s\ne2e-ubuntu-releases: %s\ne2e-tests: %s\ne2e-test-case: %s\ne2e-apt-source: %s\ne2e-authd-apt-source: %s\n' \
+              printf 'e2e-brokers: %s\ne2e-ubuntu-releases: %s\ne2e-tests: %s\ne2e-test-case: %s\ne2e-apt-source: %s\ne2e-authd-apt-source: %s\ne2e-apt-source-base: %s\ne2e-authd-apt-source-base: %s\n' \
                 "${E2E_BROKERS}" "${E2E_UBUNTU_RELEASES}" "${E2E_TESTS}" \
-                  "${E2E_TEST_CASE}" "${E2E_APT_SOURCE}" \
-                "${E2E_AUTHD_APT_SOURCE}"
+                "${E2E_TEST_CASE}" "${E2E_APT_SOURCE}" \
+                "${E2E_AUTHD_APT_SOURCE}" "${E2E_APT_SOURCE_BASE}" \
+                "${E2E_AUTHD_APT_SOURCE_BASE}"
             )
           fi
 
@@ -189,6 +209,8 @@ jobs:
       # Apply archive sources only to the matrix job for their matching Ubuntu release.
       apt-source: ${{ needs.prepare-e2e.outputs.apt_source }}
       authd-apt-source: ${{ needs.prepare-e2e.outputs.authd_apt_source }}
+      apt-source-base: ${{ needs.prepare-e2e.outputs.apt_source_base }}
+      authd-apt-source-base: ${{ needs.prepare-e2e.outputs.authd_apt_source_base }}
       brokers: ${{ needs.prepare-e2e.outputs.brokers }}
       e2e-test-cases: ${{ needs.prepare-e2e.outputs.test_cases }}
       e2e-tests: ${{ needs.prepare-e2e.outputs.tests }}
