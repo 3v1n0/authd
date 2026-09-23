@@ -108,6 +108,9 @@ the full suite. To run one test case from a suite, pass its exact name with
 Run `./e2e-tests/run-tests.sh --help` for all available options, including
 `--rerunfailed`, `--output-dir`, and `--test-runs-dir`.
 
+After a successful run, the e2e VM is stopped. If a test fails, the VM remains
+running for investigation.
+
 ## Running in GitHub CI
 
 By default, GitHub CI runs the end-to-end tests against `authd-msentraid` on all
