@@ -380,10 +380,9 @@ Log In With Remote User Through GDM: Local Password
     Hid.Type String    ${username}
     Hid.Keys Combo    Return
 
-    # Enter the password. The blinking text cursor can fuse with the
-    # placeholder text (OCR reads "IPassword"), lowering confidence below the
-    # suite's global threshold.
-    Match Text    Password    confidence=88
+    # Use a lower confidence threshold because the blinking text cursor can
+    # merge with the prompt and lower OCR confidence
+    Match Text    Enter your password    confidence=88
     Hid.Type String    ${local_password}
     Hid.Keys Combo    Return
 
