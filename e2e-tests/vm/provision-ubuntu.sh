@@ -129,8 +129,10 @@ if [[ -n "${DATA_DIR_ARG}" || -n "${AUTHD_E2E_DATA_DIR:-}" ]]; then
     ARTIFACTS_DIR="${DATA_DIR}/${RELEASE}"
 fi
 
-# Cache sudo password early
-sudo -v
+# Cache sudo password early unless we're run by an agent harness
+if [[ -z "${AGENTS:-}" && -z "${COPILOT_CLI:-}" && -z "${CLAUDECODE:-}" ]]; then
+    sudo -v
+fi
 
 # Installing all the packages can take some time, so we set the timeout to 15 minutes
 CLOUT_INIT_TIMEOUT=900
@@ -278,7 +280,7 @@ if ! cloud_init_finished "${IMAGE}"; then
     VM_CONSOLE_PID=$!
 
     timeout "${CLOUT_INIT_TIMEOUT}" retry --delay 1 -- \
-      sh -c "sudo virsh domstate \"${VM_NAME}\" | grep -q '^shut off'"
+      sh -c "virsh domstate \"${VM_NAME}\" | grep -q '^shut off'"
 
     kill "${VM_CONSOLE_PID}" || true
 
