@@ -219,14 +219,7 @@ VM_NAME_BASE="${VM_NAME_BASE:-e2e-runner}"
 
 assert_env_vars RELEASE BROKER
 
-if [ -n "${APT_SOURCE_BASE:-}" ] ||
-    { [ -n "${AUTHD_APT_SOURCE_BASE:-}" ] && ! is_ppa_source "${AUTHD_APT_SOURCE_BASE}"; }; then
-    VM_RELEASE=$(resolve_devel_release "${RELEASE}")
-elif ! is_ppa_source "${APT_SOURCE}"; then
-    VM_RELEASE=$(resolve_devel_release "${RELEASE}")
-elif [ -n "${AUTHD_APT_SOURCE:-}" ] && ! is_ppa_source "${AUTHD_APT_SOURCE}"; then
-    VM_RELEASE=$(resolve_devel_release "${RELEASE}")
-fi
+VM_RELEASE=$(resolve_devel_release "${RELEASE}")
 
 validate_archive_source() {
     local source="$1"
@@ -272,7 +265,23 @@ AUTHD_STABLE_SNAPSHOT="authd-stable-installed"
 BROKER_STABLE_SNAPSHOT="${BROKER}-stable-installed"
 AUTHD_SNAPSHOT="authd-installed"
 BROKER_SNAPSHOT="${BROKER}-installed"
-STABLE_AUTHD_SOURCE="${AUTHD_APT_SOURCE_BASE:-ppa:ubuntu-enterprise-desktop/authd}"
+if [ -n "${AUTHD_APT_SOURCE_BASE:-}" ]; then
+    STABLE_AUTHD_SOURCE="${AUTHD_APT_SOURCE_BASE}"
+else
+    stable_authd_ppa="ubuntu-enterprise-desktop/authd"
+    if ppa_has_suite "${stable_authd_ppa}" "${VM_RELEASE}"; then
+        STABLE_AUTHD_SOURCE="ppa:${stable_authd_ppa}"
+    else
+        ppa_check_status=$?
+        if [ "${ppa_check_status}" -ne 1 ]; then
+            echo "Could not verify whether the stable authd PPA publishes '${VM_RELEASE}'." >&2
+            exit 1
+        fi
+        STABLE_AUTHD_SOURCE="${VM_RELEASE}"
+        echo "The stable authd PPA does not publish '${VM_RELEASE}'; using the Ubuntu archive for the baseline."
+    fi
+fi
+unset ppa_check_status stable_authd_ppa
 # Stable snapshot names are used by the test suite, so track their source pair
 # separately and rebuild both snapshots when either source changes.
 STABLE_SNAPSHOT_SOURCE_KEY="${APT_SOURCE_BASE:-<none>}|${STABLE_AUTHD_SOURCE}"
@@ -352,6 +361,9 @@ function add_apt_source() {
         local cmd="add-apt-repository -y -n ppa:${ppa}"
         # Launchpad is sometimes slow to respond, so retry PPA additions.
         retry --times 5 --delay 3 -- "$SSH" -- "$cmd"
+    elif [[ "${apt_source}" == "${VM_RELEASE:-}" ]]; then
+        # The base suite is already enabled.
+        return
     else
         $SSH "add-apt-repository -y -n -S 'deb http://archive.ubuntu.com/ubuntu/ ${apt_source} main restricted universe multiverse'"
     fi
