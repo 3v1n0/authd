@@ -51,8 +51,9 @@ while `e2e-authd-apt-source: authd-edge` installs authd from the edge PPA.
 The base source markers select the sources for the stable migration baseline.
 `e2e-apt-source-base` selects the Ubuntu archive suite for all packages except
 authd, while `e2e-authd-apt-source-base` selects the authd source. If the
-authd base marker is omitted, authd uses the stable `authd` PPA. For example,
-the four markers above test a migration from system packages in
-`resolute-updates` and stable authd from the `authd` PPA to system packages in
-`resolute-proposed` and authd from `authd-edge`.
+authd base marker is omitted, authd uses the stable `authd` PPA when it
+publishes the selected Ubuntu suite, and falls back to that suite's archive
+otherwise. For example, the four markers above test a migration from system
+packages in `resolute-updates` and stable authd from the `authd` PPA to system
+packages in `resolute-proposed` and authd from `authd-edge`.
 -->
