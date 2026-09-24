@@ -39,6 +39,47 @@ function is_ppa_source() {
     [[ "$1" == ppa:* ]]
 }
 
+function ppa_has_suite() {
+    # Return 0 if published, 1 if missing, and 2 if the check failed.
+    local ppa="$1"
+    local suite="$2"
+    local metadata
+    local status
+    local url="https://ppa.launchpadcontent.net/${ppa}/ubuntu/dists/${suite}"
+
+    for metadata in InRelease Release; do
+        if ! status="$(
+            curl \
+                --silent \
+                --show-error \
+                --head \
+                --location \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                --connect-timeout 10 \
+                --max-time 30 \
+                "${url}/${metadata}"
+        )"; then
+            echo "Failed to check PPA '${ppa}' for suite '${suite}'." >&2
+            return 2
+        fi
+
+        case "${status}" in
+            200)
+                return 0
+                ;;
+            404)
+                ;;
+            *)
+                echo "Unexpected HTTP status '${status}' checking PPA '${ppa}' for suite '${suite}'." >&2
+                return 2
+                ;;
+        esac
+    done
+
+    return 1
+}
+
 function source_pin() {
     local source="$1"
     local ppa

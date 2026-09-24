@@ -147,7 +147,8 @@ variables accept the three authd PPA names or an Ubuntu archive suite.
 `APT_SOURCE_BASE` selects the Ubuntu archive suite for the stable baseline of
 all packages except authd. `AUTHD_APT_SOURCE_BASE` independently selects the
 source for the stable authd baseline. If it is unset, the stable authd PPA is
-used, regardless of `APT_SOURCE_BASE`.
+used when it publishes the VM's Ubuntu suite; otherwise, the matching Ubuntu
+archive suite is used.
 
 The E2E workflow runs for a pull request only when it has the `e2e-tests` label.
 The pull request template contains commented examples for selecting Ubuntu
