@@ -132,6 +132,39 @@ Run `./e2e-tests/run-tests.sh --help` for all available options, including
 After a successful run, the e2e VM is stopped. If a test fails, the VM remains
 running for investigation.
 
+### Reusing a prepared VM snapshot
+
+For local development, it can be useful to run an e2e test against a
+modified VM state, for example to quickly test changes to the authd
+installation. To do that, create a named snapshot after making the desired
+modifications in the VM. Create it while the VM is running so the snapshot
+includes its memory state. You can use the snapshot helper for that:
+
+```bash
+RELEASE=noble
+VM_NAME="${VM_NAME:-e2e-runner-${RELEASE}}"
+DATA_DIR="${AUTHD_E2E_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests}"
+IMAGE="${DATA_DIR}/${RELEASE}/${VM_NAME}.qcow2"
+source e2e-tests/vm/lib/libprovision.sh
+force_create_snapshot authd-google-prepared
+```
+
+Tell the tests to restore that snapshot:
+
+```bash
+E2E_TEST_SNAPSHOT=authd-google-prepared \
+  ./e2e-tests/run-tests.sh \
+    --broker authd-google --release noble \
+    e2e-tests/tests/login_gdm.robot
+```
+
+`E2E_TEST_SNAPSHOT` is used both to start a stopped VM and before each test, so
+tests still start from a clean copy of the prepared state. After a successful
+run, the runner stops the VM; the next run restores the named snapshot
+automatically. The setting overrides suite-specific snapshots, including the
+stable snapshots used by migration tests, so use it only with compatible test
+suites. Leave it unset for normal isolated and CI runs.
+
 ## Running in GitHub CI
 
 By default, GitHub CI runs the end-to-end tests against `authd-msentraid` on all
