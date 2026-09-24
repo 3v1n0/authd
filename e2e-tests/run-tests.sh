@@ -31,6 +31,8 @@ Optional environment variables:
   APT_SOURCE          PPA or Ubuntu archive suite for all packages except authd
   AUTHD_APT_SOURCE    PPA or Ubuntu archive suite for authd installation
   BROKER_SNAP         Host path to the broker snap for migration tests
+  E2E_TEST_SNAPSHOT   Existing snapshot to use when starting the VM and before
+                      each test; must include memory state if the VM is stopped
 
 Options:
   -u, --user <name>            Username for the tests (can also be set via E2E_USER environment variable)
@@ -244,7 +246,8 @@ if ! virsh domstate "${VM_NAME}" | grep -q '^running'; then
     # `virsh start` fails with a permission denied error.
     # Reverting to a snapshot first fixes this (and since it's a live snapshot,
     # we don't need to start the VM afterwards).
-    virsh snapshot-revert "${VM_NAME}" "${BROKER}-installed"
+    startup_snapshot="${E2E_TEST_SNAPSHOT:-${BROKER}-installed}"
+    virsh snapshot-revert "${VM_NAME}" "${startup_snapshot}"
 fi
 VNC_PORT=$(virsh vncdisplay "${VM_NAME}" | cut -d':' -f2)
 

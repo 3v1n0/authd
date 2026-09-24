@@ -463,14 +463,21 @@ Log Installed Package Information
 
 Restore Snapshot
     [Arguments]    ${snapshot}
+    ${snapshot_override}=    Get Environment Variable    E2E_TEST_SNAPSHOT    ${EMPTY}
+    IF    $snapshot_override
+        ${snapshot}=    Set Variable    ${snapshot_override}
+    END
     Snapshot.Restore    ${snapshot}
     Wait Until System Time Synced
+    RETURN    ${snapshot}
 
 Test Setup
     [Arguments]    ${snapshot}
+    [Documentation]    Restores the suite snapshot, or the snapshot named by
+    ...    E2E_TEST_SNAPSHOT when that environment variable is non-empty.
     Set Suite Metadata    Ubuntu Version   %{RELEASE}    top=True
     Set Suite Metadata    Broker    %{BROKER}    top=True
-    Restore Snapshot    ${snapshot}
+    ${snapshot}=    Restore Snapshot    ${snapshot}
     Log Installed Package Information    ${snapshot}
     Journal.Start Receiving Journal
     VNCRecorder.Start Recording
