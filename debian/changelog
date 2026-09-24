@@ -1,4 +1,4 @@
-authd (0.7.0) UNRELEASED; urgency=medium
+authd (0.7.0) stonking; urgency=medium
 
   * Improve error behavior when broker fails to start
   * Avoid Tokio panic during late NSS lookups
@@ -66,7 +66,7 @@ authd (0.7.0) UNRELEASED; urgency=medium
     - tonic-prost 0.14.6
     - tonic-prost-build 0.14.6
 
- -- Adrian Dombeck <adrian.dombeck@canonical.com>  Thu, 24 Sep 2026 11:14:44 +0200
+ -- Adrian Dombeck <adrian.dombeck@canonical.com>  Thu, 24 Sep 2026 12:47:34 +0200
 
 authd (0.6.4) resolute; urgency=medium
 
