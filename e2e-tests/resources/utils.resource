@@ -95,7 +95,9 @@ Unlock Screen With Password
     [Arguments]    ${password}
     # Locking the session can leave the display asleep until it receives input.
     Hid.Keys Combo    Return
-    Match Text    Password    30
+    # Use a lower confidence threshold because the blinking text cursor can
+    # merge with the prompt and lower OCR confidence
+    Match Text    Enter your password    confidence=88
     Hid.Type String    ${password}
     Hid.Keys Combo    Return
     Wait Until Desktop Ready
