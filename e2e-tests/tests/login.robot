@@ -1,11 +1,11 @@
 *** Settings ***
-Resource        ./resources/authd/utils.resource
-Resource        ./resources/authd/authd.resource
-Resource        ./resources/broker/broker.resource
+Resource        resources/utils.resource
+Resource        resources/authd.resource
+Resource        resources/broker.resource
 
 # Test Tags       robot:exit-on-failure
 
-Test Setup    utils.Test Setup
+Test Setup    utils.Test Setup    snapshot=%{BROKER}-installed
 Test Teardown   utils.Test Teardown
 
 
@@ -17,19 +17,30 @@ ${local_password}    qwer1234
 
 *** Test Cases ***
 Test login with CLI
-    [Documentation]    Test login via CLI with device authentication and local password.
+    [Documentation]    Test login via CLI with device code flow and local password.
 
     # Log in with local user
     Log In
 
-    # Log in with remote user with device authentication
+    # Log in with remote user with device code flow
     Open Terminal
     Log In With Remote User Through CLI: QR Code    ${username}    ${local_password}
     # Check remote user is properly added to the system
     Check If User Was Added Properly    ${username}
+    Check Home Directory    ${username}
     Log Out From Terminal Session
     Close Focused Window
 
     # Log in with remote user with local password
-    Open Terminal In Sudo Mode
+    Open Terminal
     Log In With Remote User Through CLI: Local Password    ${username}    ${local_password}
+    Log Out From su Session
+    Close Focused Window
+
+    # Try to change username during su login, it should not be possible
+    Open Terminal
+    Check That Username Cannot Be Changed When Using su    ${username}
+    Clear Terminal
+
+    # Check that `su` to a local user goes to the local broker, not authd.
+    Check That su To Local User Goes To Local Broker

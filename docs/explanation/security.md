@@ -63,34 +63,56 @@ authentication flow.
 
 Strong passwords are critical to prevent unauthorized access.
 
-authd uses libpwquality to enforce password complexity requirements. See the
-[Configure password quality](ref::config-pwquality) section for details.
+authd uses `libpwquality` to enforce password complexity requirements for local
+passwords. See the [Configure password quality](ref::config-pwquality) section
+for details.
 
+(ref::cached-entra-passwords)=
+
+#### Cached Entra ID passwords
+
+After a successful login through the Entra authentication flow using an Entra ID
+password, authd stores a salted hash of the password for offline authentication.
+
+authd does not apply its local `libpwquality` policy to Entra ID passwords
+used in the Entra authentication flow. Changes made to
+`/etc/security/pwquality.conf` do not affect users authenticating with an Entra
+ID password through that flow.
+A weak password accepted by the tenant is cached the same way. Configure the
+tenant password policy to reject weak passwords.
+
+The local policy applies when authd creates or changes a local password,
+including after passwordless or device-code authentication.
+See [Authentication flows](/reference/authentication-flows/) for details.
+
+(ref::force-auth-security)=
 #### Force provider authentication
 
 If the identity provider is reachable during login, authd verifies that the user
-is still allowed to authenticate with the identity provider. If the user’s
+is still allowed to authenticate with the identity provider. If the user's
 account has been disabled or removed, login is denied.
 
 By default, if the identity provider cannot be reached (for example, due to
 network issues), users can still log in with their local password. This is to
 prevent accidental lockouts, but it also allows users whose access has been
-revoked at the identity provider to log in while offline.
+revoked at the identity provider to log in while the provider is unreachable.
 
-To enforce verification with the identity provider even when offline, enable the
-[force_provider_authentication](ref::config-force-provider-auth) setting.
+To enforce verification with the identity provider even when it is unreachable,
+enable the [force_access_check_with_provider](ref::config-force-provider-auth)
+setting.
 
 ### Login via SSH
 
 #### SSH public key authentication
 
 If SSH public key authentication is enabled, users whose access has been revoked
-at the identity provider can still log in using their SSH keys. This is because
-SSH key authentication does not involve authd.
+at the identity provider or whose authd account has been locked can still log in
+using their SSH keys. This is because SSH key authentication does not involve
+authd.
 
-To prevent users with revoked access from logging in with SSH, disable public
-key authentication for users managed by authd, by adding the following to by
-adding the following to `/etc/ssh/sshd_config.d/authd.conf` or directly to
+To prevent users with revoked access or locked accounts from logging in with
+SSH, disable public key authentication for users managed by authd, by adding
+the following to `/etc/ssh/sshd_config.d/authd.conf` or directly to
 `/etc/ssh/sshd_config`:
 
 ```text
@@ -137,8 +159,8 @@ Replace `@example.com` with the domain of your identity provider.
 
 When a new user logs in for the first time, or when a user is added to a new
 group in the identity provider (for providers that support group management, see
-[Group management](https://documentation.ubuntu.com/authd/stable-docs/reference/group-management/)),
-authd automatically assigns a unique user ID (UID) and group ID (GID).
+[Group management](reference::group-management)), authd automatically assigns a
+unique user ID (UID) and group ID (GID).
 
 Before assigning a UID or GID, authd checks that there are no collisions with
 existing users or groups on the system. However, if a user or group is later
@@ -152,17 +174,17 @@ To avoid this risk:
 
 * Do not remove the authd database.
 * Remove all files and directories owned by any users that you delete,
-  especially if they contain sensitive data.
-
-```{important}
-A tool for removing authd users along with their home directories will be
-provided in the future.
-```
+  especially if they contain sensitive data. The
+  [`authctl user delete`](../reference/cli/authctl_user_delete.md) command can
+  also remove the user's home directory with the `--remove-home` option, but files
+  outside the home directory must be handled separately.
 
 ## How authd is designed for security
 
 This section describes how authd is built to protect stored data and limit
 system exposure.
+
+(ref::stored-secrets)=
 
 ### Stored secrets
 
@@ -178,6 +200,7 @@ The secrets that authd stores are described below.
 
 A salted Argon2id hash of the local password is stored for verification. Hashing
 parameters:
+
 * Memory: 64 KB
 * Iterations: 1
 * Parallelism: 1
@@ -196,8 +219,8 @@ to protect these secrets in case of device theft or loss.
 authd uses sandboxing to limit system exposure:
 
 * The authd brokers run as [strictly confined](https://snapcraft.io/docs/snap-confinement)
-  snaps. Their only granted interface is network, required to communicate with
-  the identity provider.
+  snaps. The only snap interface granted to them is `network`, which is required to
+  communicate with the identity provider.
 * The authd service uses
   [systemd sandboxing options](https://manpages.ubuntu.com/manpages/noble/en/man5/systemd.exec.5.html#sandboxing)
   to restrict access to system resources.

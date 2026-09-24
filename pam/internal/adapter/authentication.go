@@ -55,11 +55,12 @@ func sendIsAuthenticated(ctx context.Context, client authd.PAMClient, sessionID 
 			if st := status.Convert(err); st.Code() == codes.Canceled {
 				// Note that this error is only the client-side error, so being here doesn't
 				// mean the cancellation on broker side is fully completed.
-
-				// Wait for the cancellation requests to have been delivered and actually handled.
-				// The multiplier can be increased to avoid that we return the cancelled event too
-				// early, but it implies slowing down the UI responses.
-				<-time.After(cancellationWait * 3)
+				// We still wait briefly so that the CancelIsAuthenticated D-Bus call (sent
+				// by the broker layer when ctx is cancelled) has time to arrive at the broker
+				// after the IsAuthenticated call — not before it.  Serialisation of
+				// back-to-back IsAuthenticated calls for the same session is handled
+				// server-side, so we no longer need a longer delay here.
+				<-time.After(cancellationWait)
 
 				return isAuthenticatedResultReceived{
 					access: auth.Cancelled,
@@ -125,11 +126,19 @@ type authenticationModel struct {
 	mode       authd.SessionMode
 
 	inProgress       bool
+	inputLocked      bool
 	currentModel     authenticationComponent
 	currentSessionID string
 	currentBrokerID  string
 	currentSecret    string
 	currentLayout    string
+
+	// authGen identifies the current challenge. It is bumped every time a
+	// challenge starts (startAuthentication), so that a stopAuthentication
+	// scheduled by a previous challenge's cancellation can be recognised as
+	// stale and ignored once a new challenge has started. See the
+	// startAuthentication and stopAuthentication handling.
+	authGen uint64
 
 	authTracker *authTracker
 
@@ -138,17 +147,31 @@ type authenticationModel struct {
 	errorMsg string
 }
 
+// authTracker serialises IsAuthenticated calls and supports cancellation.
+//
+// At most one authentication goroutine is in flight at a time. A goroutine
+// that arrives while another is running blocks until the running one finishes.
+// cancelAndWait() cancels any in-flight goroutine and bumps the generation
+// counter so that any goroutine that is waiting (or has just been woken) knows
+// it has been superseded and must abort without making the RPC.
 type authTracker struct {
-	cancelFunc func()
-	cond       *sync.Cond
+	mu         sync.Mutex
+	generation uint64        // incremented by cancelAndWait; goroutines abort if theirs is stale
+	cancelFunc func()        // cancels the context of the current in-flight RPC; nil when idle
+	done       chan struct{} // closed by the goroutine when it exits; nil when idle
 }
 
 // startAuthentication signals that the authentication model can start
 // wait:true authentication and reset fields.
 type startAuthentication struct{}
 
-// startAuthentication signals that the authentication has been stopped.
-type stopAuthentication struct{}
+// stopAuthentication signals that the authentication has been stopped.
+//
+// gen is the challenge generation that was current when the stop was
+// scheduled. A stop whose gen no longer matches the model belongs to a
+// superseded challenge and is ignored, so that cancelling a previous
+// challenge cannot tear down a challenge that has started in the meantime.
+type stopAuthentication struct{ gen uint64 }
 
 // errMsgToDisplay signals from an authentication form to display an error message.
 type errMsgToDisplay struct {
@@ -174,7 +197,7 @@ func newAuthenticationModel(client authd.PAMClient, clientType PamClientType, mo
 		client:      client,
 		clientType:  clientType,
 		mode:        mode,
-		authTracker: &authTracker{cond: sync.NewCond(&sync.Mutex{})},
+		authTracker: &authTracker{},
 	}
 }
 
@@ -185,14 +208,17 @@ func (m authenticationModel) Init() tea.Cmd {
 
 func (m *authenticationModel) cancelIsAuthenticated() tea.Cmd {
 	authTracker := m.authTracker
+	gen := m.authGen
 	return func() tea.Msg {
 		authTracker.cancelAndWait()
-		return stopAuthentication{}
+		return stopAuthentication{gen: gen}
 	}
 }
 
 // Update handles events and actions.
 func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel, command tea.Cmd) {
+	var focusCmd tea.Cmd
+
 	switch msg := msg.(type) {
 	case StageChanged:
 		if msg.Stage != pam_proto.Stage_challenge {
@@ -208,14 +234,31 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 	case startAuthentication:
 		safeMessageDebug(msg, "current model %v, focused %v",
 			m.currentModel, m.Focused())
-		if !m.Focused() {
+		if !m.Focused() && !m.inputLocked {
 			return m, nil
 		}
+		// A challenge is starting: any stopAuthentication scheduled before this
+		// point (e.g. by the cancellation of the previous challenge when
+		// switching auth modes after device auth returns "next") now belongs to
+		// a superseded challenge and must be ignored, otherwise it would tear
+		// this one down. The stop captured the generation current when it was
+		// scheduled, which is now older than this one.
+		m.authGen++
 		m.inProgress = true
+		if m.inputLocked {
+			m.inputLocked = false
+			focusCmd = m.currentModel.Focus()
+		}
 
 	case stopAuthentication:
-		safeMessageDebug(msg, "current model %v, focused %v",
-			m.currentModel, m.Focused())
+		safeMessageDebug(msg, "current model %v, focused %v, gen %d (current %d)",
+			m.currentModel, m.Focused(), msg.gen, m.authGen)
+		// Ignore a stop scheduled by a challenge that has since been superseded
+		// by a newly started one, otherwise it would wrongly tear down the
+		// current challenge (e.g. the local password entry after device auth).
+		if msg.gen != m.authGen {
+			return m, nil
+		}
 		m.inProgress = false
 
 	case reselectAuthMode:
@@ -228,8 +271,10 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 		if m.mode == authd.SessionMode_CHANGE_PASSWORD {
 			// Only compare the new password with the current one if the session is for changing the password.
 			// If the session is for authentication, we allow the user to set the same password again, to avoid
-			// that the user is forced to change their password if e.g. device authentication is forced when
+			// that the user is forced to change their password if e.g. device code flow is forced when
 			// the refresh token is expired.
+			// TODO: This will not select the correct secret in case the last authentication step uses a secret
+			// which is not the local password (e.g. OTP).
 			oldPassword = m.currentSecret
 		}
 
@@ -273,6 +318,12 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 	case isAuthenticatedRequested:
 		safeMessageDebug(msg)
 
+		// Hide the input if we are in interactive terminal mode and the authentication request is for a secret (password).
+		if _, hasSecret := msg.item.(*authd.IARequest_AuthenticationData_Secret); hasSecret && m.clientType == InteractiveTerminal {
+			m.inputLocked = true
+			m.Blur()
+		}
+
 		authTracker := m.authTracker
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -293,7 +344,12 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 		clientType := m.clientType
 		currentLayout := m.currentLayout
 		return m, func() tea.Msg {
-			authTracker.waitAndStart(cancelFunc)
+			// waitForSlot blocks until no other auth is in flight, then registers
+			// us as the active goroutine for this generation.  It returns false
+			// if we have been superseded by a cancelAndWait() call and must abort.
+			if !authTracker.waitForSlot(cancelFunc) {
+				return nil
+			}
 
 			secret, hasSecret := msg.item.(*authd.IARequest_AuthenticationData_Secret)
 			if hasSecret && clientType == Gdm && currentLayout == layouts.NewPassword {
@@ -318,6 +374,11 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 		return m, m.cancelIsAuthenticated()
 
 	case isAuthenticatedResultReceived:
+		if m.clientType == Gdm && msg.access == auth.DeniedMaxTries {
+			// GDM treats PAM_MAXTRIES as service unavailable until GNOME Shell
+			// handles the result correctly. Use its normal auth failure path.
+			msg.access = auth.Denied
+		}
 		safeMessageDebug(msg)
 
 		// Resets password if the authentication wasn't successful.
@@ -332,21 +393,49 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 			if msg.access != auth.Next && msg.access != auth.Retry {
 				m.currentModel = nil
 			}
-			m.authTracker.reset()
+			m.authTracker.finish()
 		}()
 
 		var authMsg string
 		if msg.access != auth.Cancelled {
-			msg, err := dataToMsg(msg.msg)
+			var err error
+			authMsg, err = grantedTolerantMsg(msg.access, msg.msg)
 			if err != nil {
 				return m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
 			}
-			authMsg = msg
 		}
 
 		switch msg.access {
 		case auth.Granted:
-			return m, sendEvent(PamSuccess{BrokerID: m.currentBrokerID, msg: authMsg})
+			var secret string
+			// TODO: This will not select the correct secret in case the last authentication step uses a secret
+			// which is not the local password (e.g. OTP).
+			if msg.secret != nil {
+				secret = *msg.secret
+			} else if m.currentSecret != "" {
+				secret = m.currentSecret
+			} else {
+				log.Warningf(context.Background(), "authentication granted, but no secret is available, cannot set PAM_AUTHTOK")
+			}
+
+			// During a password change the user authenticates with their old local
+			// password before setting the new one, so the previous step's secret is
+			// the old password. Pass it along as PAM_OLDAUTHTOK so pam_gnome_keyring
+			// can re-key the existing keyring instead of leaving it locked under the
+			// old password. We only do this when the old and new secrets differ and
+			// the new one came from this step (msg.secret), to avoid setting a
+			// spurious PAM_OLDAUTHTOK during plain authentication.
+			var oldSecret string
+			if m.mode == authd.SessionMode_CHANGE_PASSWORD && msg.secret != nil &&
+				m.currentSecret != "" && m.currentSecret != secret {
+				oldSecret = m.currentSecret
+			}
+			return m, sendEvent(PamSuccess{
+				BrokerID:   m.currentBrokerID,
+				AuthTok:    secret,
+				OldAuthTok: oldSecret,
+				msg:        authMsg,
+			})
 
 		case auth.Retry:
 			m.errorMsg = authMsg
@@ -357,6 +446,12 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 				authMsg = "Access denied"
 			}
 			return m, sendEvent(pamError{status: pam.ErrAuth, msg: authMsg})
+
+		case auth.DeniedMaxTries:
+			if authMsg == "" {
+				authMsg = "Maximum number of tries exceeded"
+			}
+			return m, sendEvent(pamError{status: pam.ErrMaxtries, msg: authMsg})
 
 		case auth.Next:
 			if authMsg != "" {
@@ -378,6 +473,12 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 		case auth.Cancelled:
 			// nothing to do
 			return m, nil
+
+		default:
+			return m, sendEvent(pamError{
+				status: pam.ErrSystem,
+				msg:    fmt.Sprintf("Unknown authentication access: %q", msg.access),
+			})
 		}
 
 	case errMsgToDisplay:
@@ -400,7 +501,7 @@ func (m authenticationModel) Update(msg tea.Msg) (authModel authenticationModel,
 		model, cmd = m.currentModel.Update(msg)
 		m.currentModel = convertTo[authenticationComponent](model)
 	}
-	return m, cmd
+	return m, tea.Batch(focusCmd, cmd)
 }
 
 // Focus focuses this model.
@@ -425,6 +526,14 @@ func (m authenticationModel) Focused() bool {
 		return false
 	}
 	return m.currentModel.Focused()
+}
+
+// InProgress returns whether an authentication challenge is currently
+// underway. Unlike Focused, this stays true while the input is locked (i.e.
+// the current model is deliberately blurred to hide the submitted value),
+// so callers can still tell that the challenge stage is active.
+func (m authenticationModel) InProgress() bool {
+	return m.inProgress
 }
 
 // Blur releases the focus from this model.
@@ -482,10 +591,7 @@ func (m *authenticationModel) Compose(brokerID, sessionID string, encryptionKey 
 
 // View renders a text view of the authentication UI.
 func (m authenticationModel) View() string {
-	if !m.inProgress {
-		return ""
-	}
-	if !m.Focused() {
+	if !m.inProgress || m.currentModel == nil {
 		return ""
 	}
 	contents := []string{m.currentModel.View()}
@@ -504,6 +610,7 @@ func (m authenticationModel) View() string {
 func (m *authenticationModel) Reset() tea.Cmd {
 	log.Debugf(context.TODO(), "%T: Reset", m)
 	m.inProgress = false
+	m.inputLocked = false
 	m.currentModel = nil
 	m.currentSessionID = ""
 	m.currentBrokerID = ""
@@ -532,6 +639,19 @@ func dataToMsg(data string) (string, error) {
 	return r, nil
 }
 
+// grantedTolerantMsg parses data via dataToMsg, treating a malformed or
+// unexpected message as non-fatal when access is auth.Granted: the message is
+// then a purely cosmetic notice, so an already-granted login must never fail
+// because of it. For any other access the error is returned unchanged.
+func grantedTolerantMsg(access string, data string) (string, error) {
+	msg, err := dataToMsg(data)
+	if err != nil && access == auth.Granted {
+		log.Warningf(context.TODO(), "Ignoring invalid granted message: %v", err)
+		return "", nil
+	}
+	return msg, err
+}
+
 func (authData *isAuthenticatedRequestedSend) encryptSecretIfPresent(publicKey *rsa.PublicKey) (*string, error) {
 	// no password value, pass it as is
 	secret, ok := authData.item.(*authd.IARequest_AuthenticationData_Secret)
@@ -550,43 +670,65 @@ func (authData *isAuthenticatedRequestedSend) encryptSecretIfPresent(publicKey *
 	return &secret.Secret, nil
 }
 
-// wait waits for the current authentication to be completed.
-func (at *authTracker) wait() {
-	at.cond.L.Lock()
-	defer at.cond.L.Unlock()
-
-	for at.cancelFunc != nil {
-		at.cond.Wait()
+// waitForSlot blocks until no other authentication goroutine is in flight,
+// then registers itself as the active goroutine.  It returns true when the
+// caller should proceed with the RPC, or false when a cancelAndWait() call
+// has superseded this goroutine and the caller must abort.
+//
+// The generation counter is the key to correctness: cancelAndWait() bumps it
+// under the lock before signalling, so any goroutine that wakes up afterwards
+// will see a stale generation and abort — with no window for a race.
+func (at *authTracker) waitForSlot(cancelFunc func()) bool {
+	at.mu.Lock()
+	gen := at.generation
+	// Wait until the previous auth goroutine has finished.
+	for at.done != nil {
+		done := at.done
+		at.mu.Unlock()
+		<-done
+		at.mu.Lock()
 	}
-}
-
-// waitAndStart waits for the current authentication to be completed and
-// marks the authentication as in progress.
-func (at *authTracker) waitAndStart(cancelFunc func()) {
-	at.cond.L.Lock()
-	defer at.cond.L.Unlock()
-
-	for at.cancelFunc != nil {
-		at.cond.Wait()
+	// If cancelAndWait() was called while we were waiting (or before we even
+	// started), our generation is stale — abort without making any RPC.
+	if at.generation != gen {
+		at.mu.Unlock()
+		return false
 	}
-
+	// Register ourselves as the active goroutine.
 	at.cancelFunc = cancelFunc
+	at.done = make(chan struct{})
+	at.mu.Unlock()
+	return true
 }
 
-func (at *authTracker) cancelAndWait() {
-	at.cond.L.Lock()
-	cancelFunc := at.cancelFunc
-	at.cond.L.Unlock()
-	if cancelFunc == nil {
-		return
-	}
-	cancelFunc()
-	at.wait()
-}
-
-func (at *authTracker) reset() {
-	at.cond.L.Lock()
-	defer at.cond.L.Unlock()
+// finish marks the active authentication goroutine as done.  It must be called
+// by every goroutine that received true from waitForSlot, regardless of whether
+// the RPC was actually made (e.g. even for newPasswordCheck detours).
+func (at *authTracker) finish() {
+	at.mu.Lock()
+	done := at.done
 	at.cancelFunc = nil
-	at.cond.Signal()
+	at.done = nil
+	at.mu.Unlock()
+	if done != nil {
+		close(done)
+	}
+}
+
+// cancelAndWait cancels the in-flight authentication (if any) and waits for
+// its goroutine to exit.  After it returns, any goroutine currently blocked in
+// waitForSlot will also abort, because the generation counter was bumped.
+func (at *authTracker) cancelAndWait() {
+	at.mu.Lock()
+	at.generation++
+	cancelFunc := at.cancelFunc
+	done := at.done
+	at.mu.Unlock()
+
+	if cancelFunc != nil {
+		cancelFunc()
+	}
+	if done != nil {
+		<-done
+	}
 }

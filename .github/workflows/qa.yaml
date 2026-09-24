@@ -7,20 +7,16 @@ on:
       - '**'
       - '!.github/**'
       - '.github/workflows/qa.yaml'
+      - '.github/scripts/run-pam-asan-tests.sh'
       - '!.gitignore'
       - '!.gitmodules'
-      - '!AGENTS.md'
-      - '!CODE_OF_CONDUCT.md'
-      - '!CONTRIBUTING.md'
-      - '!COPYING'
-      - '!COPYING.LESSER'
-      - '!README.md'
-      - '!SECURITY.md'
+      - '!*.md'
+      - '!COPYING*'
       - '!authd-oidc-brokers/**'
       - '!docs/**'
+      - '!e2e-tests/**'
       - '!examplebroker/**'
       - '!gotestcov'
-      - '!scripts/**'
       - '!snap/**'
     tags:
       - "*"
@@ -29,20 +25,16 @@ on:
       - '**'
       - '!.github/**'
       - '.github/workflows/qa.yaml'
+      - '.github/scripts/run-pam-asan-tests.sh'
       - '!.gitignore'
       - '!.gitmodules'
-      - '!AGENTS.md'
-      - '!CODE_OF_CONDUCT.md'
-      - '!CONTRIBUTING.md'
-      - '!COPYING'
-      - '!COPYING.LESSER'
-      - '!README.md'
-      - '!SECURITY.md'
+      - '!*.md'
+      - '!COPYING*'
       - '!authd-oidc-brokers/**'
       - '!docs/**'
+      - '!e2e-tests/**'
       - '!examplebroker/**'
       - '!gotestcov'
-      - '!scripts/**'
       - '!snap/**'
 
 concurrency:
@@ -53,6 +45,8 @@ env:
   DEBIAN_FRONTEND: noninteractive
   GO_TESTS_TIMEOUT: 20m
   AUTHD_SSHD_STDERR_LOG_ALL_PAM_MESSAGES: true
+  LXD_UBUNTU_VERSION: "2604"
+
   c_build_dependencies: >-
     clang-tools
     clang
@@ -85,7 +79,7 @@ jobs:
 
           sudo apt-get update
           sudo apt-get install -y ${{ env.go_build_dependencies }}
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Go code sanity check
         uses: canonical/desktop-engineering/gh-actions/go/code-sanity@v2
         with:
@@ -119,7 +113,7 @@ jobs:
     name: "Shell: Code sanity"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@master
         with:
@@ -141,7 +135,7 @@ jobs:
           # so we always need to install the protobuf compilers
           # when building the NSS crate.
           sudo apt-get install -y protobuf-compiler
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Rust code sanity check
         uses: canonical/desktop-engineering/gh-actions/rust/code-sanity@main
         with:
@@ -167,7 +161,7 @@ jobs:
 
           scan_build_dir=$(mktemp -d --tmpdir scan-build-dir-XXXXXX)
           echo SCAN_BUILD_REPORTS_PATH="${scan_build_dir}" >> $GITHUB_ENV
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run scan build on GDM extensions
         run: |
           set -eu
@@ -196,9 +190,13 @@ jobs:
     env:
       RAW_COVERAGE_DIR: ${{ github.workspace }}/raw-coverage
       COVERAGE_DIR: ${{ github.workspace }}/coverage
+      # Also run tests which require a different Ubuntu version, which we run in LXD
+      # containers.
+      AUTHD_TESTS_USE_LXD: true
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-go-tests
+      - uses: actions/checkout@v7
+      - id: setup-go-tests
+        uses: ./.github/actions/setup-go-tests
       - uses: ./.github/actions/setup-go-coverage-tests
       # Installation of debug symbols takes a long time (and fails currently),
       # so we skip it for now. Enable on demand.
@@ -250,6 +248,18 @@ jobs:
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Export LXD test image for cache
+        id: export-lxd-test-image
+        if: always() && steps.setup-go-tests.outputs.lxd-image-cache-matched-key == ''
+        uses: ./.github/actions/export-lxd-test-image-for-cache
+
+      - name: Save LXD test image cache
+        if: always() && steps.setup-go-tests.outputs.lxd-image-cache-matched-key == '' && steps.export-lxd-test-image.outputs.cache-exported == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/authd-lxd-image-cache/ubuntu-${{ env.LXD_UBUNTU_VERSION }}.tar
+          key: ${{ steps.setup-go-tests.outputs.lxd-image-cache-primary-key }}
+
       - uses: ./.github/actions/upload-test-artifacts
         if: always()
 
@@ -261,9 +271,13 @@ jobs:
     env:
       RAW_COVERAGE_DIR: ${{ github.workspace }}/raw-coverage
       COVERAGE_DIR: ${{ github.workspace }}/coverage
+      # Also run tests which require a different Ubuntu version, which we run in LXD
+      # containers.
+      AUTHD_TESTS_USE_LXD: true
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-go-tests
+      - uses: actions/checkout@v7
+      - id: setup-go-tests
+        uses: ./.github/actions/setup-go-tests
       - uses: ./.github/actions/setup-go-coverage-tests
       # Installation of debug symbols takes a long time (and fails currently),
       # so we skip it for now. Enable on demand.
@@ -314,6 +328,18 @@ jobs:
         with:
           codecov-token: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Export LXD test image for cache
+        id: export-lxd-test-image
+        if: always() && steps.setup-go-tests.outputs.lxd-image-cache-matched-key == ''
+        uses: ./.github/actions/export-lxd-test-image-for-cache
+
+      - name: Save LXD test image cache
+        if: always() && steps.setup-go-tests.outputs.lxd-image-cache-matched-key == '' && steps.export-lxd-test-image.outputs.cache-exported == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/authd-lxd-image-cache/ubuntu-${{ env.LXD_UBUNTU_VERSION }}.tar
+          key: ${{ steps.setup-go-tests.outputs.lxd-image-cache-primary-key }}
+
       - uses: ./.github/actions/upload-test-artifacts
         if: always()
 
@@ -321,8 +347,9 @@ jobs:
     name: "Go Tests with Race Detector"
     runs-on: ubuntu-24.04 # ubuntu-latest-runner
     steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-go-tests
+      - uses: actions/checkout@v7
+      - id: setup-go-tests
+        uses: ./.github/actions/setup-go-tests
       # Installation of debug symbols takes a long time (and fails currently),
       # so we skip it for now. Enable on demand.
       # - uses: ./.github/actions/install-debug-symbols
@@ -350,7 +377,7 @@ jobs:
     name: "Go PAM tests with Address Sanitizer"
     runs-on: ubuntu-24.04 # ubuntu-latest-runner
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-go-tests
       # Installation of debug symbols takes a long time (and fails currently),
       # so we skip it for now. Enable on demand.
@@ -368,51 +395,7 @@ jobs:
           AUTHD_SKIP_FLAKY_TESTS: true
           # Use these flags to give ASAN a better time to unwind the stack trace
           GO_GC_FLAGS: -N -l
-        run: |
-          # Print executed commands to ease debugging
-          set -x
-
-          echo "::group::Install llvm-symbolizer"
-          # For llvm-symbolizer
-          sudo apt-get install -y llvm
-          echo "::endgroup::"
-
-          go test -C ./pam/internal -json -asan -gcflags=all="${GO_GC_FLAGS}" -failfast -timeout ${GO_TESTS_TIMEOUT} ./... | \
-            gotestfmt --logfile "${AUTHD_TESTS_ARTIFACTS_PATH}/gotestfmt.pam-internal-asan.log" || exit_code=$?
-          if [ -n "${exit_code:-}" ]; then
-            cat "${AUTHD_TESTS_ARTIFACTS_PATH}"/asan.log* || true
-            exit ${exit_code}
-          fi
-
-          echo "Running PAM integration tests"
-          pushd ./pam/integration-tests
-          go test -asan -gcflags=all="${GO_GC_FLAGS}" -c
-          go tool test2json -p pam/integrations-test ./integration-tests.test \
-            -test.v=test2json \
-            -test.failfast \
-            -test.timeout ${GO_TESTS_TIMEOUT} | \
-          gotestfmt --logfile "${AUTHD_TESTS_ARTIFACTS_PATH}/gotestfmt.pam-integration-tests-asan.log" || \
-          exit_code=$?
-          popd
-
-          # We don't need the xtrace output after this point
-          set +x
-
-          # We're logging to a file, and this is useful for having artifacts, but we still may want to see it in logs:
-          for f in "${AUTHD_TESTS_ARTIFACTS_PATH}"/asan.log*; do
-            if ! [ -e "${f}" ]; then
-              continue
-            fi
-            if [ -s "${f}" ]; then
-              echo "::group::${f} ($(wc -l < "${f}") lines)"
-              cat "${f}"
-              echo "::endgroup::"
-            else
-              echo "${f}: empty"
-            fi
-          done
-
-          exit ${exit_code}
+        run: ./.github/scripts/run-pam-asan-tests.sh
 
       - uses: ./.github/actions/upload-test-artifacts
         if: always()

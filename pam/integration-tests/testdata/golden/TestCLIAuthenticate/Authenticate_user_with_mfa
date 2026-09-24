@@ -1,25 +1,20 @@
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Username: user name
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Username: user-mfa@example.com
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your provider
+  Select your provider:
 
 > 1. local
   2. ExampleBroker
 
   Press escape key to go back to user selection
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 >
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your authentication method
+  Select the authentication flow:
 
 > 1. Password authentication
   2. Send URL to user-mfa@example.com
@@ -31,25 +26,21 @@ Gimme your password:
 
   Press escape key to go back to choose the provider
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 >
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 > ********
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Plug your fido device and press with your thumb
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your authentication method
+  Select the authentication flow:
 
 > 1. Use your fido device foo
   2. Use your phone +33...
@@ -57,35 +48,27 @@ Plug your fido device and press with your thumb
 
   Press escape key to go back to choose the provider
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Plug your fido device and press with your thumb
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Unlock your phone +33... or accept request on web interface
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your authentication method
+  Select the authentication flow:
 
 > 1. Use your phone +33...
   2. Authentication code
 
   Press escape key to go back to choose the provider
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Unlock your phone +33... or accept request on web interface
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
+  PAM_AUTHTOK: "goodpass"
 PAM Authenticate()
   User: "user-mfa@example.com"
   Result: success
-PAM AcctMgmt()
-  User: "user-mfa@example.com"
-  Result: success
->
 ────────────────────────────────────────────────────────────────────────────────

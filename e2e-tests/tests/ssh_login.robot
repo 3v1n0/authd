@@ -1,8 +1,8 @@
 *** Settings ***
-Resource        ./resources/authd/utils.resource
-Resource        ./resources/authd/authd.resource
+Resource        resources/utils.resource
+Resource        resources/authd.resource
 
-Resource        ./resources/broker/broker.resource
+Resource        resources/broker.resource
 
 # Test Tags       robot:exit-on-failure
 
@@ -12,25 +12,23 @@ Test Teardown   utils.Test Teardown
 
 *** Keywords ***
 Test Setup
-    utils.Test Setup
+    utils.Test Setup    snapshot=%{BROKER}-installed
     Change Broker Configuration    ssh_allowed_suffixes_first_auth    %{E2E_USER}
 
 
 *** Variables ***
-${snapshot}    %{BROKER}-installed
 ${username}    %{E2E_USER}
 ${local_password}    qwer1234
-${remote_group}    %{E2E_USER}-group
 
 
 *** Test Cases ***
 Test login with SSH
-    [Documentation]    Test login via SSH with device authentication and local password.
+    [Documentation]    Test login via SSH with device code flow and local password.
 
     # Log in with local user
     Log In
 
-    # Log in with remote user with device authentication through SSH
+    # Log in with remote user with device code flow through SSH
     Open Terminal
     Log In With Remote User Through SSH: QR Code    ${username}    ${local_password}
     # Check remote user is properly added to the system

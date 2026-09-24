@@ -1,12 +1,12 @@
 *** Settings ***
-Resource        ./resources/authd/utils.resource
-Resource        ./resources/authd/authd.resource
+Resource        resources/utils.resource
+Resource        resources/authd.resource
 
-Resource        ./resources/broker/broker.resource
+Resource        resources/broker.resource
 
 # Test Tags       robot:exit-on-failure
 
-Test Setup    utils.Test Setup
+Test Setup    utils.Test Setup    snapshot=%{BROKER}-installed
 Test Teardown   utils.Test Teardown
 
 
@@ -30,5 +30,4 @@ Test that owner is auto-updated in broker configuration
     Close Focused Window
 
     # Check that owner was updated in broker configuration
-    Open Terminal In Sudo Mode
-    Check If Owner Was Registered    ${username}
+    Wait Until Keyword Succeeds    30s    1s    Check If Owner Was Registered    ${username}

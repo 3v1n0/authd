@@ -19,6 +19,7 @@ Multiple identity providers and brokers are supported by authd:
 :titlesonly:
 
 Identity providers that authd supports <identity-providers>
+Authentication flows <authentication-flows>
 ```
 
 ## Troubleshooting
@@ -40,7 +41,7 @@ is supported by the Microsoft Entra ID broker for authd:
 ```{toctree}
 :titlesonly:
 
-Group management <group-management>
+Group and privilege management <group-management>
 ```
 ## Deployment
 

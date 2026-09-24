@@ -17,11 +17,9 @@ description: |
     Explore the official documentation for installation and configuration steps, or visit the GitHub repository to
     contribute or provide feedback.
 icon: snap/variants/google/icon.svg
-website:
-  - https://github.com/ubuntu/authd-oidc-brokers
-  - https://github.com/ubuntu/authd
-issues: https://github.com/ubuntu/authd/issues
-source-code: https://github.com/ubuntu/authd-oidc-brokers/tree/google
+website: https://ubuntu.com/docs/authd
+issues: https://github.com/canonical/authd/issues
+source-code: https://github.com/canonical/authd/tree/main/authd-oidc-brokers
 adopt-info: version
 grade: stable
 base: core24
@@ -36,7 +34,7 @@ apps:
       - dbus-authd
     plugs:
       - network
-    restart-condition: always
+    restart-condition: never
     activates-on: [dbus-authd]
     environment:
       SYSLOG_IDENTIFIER: authd-google
@@ -54,15 +52,15 @@ parts:
     plugin: nil
     build-snaps:
       - go
+    build-packages:
+      - retry
     build-environment:
-      - GOFLAGS: "-tags=release"
       - GOBIN: ${CRAFT_PART_INSTALL}/bin
     override-build: |
-      go mod download all
+      retry -t 3 -d 10 -- go mod download all
       go mod vendor
       VERSION=$(craftctl get version)
-      export GOFLAGS="-ldflags=-X=github.com/ubuntu/authd-oidc-brokers/internal/consts.Version=${VERSION}"
-      go build -tags=withgoogle -o ${GOBIN}/authd-google ./cmd/authd-oidc
+      go build -tags=withgoogle,release -ldflags "-X=github.com/canonical/authd/authd-oidc-brokers/internal/consts.Version=${VERSION}" -o ${GOBIN}/authd-google ./cmd/authd-oidc
     after:
       - version
   config:
@@ -82,10 +80,12 @@ parts:
     plugin: nil
     build-snaps:
       - go
+    build-packages:
+      - retry
     build-environment:
       - GOBIN: ${CRAFT_PART_INSTALL}/bin
     override-build: |
-      go mod download all
+      retry -t 3 -d 10 -- go mod download all
       go mod vendor
       go build -o ${GOBIN}/semver semver/semver.go
   # Build the snap version from the git repository and current tree state.

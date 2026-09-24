@@ -36,17 +36,24 @@ Define the necessary environmental variables:
 
 ## Install authd
 
-Add the authd PPA to the system's software sources and install authd:
+`authd` is available directly from the Ubuntu archive:
+
+```yaml
+packages:
+  - authd
+```
+
+:::{admonition} Add PPA before installing on Ubuntu 24.04
+:class: note
+On Ubuntu 24.04 LTS, `authd` must be installed from the stable PPA. Add the following to your cloud config, before the `packages` block:
 
 ```yaml
 apt:
   sources:
       source1:
           source: 'ppa:ubuntu-enterprise-desktop/authd'
-
-packages:
-  - authd
 ```
+:::
 
 ## Install broker
 
@@ -54,17 +61,6 @@ Install the broker as a snap:
 
 :::::{tab-set}
 :sync-group: broker
-
-::::{tab-item} Google IAM
-:sync: google
-
-```yaml
-snap:
- commands:
-   - ['install', 'authd-google']
-```
-
-::::
 
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
@@ -76,9 +72,17 @@ snap:
 ```
 
 ::::
+
+::::{tab-item} Google IAM
+:sync: google
+
+```yaml
+snap:
+ commands:
+   - ['install', 'authd-google']
+```
+
 :::::
-
-
 ```{tip}
 For more information on installing authd and its brokers, read the
 [installation guide](howto::install).
@@ -100,30 +104,6 @@ Edit the allowed suffixes as appropriate.
 :::::{tab-set}
 :sync-group: broker
 
-::::{tab-item} Google IAM
-:sync: google
-
-```yaml
-write_files:
-  - path: /etc/ssh/sshd_config.d/authd.conf
-    content: |
-      UsePAM yes
-      Match User *@example.com
-          KbdInteractiveAuthentication yes
-
-runcmd:
-  - apt-get upgrade -y
-  - sed -i 's|<CLIENT_ID>|{{ CLIENT_ID }}|g; s|<ISSUER_ID>|{{ ISSUER_ID }}|g' /var/snap/authd-google/current/broker.conf
-  - echo 'ssh_allowed_suffixes = @example.com' >> /var/snap/authd-google/current/broker.conf
-  - sed -i 's/^\(LOGIN_TIMEOUT\t\t\)[0-9]\+/\1360/' /etc/login.defs
-  - mkdir -p /etc/authd/brokers.d/
-  - cp /snap/authd-google/current/conf/authd/google.conf /etc/authd/brokers.d/
-  - snap restart authd-google
-  - systemctl restart authd ssh
-```
-
-::::
-
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
@@ -139,7 +119,7 @@ write_files:
 runcmd:
   - apt-get upgrade -y
   - sed -i 's|<CLIENT_ID>|{{ CLIENT_ID }}|g; s|<ISSUER_ID>|{{ ISSUER_ID }}|g' /var/snap/authd-msentraid/current/broker.conf
-  - echo 'ssh_allowed_suffixes = @example.onmicrosoft.com' >> /var/snap/authd-msentraid/current/broker.conf
+  - echo 'ssh_allowed_suffixes_first_auth = @example.onmicrosoft.com' >> /var/snap/authd-msentraid/current/broker.conf
   - sed -i 's/^\(LOGIN_TIMEOUT\t\t\)[0-9]\+/\1360/' /etc/login.defs
   - mkdir -p /etc/authd/brokers.d/
   - cp /snap/authd-msentraid/current/conf/authd/msentraid.conf /etc/authd/brokers.d/
@@ -149,9 +129,29 @@ runcmd:
 
 ::::
 
+::::{tab-item} Google IAM
+:sync: google
+
+```yaml
+write_files:
+  - path: /etc/ssh/sshd_config.d/authd.conf
+    content: |
+      UsePAM yes
+      Match User *@example.com
+          KbdInteractiveAuthentication yes
+
+runcmd:
+  - apt-get upgrade -y
+  - sed -i 's|<CLIENT_ID>|{{ CLIENT_ID }}|g; s|<ISSUER_ID>|{{ ISSUER_ID }}|g' /var/snap/authd-google/current/broker.conf
+  - echo 'ssh_allowed_suffixes_first_auth = @example.com' >> /var/snap/authd-google/current/broker.conf
+  - sed -i 's/^\(LOGIN_TIMEOUT\t\t\)[0-9]\+/\1360/' /etc/login.defs
+  - mkdir -p /etc/authd/brokers.d/
+  - cp /snap/authd-google/current/conf/authd/google.conf /etc/authd/brokers.d/
+  - snap restart authd-google
+  - systemctl restart authd ssh
+```
+
 :::::
-
-
 ```{tip}
 For more information on configuring authd, read the [configuration
 guide](ref::config).

@@ -1,30 +1,30 @@
 *** Settings ***
-Resource        ./resources/authd/utils.resource
-Resource        ./resources/authd/authd.resource
+Resource        resources/utils.resource
+Resource        resources/authd.resource
 
-Resource        ./resources/broker/broker.resource
+Resource        resources/broker.resource
 
 # Test Tags       robot:exit-on-failure
 
-Test Setup    utils.Test Setup
+Test Setup    utils.Test Setup    snapshot=%{BROKER}-stable-installed
 Test Teardown   utils.Test Teardown
 
 
 *** Variables ***
-${snapshot}    %{BROKER}-stable-installed
 ${username}    %{E2E_USER}
 ${local_password}    qwer1234
-${remote_group}    %{E2E_USER}-group
 
 
 *** Test Cases ***
-Test login with broker on edge channel
-    [Documentation]    Test login with broker on edge channel with device authentication and local password, before and after upgrading authd and broker to edge channel.
+Test login with broker version under test
+    [Documentation]    Test login with the broker version under test with
+    ...                device code flow and local password, before and after
+    ...                upgrading the broker.
 
     # Log in with local user
     Log In
 
-    # Log in with remote user with device authentication
+    # Log in with remote user with device code flow
     Open Terminal
     Log In With Remote User Through CLI: QR Code    ${username}    ${local_password}
     # Check remote user is properly added to the system
@@ -33,16 +33,15 @@ Test login with broker on edge channel
     Close Focused Window
 
     # Log in with remote user with local password
-    Open Terminal In Sudo Mode
+    Open Terminal
     Log In With Remote User Through CLI: Local Password    ${username}    ${local_password}
-    Log Out From Terminal Session
-    Close Terminal In Sudo Mode
+    Log Out From su Session
+    Close Focused Window
 
-    # Switch to edge channel for the broker snap
-    Enable Edge Broker
-    Update And Upgrade Packages
+    # Install the broker version under test.
+    Update Broker
 
     # Log in with remote user with local password after upgrading
-    Open Terminal In Sudo Mode
+    Open Terminal
     Log In With Remote User Through CLI: Local Password    ${username}    ${local_password}
     Check Home Directory    ${username}

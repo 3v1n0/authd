@@ -2,12 +2,12 @@ package group_test
 
 import (
 	"math"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/canonical/authd/internal/envutils"
 	"github.com/canonical/authd/internal/testutils"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -26,8 +26,10 @@ func TestSetGIDCommand(t *testing.T) {
 		testutils.WithCurrentUserAsRoot,
 	)
 
-	err := os.Setenv("AUTHD_SOCKET", daemonSocket)
-	require.NoError(t, err, "Failed to set AUTHD_SOCKET environment variable")
+	authctlEnv := []string{
+		"AUTHD_SOCKET=" + daemonSocket,
+		testutils.CoverDirEnv(),
+	}
 
 	tests := map[string]struct {
 		args             []string
@@ -49,7 +51,7 @@ func TestSetGIDCommand(t *testing.T) {
 			expectedExitCode: 1,
 		},
 		"Error_when_gid_is_too_large": {
-			args:             []string{"set-gid", "group1", strconv.Itoa(math.MaxInt32 + 1)},
+			args:             []string{"set-gid", "group1", strconv.FormatInt(int64(math.MaxInt32)+1, 10)},
 			expectedExitCode: int(codes.Unknown),
 		},
 		"Error_when_gid_is_already_taken": {
@@ -69,18 +71,17 @@ func TestSetGIDCommand(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			// Copy authctlEnv to avoid modifying the original slice.
+			authctlEnv := append([]string{}, authctlEnv...)
 			if tc.authdUnavailable {
-				origValue := os.Getenv("AUTHD_SOCKET")
-				err := os.Setenv("AUTHD_SOCKET", "/non-existent")
+				var err error
+				authctlEnv, err = envutils.Setenv(authctlEnv, "AUTHD_SOCKET", "/non-existent")
 				require.NoError(t, err, "Failed to set AUTHD_SOCKET environment variable")
-				t.Cleanup(func() {
-					err := os.Setenv("AUTHD_SOCKET", origValue)
-					require.NoError(t, err, "Failed to restore AUTHD_SOCKET environment variable")
-				})
 			}
 
 			//nolint:gosec // G204 it's safe to use exec.Command with a variable here
 			cmd := exec.Command(authctlPath, append([]string{"group"}, tc.args...)...)
+			cmd.Env = authctlEnv
 			testutils.CheckCommand(t, cmd, tc.expectedExitCode)
 		})
 	}

@@ -1,17 +1,14 @@
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your provider
+  Select your provider:
 
 > 1. local
   2. ExampleBroker
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 >
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your authentication method
+  Select the authentication flow:
 
 > 1. Password authentication
   2. Send URL to user-integration-qr-code-tty-session@example.com
@@ -23,7 +20,6 @@ Gimme your password:
 
   Press escape key to go back to choose the provider
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Scan the qrcode or enter the code in the login page
 
 ██████████████████████████████████████████████████████████████████
@@ -59,14 +55,14 @@ Scan the qrcode or enter the code in the login page
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
-                        https://ubuntu.com
-                               1337
+
+URL:  https://ubuntu.com
+Code: 1337
 
                         [ Regenerate code ]
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Scan the qrcode or enter the code in the login page
 
 ██████████████████████████████████████████████████████████████████
@@ -102,14 +98,14 @@ Scan the qrcode or enter the code in the login page
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
-                        https://ubuntu.fr/
-                               1338
+
+URL:  https://ubuntu.fr/
+Code: 1338
 
                         [ Regenerate code ]
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Scan the qrcode or enter the code in the login page
 
 ██████████████████████████████████████████████████████████████████████████
@@ -149,14 +145,14 @@ Scan the qrcode or enter the code in the login page
 ██████████████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████████████
-                       https://ubuntuforum-br.org/
-                                   1339
+
+URL:  https://ubuntuforum-br.org/
+Code: 1339
 
                             [ Regenerate code ]
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Scan the qrcode or enter the code in the login page
 
 ██████████████████████████████████████████████████████████████████
@@ -192,14 +188,14 @@ Scan the qrcode or enter the code in the login page
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
-                    https://www.ubuntu-it.org/
-                               1340
+
+URL:  https://www.ubuntu-it.org/
+Code: 1340
 
                         [ Regenerate code ]
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Scan the qrcode or enter the code in the login page
 
 ██████████████████████████████████████████████████████████████████
@@ -235,19 +231,15 @@ Scan the qrcode or enter the code in the login page
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
 ██████████████████████████████████████████████████████████████████
-                        https://ubuntu.com
-                               1341
+
+URL:  https://ubuntu.com
+Code: 1341
 
                         [ Regenerate code ]
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 PAM Authenticate()
   User: "user-integration-qr-code-tty-session@example.com"
   Result: success
-PAM AcctMgmt()
-  User: "user-integration-qr-code-tty-session@example.com"
-  Result: success
->
 ────────────────────────────────────────────────────────────────────────────────

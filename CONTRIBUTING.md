@@ -24,7 +24,7 @@ These are mostly guidelines, not rules. Use your best judgment and feel free to 
       - [Building the PAM module only](#building-the-pam-module-only)
       - [Building the NSS module only](#building-the-nss-module-only)
     - [Building the broker](#building-the-broker)
-    - [About the test suite](#about-the-testsuite)
+    - [About the test suite](#about-the-test-suite)
       - [Tests with dependencies](#tests-with-dependencies)
     - [Code style](#code-style)
   - [Contributing to the documentation](#contributing-to-the-documentation)
@@ -39,11 +39,11 @@ These are mostly guidelines, not rules. Use your best judgment and feel free to 
 
 We take our community seriously, holding ourselves and other contributors to high standards of communication. By contributing to this project you agree to uphold the Ubuntu community [Code of Conduct](https://ubuntu.com/community/ethos/code-of-conduct).
 
-## Getting Started
+## Getting started
 
 Contributions are made to this project via Issues and Pull Requests (PRs). These are some general guidelines that cover both:
 
-* To report security vulnerabilities, use the advisories page of the repository and not a public bug report. Please use [launchpad private bugs](https://bugs.launchpad.net/ubuntu/+source/authd/+filebug), which is monitored by our security team. On an Ubuntu machine, it’s best to use `ubuntu-bug authd` to collect relevant information. <!-- FIXME: snap? -->
+* To report security vulnerabilities, use the advisories page of the repository and not a public bug report. Please use [launchpad private bugs](https://bugs.launchpad.net/ubuntu/+source/authd/+filebug), which is monitored by our security team. On an Ubuntu machine, it's best to use `ubuntu-bug authd` to collect relevant information.
 * General issues or feature requests should be reported to the [GitHub Project](https://github.com/canonical/authd/issues)
 * If you've never contributed before, see [this post on ubuntu.com](https://ubuntu.com/community/contribute) for resources and tips on how to get started.
 * Existing Issues and PRs should be searched for on the [project's repository](https://github.com/canonical/authd) before creating your own.
@@ -55,14 +55,14 @@ Issues can be used to report problems with the software, request a new feature o
 
 If you find an Issue that addresses the problem you're having, please add your own reproduction information to the existing issue rather than creating a new one. Adding a [reaction](https://github.blog/2016-03-10-add-reactions-to-pull-requests-issues-and-comments/) can also help by indicating to our maintainers that a particular problem is affecting more than just the reporter.
 
-### Pull Requests
+### Pull requests
 
 PRs to our project are always welcome and can be a quick way to get your fix or improvement slated for the next release. In general, PRs should:
 
 * Only fix/add the functionality in question **OR** address wide-spread whitespace/style issues, not both.
 * Add unit or integration tests for fixed or changed functionality.
 * Address a single concern in the least possible number of changed lines.
-* Include documentation in the repo or on our [docs site](https://documentation.ubuntu.com/authd/stable/).
+* Include documentation in the repo or on our [docs site](https://ubuntu.com/docs/authd/stable-docs/).
 * Be accompanied by a complete Pull Request template (loaded automatically when a PR is created).
 
 For changes that address core functionality or that would require breaking changes (e.g. a major release), it's best to open an Issue to discuss your proposal first. This is not required but can save time when creating and reviewing changes.
@@ -155,15 +155,17 @@ Then build the PAM module:
 
 ```shell
 go generate ./pam/
-go build -tags pam_binary_exec -o ./pam/authd-pam ./pam
+go build -o ./pam/authd-pam ./pam
 ```
 
-This last command will produce two libraries (`./pam/pam_authd.so` and `./pam/go-exec/pam_authd_exec.so`) and an executable (`./pam/authd-pam`).
+The `go generate` step produces two PAM modules (`./pam/pam_authd.so` and `./pam/go-exec/pam_authd_exec.so`).
+
+The `go build` step produces the PAM helper executable (`./pam/authd-pam`).
 
 These modules must be copied to `/usr/lib/$(gcc -dumpmachine)/security/` while the executable must be copied to `/usr/libexec/authd-pam`.
 
 For further information about the PAM module architecture and testing see the
-[PAM Hacking](https://github.com/canonical/authd/blob/main/pam/Hacking.md) page.
+[README for the authd PAM module](https://github.com/canonical/authd/blob/main/pam/README.md).
 
 #### Building the NSS module only
 
@@ -222,15 +224,6 @@ Every package has a suite of at least package-level tests. They may integrate mo
 
 The test suite must pass before merging the PR to our main branch. Any new feature, change or fix must be covered by corresponding tests.
 
-#### Tests with dependencies
-
-Some tests, such as the [PAM CLI tests](https://github.com/canonical/authd/blob/5ba54c0a573f34e99782fe624b090ab229798fc3/pam/integration-tests/integration_test.go#L21), use external tools such as [VHS](https://github.com/charmbracelet/vhs)
-to record and run the tape files needed for the tests. Those tools are not included in the project dependencies and must be installed manually.
-
-Information about these tools and their usage will be linked below:
-
-- [VHS](https://github.com/charmbracelet/vhs?tab=readme-ov-file#tutorial): tutorial on using VHS as a CLI-based video recorder
-
 ### Code style
 
 This project follow the Go code-style. For more detailed information about the code style in use, please check <https://google.github.io/styleguide/go/>.
@@ -269,6 +262,29 @@ To clean the build environment at any point, run `make clean`.
 When you submit a PR, there are automated checks for typos and broken links.
 Please run the tests locally before submitting the PR to save yourself and your
 reviewers time.
+
+### Building stable and edge versions of the documentation
+
+authd publishes two versions of its documentation: stable-docs and edge-docs.
+By default, `make run` previews the stable version.
+
+To preview a specific version, set `READTHEDOCS_VERSION` before running `make run`:
+
+**Edge**:
+
+```shell
+READTHEDOCS_VERSION=edge-docs make run
+```
+
+**Stable**:
+
+```shell
+READTHEDOCS_VERSION=stable-docs make run
+```
+
+Some content is conditionally rendered depending on the version. This includes
+the version warning banner in the edge documentation and installation
+instructions that are specific to each version.
 
 ### Testing the documentation
 
@@ -322,9 +338,6 @@ It is a requirement that you sign the [Contributor License Agreement](https://ub
 You only need to sign this once and if you have previously signed the agreement when contributing to other Canonical projects you will not need to sign it again.
 
 An automated test is executed on PRs to check if this agreement has been accepted.
-
-<!-- TODO: add license. -->
-<!-- This project is covered by [THIS LICENSE](LICENSE). -->
 
 ## Getting help
 

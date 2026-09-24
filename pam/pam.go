@@ -34,15 +34,14 @@ type pamModule struct {
 }
 
 const (
-	// authenticationBrokerIDKey is the Key used to store the data in the
-	// PAM module for the second stage authentication to select the default
-	// broker for the current user.
-	authenticationBrokerIDKey = "authd.authentication-broker-id"
 
 	// alreadyAuthenticatedKey is the Key used to store in the library that
 	// we've already authenticated with this module and so that we should not
 	// do this again.
 	alreadyAuthenticatedKey = "authd.already-authenticated-flag"
+
+	// loggingInitializedKey indicates logging was already initialized.
+	loggingInitializedKey = "authd.logging-initialized-flag"
 
 	// gdmServiceName is the name of the service that is loaded by GDM.
 	// Keep this in sync with the service file installed by the package.
@@ -51,6 +50,15 @@ const (
 	// defaultConnectionTimeout is the default connection timeout.
 	defaultConnectionTimeout = 2 * time.Second
 )
+
+// reportAuthtok is called after PAM_AUTHTOK is set. It is a no-op by default;
+// the pam_debug build overrides it to print the token so it appears in golden
+// files.
+var reportAuthtok = func(authtok string) {}
+
+// reportOldAuthtok is called after PAM_OLDAUTHTOK is set. Like reportAuthtok it
+// is a no-op by default and overridden by the pam_debug build.
+var reportOldAuthtok = func(oldAuthtok string) {}
 
 var supportedArgs = []string{
 	"debug",               // When this is set to "true", then debug logging is enabled.
@@ -98,7 +106,7 @@ func showPamMessage(mTx pam.ModuleTransaction, style pam.Style, msg string) erro
 	return nil
 }
 
-func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamReturnStatus) {
+func sendReturnMessageToPam(mTx pam.ModuleTransaction, clientType adapter.PamClientType, retStatus adapter.PamReturnValue) {
 	msg := retStatus.Message()
 	if msg == "" {
 		return
@@ -114,20 +122,59 @@ func sendReturnMessageToPam(mTx pam.ModuleTransaction, retStatus adapter.PamRetu
 		}
 	}
 
+	if !shouldSendPamMessage(style, clientType, retStatus) {
+		return
+	}
+
 	if err := showPamMessage(mTx, style, msg); err != nil {
 		log.Warningf(context.TODO(), "Impossible to send PAM message: %v", err)
 	}
+}
+
+func shouldSendPamMessage(style pam.Style, clientType adapter.PamClientType, retStatus adapter.PamReturnValue) bool {
+	if style == pam.TextInfo {
+		// Native clients already display successful authentication messages via
+		// the native model. Keep informational PAM errors, such as PAM_IGNORE,
+		// visible to the caller.
+		if _, ok := retStatus.(adapter.PamSuccess); ok {
+			return clientType != adapter.Native
+		}
+		return true
+	}
+
+	if style == pam.ErrorMsg && clientType == adapter.Gdm {
+		// GDM renders authentication failures itself. Preserve messages for
+		// service and system errors because GDM does not own those details.
+		if rs, ok := retStatus.(adapter.PamReturnError); ok {
+			return rs.Status() != pam.ErrAuth && rs.Status() != pam.ErrMaxtries
+		}
+	}
+
+	return true
 }
 
 // initLogging initializes the logging given the passed parameters.
 // It returns a function that should be called in order to reset the logging to
 // the default and potentially close the opened resources.
 func initLogging(mTx pam.ModuleTransaction, args map[string]string, flags pam.Flags) (func(), error) {
+	alreadyInitialized, err := mTx.GetData(loggingInitializedKey)
+	if err != nil && !errors.Is(err, pam.ErrNoModuleData) {
+		return func() {}, err
+	}
+	if initialized, ok := alreadyInitialized.(bool); ok && initialized {
+		return func() {}, nil
+	}
+
 	log.SetLevel(log.InfoLevel)
-	resetFunc := func() {}
+	resetFunc := func() { _ = mTx.SetData(loggingInitializedKey, nil) }
+
 	if args["debug"] == "true" {
+		baseResetFunc := resetFunc
 		log.SetLevel(log.DebugLevel)
-		resetFunc = func() { log.SetLevel(log.InfoLevel) }
+		resetFunc = func() {
+			log.SetLevel(log.InfoLevel)
+			baseResetFunc()
+		}
 	}
 
 	isSilent := flags&pam.Silent != 0
@@ -151,6 +198,12 @@ func initLogging(mTx pam.ModuleTransaction, args map[string]string, flags pam.Fl
 			// We're silent on PAM side, but we want to still log to a file
 			log.SetHandler(nil)
 		}
+		if err := mTx.SetData(loggingInitializedKey, true); err != nil {
+			resetFunc()
+			log.SetOutput(os.Stderr)
+			f.Close()
+			return func() {}, err
+		}
 		return func() {
 			resetFunc()
 			log.SetOutput(os.Stderr)
@@ -170,12 +223,21 @@ func initLogging(mTx pam.ModuleTransaction, args map[string]string, flags pam.Fl
 
 	if !journal.Enabled() || args["disable_journal"] == "true" {
 		disableTerminalLogging()
+		if err := mTx.SetData(loggingInitializedKey, true); err != nil {
+			resetFunc()
+			return func() {}, err
+		}
 		return resetFunc, nil
 	}
 
 	// Force logging to the journal because we're running as a PAM module and don't want to clutter the output of the
 	// program that has loaded us.
 	log.InitJournalHandler(true)
+	if err := mTx.SetData(loggingInitializedKey, true); err != nil {
+		resetFunc()
+		log.SetHandler(nil)
+		return func() {}, err
+	}
 
 	return func() {
 		resetFunc()
@@ -253,7 +315,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 			return err
 		}
 
-		response, err := c.GetPreviousBroker(context.TODO(), &authd.GPBRequest{Username: username})
+		response, err := c.GetBroker(context.TODO(), &authd.GBRequest{Username: username})
 		if err != nil {
 			err = fmt.Errorf("could not get current available brokers: %w", err)
 			if msgErr := showPamMessage(mTx, pam.ErrorMsg, err.Error()); msgErr != nil {
@@ -262,7 +324,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 			return fmt.Errorf("%w: %w", pam.ErrSystem, err)
 		}
 
-		if response.GetPreviousBroker() == brokers.LocalBrokerName {
+		if response.GetBroker() == brokers.LocalBrokerName {
 			return pam.ErrIgnore
 		}
 		return nil
@@ -290,7 +352,7 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 			return fmt.Errorf("%w: can't create tea options: %w", pam.ErrSystem, err)
 		}
 		teaOpts = append(teaOpts, modeOpts...)
-	} else if !forceNativeClient && adapter.IsTerminalTTY(mTx) {
+	} else if !forceNativeClient && adapter.IsTerminalTTY(mTx) && !adapter.IsDumbTerminal() {
 		pamClientType = adapter.InteractiveTerminal
 		tty, cleanup := adapter.GetPamTTY(mTx)
 		defer cleanup()
@@ -306,19 +368,15 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 
 	conn, closeConn, err := newClientConnection(parsedArgs)
 	if err != nil {
-		if err := showPamMessage(mTx, pam.ErrorMsg, err.Error()); err != nil {
-			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", err)
+		if msgErr := showPamMessage(mTx, pam.ErrorMsg, err.Error()); msgErr != nil {
+			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", msgErr)
 		}
 		return fmt.Errorf("%w: %w", pam.ErrAuthinfoUnavail, err)
 	}
 	defer closeConn()
 
-	if err := mTx.SetData(authenticationBrokerIDKey, nil); err != nil {
-		return err
-	}
-
-	var exitStatus adapter.PamReturnStatus
-	appState := adapter.NewUIModel(mTx, pamClientType, mode, conn, &exitStatus)
+	var pamReturnValue adapter.PamReturnValue
+	appState := adapter.NewUIModel(mTx, pamClientType, mode, conn, &pamReturnValue)
 	teaOpts = append(teaOpts, tea.WithFilter(adapter.MsgFilter))
 	p := tea.NewProgram(appState, teaOpts...)
 	if _, err := p.Run(); err != nil {
@@ -326,105 +384,38 @@ func (h *pamModule) handleAuthRequest(mode authd.SessionMode, mTx pam.ModuleTran
 		return pam.ErrAbort
 	}
 
-	sendReturnMessageToPam(mTx, exitStatus)
-
-	switch exitStatus := exitStatus.(type) {
+	switch returnValue := pamReturnValue.(type) {
 	case adapter.PamSuccess:
-		if err := mTx.SetData(authenticationBrokerIDKey, exitStatus.BrokerID); err != nil {
-			return err
+		sendReturnMessageToPam(mTx, pamClientType, returnValue)
+		if returnValue.AuthTok != "" {
+			if err := mTx.SetItem(pam.Authtok, returnValue.AuthTok); err != nil {
+				return err
+			}
+			reportAuthtok(returnValue.AuthTok)
+		}
+		if returnValue.OldAuthTok != "" {
+			if err := mTx.SetItem(pam.Oldauthtok, returnValue.OldAuthTok); err != nil {
+				return err
+			}
+			reportOldAuthtok(returnValue.OldAuthTok)
 		}
 		return nil
 
 	case adapter.PamReturnError:
-		return fmt.Errorf("%w: %s", exitStatus.Status(), exitStatus.Message())
+		sendReturnMessageToPam(mTx, pamClientType, returnValue)
+		return fmt.Errorf("%w: %s", returnValue.Status(), returnValue.Message())
 
 	default:
-		return fmt.Errorf("%w: unknown exit code: %#v", pam.ErrSystem, exitStatus)
+		// Preserve the previous behavior of showing any message associated with
+		// unexpected exit statuses before returning the system error.
+		sendReturnMessageToPam(mTx, pamClientType, returnValue)
+		return fmt.Errorf("%w: unknown exit code: %#v", pam.ErrSystem, returnValue)
 	}
 }
 
-// AcctMgmt sets any used brokerID as default for the user.
-func (h *pamModule) AcctMgmt(mTx pam.ModuleTransaction, flags pam.Flags, args []string) (err error) {
-	parsedArgs, logArgsIssues := parseArgs(args)
-	closeLogging, err := initLogging(mTx, parsedArgs, flags)
-	defer closeLogging()
-	defer func() {
-		log.Debugf(context.TODO(), "AcctMgmt: exiting with error %v", err)
-	}()
-	if err != nil {
-		return err
-	}
-	logArgsIssues()
-
-	// We ignore AcctMgmt in case we're loading the module through the exec client
-	serviceName, err := mTx.GetItem(pam.Service)
-	if err != nil {
-		log.Warningf(context.TODO(), "Impossible to get PAM service name: %v", err)
-		return pam.ErrIgnore
-	}
-	if serviceName == gdmServiceName && !gdm.IsPamExtensionSupported(gdm.PamExtensionCustomJSON) {
-		return pam.ErrIgnore
-	}
-
-	brokerData, err := mTx.GetData(authenticationBrokerIDKey)
-	if err != nil && errors.Is(err, pam.ErrNoModuleData) {
-		return pam.ErrIgnore
-	}
-	if brokerData == nil {
-		// PAM can return no data without an error after that has been unset:
-		// See: https://github.com/linux-pam/linux-pam/pull/780
-		return pam.ErrIgnore
-	}
-
-	brokerIDUsedToAuthenticate, ok := brokerData.(string)
-	if !ok {
-		msg := fmt.Sprintf("broker data has an invalid type %#v", brokerData)
-		log.Errorf(context.TODO(), msg)
-		if err := showPamMessage(mTx, pam.ErrorMsg, msg); err != nil {
-			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", err)
-		}
-
-		return pam.ErrIgnore
-	}
-
-	// Only set the brokerID as default if we stored one after authentication.
-	if brokerIDUsedToAuthenticate == "" {
-		return pam.ErrIgnore
-	}
-
-	// Get current user for broker
-	user, err := mTx.GetItem(pam.User)
-	if err != nil {
-		return err
-	}
-
-	if user == "" {
-		if err := showPamMessage(mTx, pam.ErrorMsg, "Can't get user from PAM"); err != nil {
-			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", err)
-		}
-		return pam.ErrIgnore
-	}
-
-	client, closeConn, err := newClient(parsedArgs)
-	if err != nil {
-		log.Debugf(context.TODO(), "%s", err)
-		return pam.ErrAuthinfoUnavail
-	}
-	defer closeConn()
-
-	req := authd.SDBFURequest{
-		BrokerId: brokerIDUsedToAuthenticate,
-		Username: user,
-	}
-	if _, err := client.SetDefaultBrokerForUser(context.TODO(), &req); err != nil {
-		msg := err.Error()
-		if err := showPamMessage(mTx, pam.ErrorMsg, msg); err != nil {
-			log.Warningf(context.TODO(), "Impossible to show PAM message: %v", err)
-		}
-		return pam.ErrIgnore
-	}
-
-	return nil
+// AcctMgmt is ignored because broker selection is now handled server-side during IsAuthenticated.
+func (h *pamModule) AcctMgmt(_ pam.ModuleTransaction, _ pam.Flags, _ []string) error {
+	return pam.ErrIgnore
 }
 
 func newClientConnection(args map[string]string) (conn *grpc.ClientConn, closeConn func(), err error) {

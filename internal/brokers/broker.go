@@ -22,8 +22,17 @@ import (
 // LocalBrokerName is the name of the local broker.
 const LocalBrokerName = "local"
 
+// grantedData is the canonical envelope used to carry a granted authentication
+// result between the broker layer and the PAM service. The optional message is
+// an authd-controlled, user-facing notice (for example, a caching indicator)
+// that the broker may attach on a successful login.
+type grantedData struct {
+	UserInfo types.UserInfo `json:"userinfo"`
+	Message  string         `json:"message,omitempty"`
+}
+
 type brokerer interface {
-	NewSession(ctx context.Context, username, lang, mode string) (sessionID, encryptionKey string, err error)
+	NewSession(ctx context.Context, username, lang, mode, providerID string) (sessionID, encryptionKey string, err error)
 	GetAuthenticationModes(ctx context.Context, sessionID string, supportedUILayouts []map[string]string) (authenticationModes []map[string]string, err error)
 	SelectAuthenticationMode(ctx context.Context, sessionID, authenticationModeName string) (uiLayoutInfo map[string]string, err error)
 	IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access, data string, err error)
@@ -31,6 +40,10 @@ type brokerer interface {
 	CancelIsAuthenticated(ctx context.Context, sessionID string)
 
 	UserPreCheck(ctx context.Context, username string) (userinfo string, err error)
+	// DeleteUser removes broker-side data for the user. providerID is the stable provider
+	// identifier and is used by v3 brokers to locate the provider ID-keyed cache directory.
+	// v2 brokers ignore the providerID parameter.
+	DeleteUser(ctx context.Context, username, providerID string) error
 }
 
 // Broker represents a broker object that can be used for authentication.
@@ -42,6 +55,12 @@ type Broker struct {
 	layoutValidatorsMu    *sync.Mutex
 	ongoingUserRequests   map[string]string
 	ongoingUserRequestsMu *sync.Mutex
+
+	// isAuthMu serialises IsAuthenticated calls per session. A new call for
+	// the same session must wait until the previous one — including any broker-
+	// side cancellation and cleanup — has fully returned.
+	isAuthMu   map[string]*sync.Mutex
+	isAuthMuMu *sync.Mutex
 
 	brokerer brokerer
 }
@@ -83,12 +102,14 @@ func newBroker(ctx context.Context, configFile string, bus *dbus.Conn) (b Broker
 		layoutValidatorsMu:    &sync.Mutex{},
 		ongoingUserRequests:   make(map[string]string),
 		ongoingUserRequestsMu: &sync.Mutex{},
+		isAuthMu:              make(map[string]*sync.Mutex),
+		isAuthMuMu:            &sync.Mutex{},
 	}, nil
 }
 
 // newSession calls the broker corresponding method, expanding sessionID with the broker ID prefix.
-func (b Broker) newSession(ctx context.Context, username, lang, mode string) (sessionID, encryptionKey string, err error) {
-	sessionID, encryptionKey, err = b.brokerer.NewSession(ctx, username, lang, mode)
+func (b Broker) newSession(ctx context.Context, username, lang, mode, providerID string) (sessionID, encryptionKey string, err error) {
+	sessionID, encryptionKey, err = b.brokerer.NewSession(ctx, username, lang, mode, providerID)
 	if err != nil {
 		return "", "", err
 	}
@@ -142,6 +163,24 @@ func (b Broker) SelectAuthenticationMode(ctx context.Context, sessionID, authent
 func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationData string) (access string, data string, err error) {
 	sessionID = b.parseSessionID(sessionID)
 
+	// Serialise concurrent IsAuthenticated calls for the same session.
+	// A previous call may still be in-flight on the broker side after the
+	// client-side context was cancelled; we must wait for it to fully finish
+	// (including the broker's own cleanup) before sending a new request.
+	// Because broker.IsAuthenticated already does <-done in the ctx.Done()
+	// branch, this mutex is only released after the broker goroutine has
+	// exited — so the second call is guaranteed to see a clean broker state.
+	b.isAuthMuMu.Lock()
+	mu, ok := b.isAuthMu[sessionID]
+	if !ok {
+		mu = &sync.Mutex{}
+		b.isAuthMu[sessionID] = mu
+	}
+	b.isAuthMuMu.Unlock()
+
+	mu.Lock()
+	defer mu.Unlock()
+
 	// monitor ctx in goroutine to call cancel
 	done := make(chan struct{})
 	go func() {
@@ -180,9 +219,14 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 
 	switch access {
 	case auth.Granted:
-		rawUserInfo, err := unmarshalAndGetKey(data, "userinfo")
-		if err != nil {
-			return "", "", err
+		var rawData map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(data), &rawData); err != nil {
+			return "", "", fmt.Errorf("response returned by the broker is not a valid json: %v\nBroker returned: %v", err, data)
+		}
+
+		rawUserInfo, ok := rawData["userinfo"]
+		if !ok {
+			return "", "", fmt.Errorf("missing key %q in returned message, got: %v", "userinfo", data)
 		}
 
 		info, err := unmarshalUserInfo(rawUserInfo)
@@ -194,14 +238,25 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 			return "", "", err
 		}
 
-		d, err := json.Marshal(info)
+		var message string
+		if rawMessage := rawData["message"]; rawMessage != nil {
+			if err := json.Unmarshal(rawMessage, &message); err != nil {
+				// A non-string message must not fail an already-granted login; it's cosmetic.
+				log.Warningf(ctx, "Ignoring non-string message in broker granted response: %v", err)
+			}
+		}
+
+		// Always forward a consistent {"userinfo": ..., "message": ...} envelope
+		// (message omitted when empty) so the consumer always parses the same
+		// shape regardless of whether the broker attached a success message.
+		d, err := json.Marshal(grantedData{UserInfo: info, Message: message})
 		if err != nil {
 			return "", "", fmt.Errorf("can't marshal UserInfo: %v", err)
 		}
 		data = string(d)
 
 	case auth.Denied, auth.Retry:
-		if _, err := unmarshalAndGetKey(data, "message"); err != nil {
+		if err := requireKey(data, "message"); err != nil {
 			return "", "", err
 		}
 
@@ -209,7 +264,7 @@ func (b Broker) IsAuthenticated(ctx context.Context, sessionID, authenticationDa
 		if data == "{}" {
 			break
 		}
-		if _, err := unmarshalAndGetKey(data, "message"); err != nil {
+		if err := requireKey(data, "message"); err != nil {
 			return "", "", err
 		}
 
@@ -230,6 +285,10 @@ func (b Broker) endSession(ctx context.Context, sessionID string) (err error) {
 	defer b.ongoingUserRequestsMu.Unlock()
 	delete(b.ongoingUserRequests, sessionID)
 
+	b.isAuthMuMu.Lock()
+	delete(b.isAuthMu, sessionID)
+	b.isAuthMuMu.Unlock()
+
 	return b.brokerer.EndSession(ctx, sessionID)
 }
 
@@ -245,6 +304,14 @@ func (b Broker) cancelIsAuthenticated(ctx context.Context, sessionID string) {
 func (b Broker) UserPreCheck(ctx context.Context, username string) (userinfo string, err error) {
 	log.Debugf(context.TODO(), "Pre-checking user %q", username)
 	return b.brokerer.UserPreCheck(ctx, username)
+}
+
+// DeleteUser calls the broker to delete any broker side data associated with the user.
+// providerID is the stable provider identifier; v3 brokers use it to locate the provider ID-keyed
+// cache directory. Pass an empty string when the provider ID is not available.
+func (b Broker) DeleteUser(ctx context.Context, username, providerID string) error {
+	log.Debugf(ctx, "Deleting user %q", username)
+	return b.brokerer.DeleteUser(ctx, username, providerID)
 }
 
 // generateValidators generates layout validators based on what is supported by the system.
@@ -374,17 +441,16 @@ func validateUserInfo(uInfo types.UserInfo) (err error) {
 	return nil
 }
 
-// unmarshalAndGetKey tries to unmarshal the content in data and returns the value of the requested key.
-func unmarshalAndGetKey(data, key string) (json.RawMessage, error) {
+// requireKey unmarshals data and returns an error if the given key is missing.
+func requireKey(data, key string) error {
 	var returnedData map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(data), &returnedData); err != nil {
-		return nil, fmt.Errorf("response returned by the broker is not a valid json: %v\nBroker returned: %v", err, data)
+		return fmt.Errorf("response returned by the broker is not a valid json: %v\nBroker returned: %v", err, data)
 	}
 
-	rawMsg, ok := returnedData[key]
-	if !ok {
-		return nil, fmt.Errorf("missing key %q in returned message, got: %v", key, data)
+	if _, ok := returnedData[key]; !ok {
+		return fmt.Errorf("missing key %q in returned message, got: %v", key, data)
 	}
 
-	return rawMsg, nil
+	return nil
 }

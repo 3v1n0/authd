@@ -174,7 +174,7 @@ func TestSafeMessageDebug(t *testing.T) {
 			msg:            startAuthentication{},
 			prefix:         "prefix",
 			formatAndArgs:  []any{"suffix is %#v and %q", stopAuthentication{}, "suffix"},
-			wantSafeString: `prefix: adapter.startAuthentication{}, suffix is adapter.stopAuthentication{} and "suffix"`,
+			wantSafeString: `prefix: adapter.startAuthentication{}, suffix is adapter.stopAuthentication{gen:0x0} and "suffix"`,
 		},
 		"New_password_check": {
 			msg:             newPasswordCheck{password: "Super secret password!"},
@@ -310,6 +310,78 @@ func TestSafeMessageDebug(t *testing.T) {
 			}
 			require.Equal(t, tc.wantDebugString != "", handlerCalled,
 				"Handler should have been called")
+		})
+	}
+}
+
+func TestIsDumbTerminal(t *testing.T) {
+	// Cannot be parallel due to t.Setenv modifying the process environment.
+
+	tests := map[string]struct {
+		term string
+		want bool
+	}{
+		"Returns_true_when_TERM_is_dumb": {
+			term: "dumb",
+			want: true,
+		},
+		"Returns_false_when_TERM_is_xterm": {
+			term: "xterm",
+			want: false,
+		},
+		"Returns_false_when_TERM_is_xterm-256color": {
+			term: "xterm-256color",
+			want: false,
+		},
+		"Returns_false_when_TERM_is_empty": {
+			term: "",
+			want: false,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("TERM", tc.term)
+			require.Equal(t, tc.want, IsDumbTerminal())
+		})
+	}
+}
+
+func TestFormatAlignedFields(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		fields []labeledField
+		want   []string
+	}{
+		"Single field has no extra padding": {
+			fields: []labeledField{{"URL", "https://example.com"}},
+			want:   []string{"URL: https://example.com"},
+		},
+		"Two fields are padded to equal width": {
+			fields: []labeledField{{"URL", "https://example.com"}, {"Code", "1337"}},
+			want:   []string{"URL:  https://example.com", "Code: 1337"},
+		},
+		"Longer first label pads the second": {
+			fields: []labeledField{{"Verification URL", "https://example.com"}, {"Code", "1337"}},
+			want:   []string{"Verification URL: https://example.com", "Code:             1337"},
+		},
+		"Equal length labels": {
+			fields: []labeledField{{"Name", "Alice"}, {"Role", "Admin"}},
+			want:   []string{"Name: Alice", "Role: Admin"},
+		},
+		"Multibyte label is measured by rune count": {
+			// "URLé" is 5 bytes but 4 runes — padding must use rune count.
+			fields: []labeledField{{"URLé", "https://example.com"}, {"Code", "1337"}},
+			want:   []string{"URLé: https://example.com", "Code: 1337"},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := formatAlignedFields(tc.fields)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }

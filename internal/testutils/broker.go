@@ -5,11 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html/template"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/canonical/authd/internal/brokers/layouts"
@@ -18,6 +18,8 @@ import (
 )
 
 const (
+	latestAPIVersion = 3
+
 	dbusInterface = "com.ubuntu.authd.Broker"
 	objectPathFmt = "/com/ubuntu/authd/%s"
 	nameFmt       = "com.ubuntu.authd.%s"
@@ -75,7 +77,7 @@ func StartBusBrokerMock(cfgDir string, brokerName string) (string, func(), error
 		isAuthenticatedCallsMu: sync.RWMutex{},
 	}
 
-	if err = conn.Export(&bus, dbus.ObjectPath(busObjectPath), dbusInterface); err != nil {
+	if err = conn.Export(&bus, dbus.ObjectPath(busObjectPath), fmt.Sprintf("%s%d", dbusInterface, latestAPIVersion)); err != nil {
 		conn.Close()
 		return "", nil, err
 	}
@@ -85,7 +87,7 @@ func StartBusBrokerMock(cfgDir string, brokerName string) (string, func(), error
 		Interfaces: []introspect.Interface{
 			introspect.IntrospectData,
 			{
-				Name:    dbusInterface,
+				Name:    fmt.Sprintf("%s%d", dbusInterface, latestAPIVersion),
 				Methods: introspect.Methods(&bus),
 			},
 		},
@@ -126,7 +128,7 @@ func writeConfig(cfgDir, name string) (string, error) {
 }
 
 // NewSession returns default values to be used in tests or an error if requested.
-func (b *BrokerBusMock) NewSession(username, lang, mode string) (sessionID, encryptionKey string, dbusErr *dbus.Error) {
+func (b *BrokerBusMock) NewSession(username, lang, mode, providerID string) (sessionID, encryptionKey string, dbusErr *dbus.Error) {
 	parsedUsername := parseSessionID(username)
 	if parsedUsername == "ns_error" {
 		return "", "", dbus.MakeFailedError(fmt.Errorf("broker %q: NewSession errored out", b.name))
@@ -300,6 +302,14 @@ func (b *BrokerBusMock) IsAuthenticated(sessionID, authenticationData string) (a
 		access = authDenied
 		data = ""
 
+	case "ia_denied", "ia_denied_second":
+		access = authDenied
+		data = `{"message": "access denied"}`
+
+	case "ia_retry", "ia_retry_second":
+		access = authRetry
+		data = `{"message": "invalid credentials, please retry"}`
+
 	case "ia_retry_without_data":
 		access = authRetry
 		data = ""
@@ -307,6 +317,14 @@ func (b *BrokerBusMock) IsAuthenticated(sessionID, authenticationData string) (a
 	case "ia_next_with_data":
 		access = authNext
 		data = `{"message": "It's fine to show a message here"}`
+
+	case "ia_granted_with_data":
+		access = authGranted
+		data = fmt.Sprintf(`{"userinfo": %s, "message": "Offline login is enabled with your Entra password"}`, userInfoFromName(sessionID, nil))
+
+	case "ia_granted_with_non_string_message":
+		access = authGranted
+		data = fmt.Sprintf(`{"userinfo": %s, "message": 42}`, userInfoFromName(sessionID, nil))
 
 	case "ia_next_with_invalid_data":
 		access = authNext
@@ -347,6 +365,14 @@ func (b *BrokerBusMock) UserPreCheck(username string) (userinfo string, dbusErr 
 		return "", dbus.MakeFailedError(fmt.Errorf("broker %q: UserPreCheck errored out", b.name))
 	}
 	return userInfoFromName(username, nil), nil
+}
+
+// DeleteUser removes broker side user data or returns an error if requested.
+func (b *BrokerBusMock) DeleteUser(username, providerID string) (dbusErr *dbus.Error) {
+	if strings.Contains(username, "delete_error") {
+		return dbus.MakeFailedError(fmt.Errorf("broker %q: DeleteUser errored out", b.name))
+	}
+	return nil
 }
 
 // parseSessionID is wrapper around the sessionID to remove some values appended during the tests.
@@ -416,19 +442,19 @@ func userInfoFromName(sessionID string, extraGroups []groupJSONInfo) string {
 	}
 
 	user := struct {
-		Name   string
-		UUID   string
-		Dir    string
-		Shell  string
-		Groups []groupJSONInfo
-		Gecos  string
-	}{Name: name, Dir: home, Shell: shell, Groups: groups, Gecos: gecos}
+		Name       string
+		ProviderID string
+		Dir        string
+		Shell      string
+		Groups     []groupJSONInfo
+		Gecos      string
+	}{Name: name, ProviderID: "providerid-" + name, Dir: home, Shell: shell, Groups: groups, Gecos: gecos}
 
 	// only used for tests, we can ignore the template execution error as the returned data will be failing.
 	var buf bytes.Buffer
 	_ = template.Must(template.New("").Parse(`{
 		"name": "{{.Name}}",
-		"uuid": "{{.UUID}}",
+		"provider_id": "{{.ProviderID}}",
 		"gecos": "{{.Gecos}}",
 		"dir": "{{.Dir}}",
 		"shell": "{{.Shell}}",

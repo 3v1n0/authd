@@ -2,14 +2,14 @@
 package genericprovider
 
 import (
-	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/canonical/authd/authd-oidc-brokers/internal/broker/authmodes"
 	providerErrors "github.com/canonical/authd/authd-oidc-brokers/internal/providers/errors"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/info"
-	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
@@ -19,6 +19,11 @@ type GenericProvider struct{}
 // New returns a new GenericProvider.
 func New() GenericProvider {
 	return GenericProvider{}
+}
+
+// DisplayName returns the display name of the provider.
+func (p GenericProvider) DisplayName() string {
+	return "the identity provider"
 }
 
 // AdditionalScopes returns the generic scopes required by the provider.
@@ -31,48 +36,51 @@ func (p GenericProvider) AuthOptions() []oauth2.AuthCodeOption {
 	return []oauth2.AuthCodeOption{}
 }
 
-// GetExtraFields returns the extra fields of the token which should be stored persistently.
-func (p GenericProvider) GetExtraFields(token *oauth2.Token) map[string]interface{} {
-	return nil
-}
-
-// GetMetadata is a no-op when no specific provider is in use.
-func (p GenericProvider) GetMetadata(provider *oidc.Provider) (map[string]interface{}, error) {
-	return nil, nil
-}
-
-// GetUserInfo is a no-op when no specific provider is in use.
-func (p GenericProvider) GetUserInfo(idToken info.Claimer) (info.User, error) {
-	userClaims, err := p.userClaims(idToken)
-	if err != nil {
-		return info.User{}, err
+// GetUserInfo returns user information from the claims of the provided Claimer.
+func (p GenericProvider) GetUserInfo(claimer info.Claimer, _ bool) (info.User, error) {
+	var claimsMap map[string]interface{}
+	if err := claimer.Claims(&claimsMap); err != nil {
+		return info.User{}, fmt.Errorf("failed to get ID token claims: %v", err)
 	}
 
-	if userClaims.Sub == "" {
-		return info.User{}, fmt.Errorf("authentication failure: sub claim is missing in the ID token")
+	// Check required claims
+	providerID, ok := claimsMap["sub"].(string)
+	if !ok || providerID == "" {
+		return info.User{}, providerErrors.NewMissingClaimError("sub")
 	}
 
-	if userClaims.Email == "" {
-		return info.User{}, fmt.Errorf("authentication failure: email claim is missing in the ID token")
+	email, ok := claimsMap["email"].(string)
+	if !ok || email == "" {
+		return info.User{}, providerErrors.NewMissingClaimError("email")
 	}
 
-	if !userClaims.EmailVerified {
-		return info.User{}, &providerErrors.ForDisplayError{Message: "Authentication failure: email not verified"}
+	rawEmailVerified, present := claimsMap["email_verified"]
+	if !present {
+		return info.User{}, &providerErrors.ForDisplayError{
+			Message: "Authentication failure: email not verified",
+			Err:     providerErrors.NewMissingClaimError("email_verified"),
+		}
 	}
+	if verified, ok := rawEmailVerified.(bool); !ok || !verified {
+		return info.User{}, &providerErrors.ForDisplayError{
+			Message: "Authentication failure: email not verified",
+			Err:     errors.New("email_verified claim value is false or malformed"),
+		}
+	}
+
+	// Optional claims: home, shell, name
+	home, _ := claimsMap["home"].(string)
+	shell, _ := claimsMap["shell"].(string)
+	gecos, _ := claimsMap["name"].(string)
 
 	return info.NewUser(
-		userClaims.Email,
-		userClaims.Home,
-		userClaims.Sub,
-		userClaims.Shell,
-		userClaims.Gecos,
+		email,
+		home,
+		providerID,
+		shell,
+		gecos,
 		nil,
 	), nil
-}
-
-// GetGroups is a no-op when no specific provider is in use.
-func (GenericProvider) GetGroups(ctx context.Context, clientID string, issuerURL string, token *oauth2.Token, providerMetadata map[string]interface{}, deviceRegistrationData []byte) ([]info.Group, error) {
-	return nil, nil
 }
 
 // NormalizeUsername parses a username into a normalized version.
@@ -89,52 +97,26 @@ func (p GenericProvider) VerifyUsername(requestedUsername, username string) erro
 	return nil
 }
 
-// SupportedOIDCAuthModes returns the OIDC authentication modes supported by the provider.
-func (p GenericProvider) SupportedOIDCAuthModes() []string {
+// SupportedOnlineAuthModes returns the authentication modes supported by the
+// provider that require a connection to the identity provider.
+func (p GenericProvider) SupportedOnlineAuthModes() []string {
 	return []string{authmodes.Device, authmodes.DeviceQr}
-}
-
-type claims struct {
-	Email         string `json:"email"`
-	Sub           string `json:"sub"`
-	Home          string `json:"home"`
-	Shell         string `json:"shell"`
-	Gecos         string `json:"gecos"`
-	EmailVerified bool   `json:"email_verified"`
-}
-
-// userClaims returns the user claims parsed from the ID token.
-func (p GenericProvider) userClaims(idToken info.Claimer) (claims, error) {
-	var userClaims claims
-	if err := idToken.Claims(&userClaims); err != nil {
-		return claims{}, fmt.Errorf("failed to get ID token claims: %v", err)
-	}
-	return userClaims, nil
 }
 
 // IsTokenExpiredError returns true if the reason for the error is that the refresh token is expired.
 func (p GenericProvider) IsTokenExpiredError(err *oauth2.RetrieveError) bool {
-	// TODO: This is an msentraid specific error code and description.
-	//       Change it to the ones from Google once we know them.
-	return err.ErrorCode == "invalid_grant" && strings.HasPrefix(err.ErrorDescription, "AADSTS50173:")
-}
+	if err.ErrorCode != "invalid_grant" {
+		return false
+	}
 
-// IsUserDisabledError returns false, as the generic provider does not support disabling users.
-func (p GenericProvider) IsUserDisabledError(_ *oauth2.RetrieveError) bool {
-	return false
-}
+	expiredDescriptions := []string{
+		"Session not active",         // Keycloak: online user session expired
+		"Offline session not active", // Keycloak: offline session expired or revoked
+		"Token is not active",        // Keycloak: refresh token JWT expired (exp/nbf check)
+		"Stale token",                // Keycloak: token issued before not-before policy or reuse detected
+	}
 
-// SupportsDeviceRegistration returns false, as the generic provider does not support device registration.
-func (p GenericProvider) SupportsDeviceRegistration() bool {
-	return false
-}
-
-// IsTokenForDeviceRegistration returns false, as the generic provider does not support device registration.
-func (p GenericProvider) IsTokenForDeviceRegistration(_ *oauth2.Token) (bool, error) {
-	return false, nil
-}
-
-// MaybeRegisterDevice is a no-op when no specific provider is in use.
-func (p GenericProvider) MaybeRegisterDevice(_ context.Context, _ *oauth2.Token, _, _ string, _ []byte) ([]byte, func(), error) {
-	return nil, func() {}, nil
+	return slices.ContainsFunc(expiredDescriptions, func(desc string) bool {
+		return strings.Contains(err.ErrorDescription, desc)
+	})
 }

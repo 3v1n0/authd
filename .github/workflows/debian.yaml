@@ -62,7 +62,7 @@ jobs:
     outputs:
       files-hash: ${{ steps.hash.outputs.hash }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Compute hash of build-relevant files
         id: hash
         run: |
@@ -76,7 +76,7 @@ jobs:
       list: ${{ fromJSON(steps.git-diff.outputs.modified_files) }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 100
 
@@ -107,9 +107,15 @@ jobs:
     needs:
       - compute-hash
       - get-modified-files
+    # Permissions needed by nested debian-build-test-and-sync workflow:
+    # - contents: write: for pushing to packaging branches
+    # - packages: write: for pushing OCI artifacts to ghcr.io
+    permissions:
+      contents: write
+      packages: write
     strategy:
       matrix:
-        ubuntu-version: [ 'noble', 'questing', 'devel' ]
+        ubuntu-version: ['noble', 'resolute', 'devel']
       fail-fast: false
     uses: ./.github/workflows/debian-build-test-and-sync.yaml
     with:

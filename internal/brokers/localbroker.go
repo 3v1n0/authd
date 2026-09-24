@@ -10,7 +10,7 @@ type localBroker struct {
 }
 
 //nolint:unused // We still need localBroker to implement the brokerer interface, even though this method should never be called on it.
-func (b localBroker) NewSession(ctx context.Context, username, lang, mode string) (sessionID, encryptionKey string, err error) {
+func (b localBroker) NewSession(ctx context.Context, username, lang, mode, providerID string) (sessionID, encryptionKey string, err error) {
 	return "", "", errors.New("NewSession should never be called on local broker")
 }
 
@@ -41,4 +41,9 @@ func (b localBroker) CancelIsAuthenticated(ctx context.Context, sessionID string
 //nolint:unused // We still need localBroker to implement the brokerer interface, even though this method should never be called on it.
 func (b localBroker) UserPreCheck(ctx context.Context, username string) (string, error) {
 	return "", errors.New("UserPreCheck should never be called on local broker")
+}
+
+//nolint:unused // We still need localBroker to implement the brokerer interface, even though this method should never be called on it.
+func (b localBroker) DeleteUser(ctx context.Context, username, providerID string) error {
+	return errors.New("DeleteUser should never be called on local broker")
 }

@@ -1,0 +1,106 @@
+//go:build withmsentraid
+
+package himmelblau
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestDeserializeLoadableMachineKeyRejectsEmptyKey(t *testing.T) {
+	t.Parallel()
+
+	// An empty key must return an error rather than panicking on &key[0].
+	_, cleanup, err := deserializeLoadableMachineKey(nil)
+	require.Error(t, err, "deserializeLoadableMachineKey should reject an empty key")
+	require.Nil(t, cleanup, "no cleanup should be returned on error")
+
+	_, cleanup, err = deserializeLoadableMachineKey([]byte{})
+	require.Error(t, err, "deserializeLoadableMachineKey should reject a zero-length key")
+	require.Nil(t, cleanup, "no cleanup should be returned on error")
+}
+
+// TestMFAErrorCategoryMapping guards against the enum-drift bug where the MFA
+// error codes were hardcoded as Go integer literals (mfaRequiredCode = 24). The
+// MSAL_ERROR_CODE enum gates some variants (e.g. CHANGE_PASSWORD) behind cargo
+// features, so the numeric value of later variants such as MFA_REQUIRED depends on
+// the build. The codes are now derived from the cgo enum constants, and this test
+// pins both the mapping and the documented layout.
+func TestMFAErrorCategoryMapping(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, MFAErrorPollContinue, mfaErrorCategory(codeMFAPollContinue),
+		"MFA_POLL_CONTINUE must map to MFAErrorPollContinue")
+	require.Equal(t, MFAErrorRequired, mfaErrorCategory(codeMFARequired),
+		"MFA_REQUIRED must map to MFAErrorRequired")
+	require.Equal(t, MFAErrorDenied, mfaErrorCategory(codeAuthorizationDenied),
+		"AUTHORIZATION_DENIED must map to MFAErrorDenied")
+	require.Equal(t, MFAErrorRetryableCode, mfaErrorCategory(codeMFAInvalidCode),
+		"MFA_INVALID_CODE must map to MFAErrorRetryableCode")
+	require.Equal(t, MFAErrorDAGFallbackDisabled, mfaErrorCategory(codeMFADAGFallbackDisab),
+		"MFA_DAG_FALLBACK_DISABLED must map to MFAErrorDAGFallbackDisabled")
+	require.Equal(t, MFAErrorPasswordRequired, mfaErrorCategory(codePasswordRequired),
+		"PASSWORD_REQUIRED must map to MFAErrorPasswordRequired")
+
+	// The original bug hardcoded mfaRequiredCode=24, which is actually
+	// AUTH_CODE_RECEIVED once the changepassword feature shifts the enum. That
+	// misclassified AUTH_CODE_RECEIVED as MFAErrorRequired and let the real
+	// MFA_REQUIRED (25) fall through to MFAErrorOther, breaking the
+	// "MFA required -> redirect to device code flow" fallback. Pin both
+	// directions so the literal bug cannot return.
+	require.Equal(t, MFAErrorOther, mfaErrorCategory(codeAuthCodeReceived),
+		"AUTH_CODE_RECEIVED must NOT be classified as MFAErrorRequired")
+	require.NotEqual(t, codeAuthCodeReceived, codeMFARequired,
+		"AUTH_CODE_RECEIVED and MFA_REQUIRED must be distinct codes")
+
+	// Documented enum layout with the changepassword feature enabled (generate.sh).
+	// A failure here means the compiled C enum shifted, so the code->category
+	// mapping (and any other code that depends on these values) must be re-verified.
+	require.Equal(t, uint32(14), codeMFAPollContinue, "MFA_POLL_CONTINUE is expected to be 14")
+	require.Equal(t, uint32(24), codeAuthCodeReceived, "AUTH_CODE_RECEIVED is expected to be 24")
+	require.Equal(t, uint32(25), codeMFARequired, "MFA_REQUIRED is expected to be 25 (changepassword enabled)")
+	require.Equal(t, uint32(26), codeAuthorizationDenied, "AUTHORIZATION_DENIED is expected to be 26")
+	require.Equal(t, uint32(27), codeMFAInvalidCode, "MFA_INVALID_CODE is expected to be 27")
+	require.Equal(t, uint32(28), codeMFADAGFallbackDisab, "MFA_DAG_FALLBACK_DISABLED is expected to be 28")
+}
+
+// TestCAuthOptionsMapping pins the translation from portable AuthOption values
+// to the C AuthOption enum.
+func TestCAuthOptionsMapping(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, cAuthOptions(nil),
+		"no options must produce an empty slice")
+	require.Equal(t, []uint32{cAuthOptionNoDAGFallback},
+		cAuthOptions([]AuthOption{AuthOptionNoDAGFallback}),
+		"AuthOptionNoDAGFallback must map to the C NoDAGFallback option")
+	require.Equal(t, []uint32{cAuthOptionNoDAGFallback, cAuthOptionFido},
+		cAuthOptions([]AuthOption{AuthOptionNoDAGFallback, AuthOptionFido}),
+		"AuthOptionFido must map to the C Fido option")
+	require.Equal(t, []uint32{cAuthOptionPasswordless},
+		cAuthOptions([]AuthOption{AuthOptionPasswordless}),
+		"AuthOptionPasswordless must map to the C Passwordless option")
+	require.Equal(t, []uint32{cAuthOptionPasswordless, cAuthOptionPasswordlessSecurityKey},
+		cAuthOptions([]AuthOption{AuthOptionPasswordless, AuthOptionPasswordlessSecurityKey}),
+		"AuthOptionPasswordlessSecurityKey must map to the C PasswordlessSecurityKey option")
+	require.Equal(t, []uint32{cAuthOptionNoDAGFallback, cAuthOptionFido},
+		cAuthOptions([]AuthOption{AuthOptionNoDAGFallback, AuthOptionFido, AuthOption(-1)}),
+		"unknown options must be ignored")
+
+	// Documented enum layout from the generated himmelblau.h. The mapping
+	// assertions above compare cAuthOptions output against these same package
+	// vars, so a misassigned var (e.g. cAuthOptionPasswordless =
+	// uint32(C.PasswordlessFido)) would go undetected without these pins. A
+	// failure here means the compiled C enum shifted, so the mapping must be
+	// re-verified.
+	//
+	// ForceMFA and RemoteSession appear in the header but are compiled out
+	// (generate.sh does not enable the optional_mfa feature). They are declared
+	// last, so the values below are unaffected; a new variant inserted before
+	// them would shift these and fail here.
+	require.Equal(t, uint32(0), cAuthOptionFido, "Fido is expected to be 0")
+	require.Equal(t, uint32(1), cAuthOptionPasswordless, "Passwordless is expected to be 1")
+	require.Equal(t, uint32(3), cAuthOptionPasswordlessSecurityKey, "PasswordlessSecurityKey is expected to be 3")
+	require.Equal(t, uint32(5), cAuthOptionNoDAGFallback, "NoDAGFallback is expected to be 5")
+}

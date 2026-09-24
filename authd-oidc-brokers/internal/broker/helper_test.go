@@ -15,6 +15,7 @@ import (
 	"github.com/canonical/authd/authd-oidc-brokers/internal/broker/sessionmode"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/info"
+	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/msentraid/himmelblau"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/testutils"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/token"
 	"github.com/golang-jwt/jwt/v5"
@@ -24,29 +25,61 @@ import (
 
 type brokerForTestConfig struct {
 	broker.Config
-	issuerURL                   string
-	forceProviderAuthentication bool
-	registerDevice              bool
-	allowedUsers                map[string]struct{}
-	allUsersAllowed             bool
-	ownerAllowed                bool
-	firstUserBecomesOwner       bool
-	owner                       string
-	extraGroups                 []string
-	ownerExtraGroups            []string
-	homeBaseDir                 string
-	allowedSSHSuffixes          []string
-	provider                    providers.Provider
+	issuerURL                    string
+	clientSecret                 string
+	forceAccessCheckWithProvider bool
+	registerDevice               bool
+	deviceAuthFlowDisabled       bool
+	entraAuthFlowDisabled        bool
+	allowedUsers                 map[string]struct{}
+	allUsersAllowed              bool
+	ownerAllowed                 bool
+	firstUserBecomesOwner        bool
+	owner                        string
+	extraGroups                  []string
+	ownerExtraGroups             []string
+	homeBaseDir                  string
+	allowedSSHSuffixes           []string
+	provider                     providers.Provider
+	fidoAuthenticator            broker.FIDOAuthenticator
+	apiVersion                   uint
 
-	getGroupsFails             bool
-	supportsDeviceRegistration bool
-	firstCallDelay             int
-	secondCallDelay            int
-	getGroupsFunc              func() ([]info.Group, error)
+	getGroupsFails                bool
+	supportsDeviceRegistration    bool
+	supportsFetchingGroups        bool
+	supportsMetadata              bool
+	metadataGetErr                error
+	supportsUserDisabledCheck     bool
+	userDisabledErrorCode         string
+	requireNameClaimOnInitialAuth bool
+	firstCallDelay                int
+	secondCallDelay               int
+	getGroupsFunc                 func() ([]info.Group, error)
 
 	listenAddress       string
 	tokenHandlerOptions *testutils.TokenHandlerOptions
 	customHandlers      map[string]testutils.EndpointHandler
+}
+
+func brokerProviderWithOptionalCapabilities(provider *testutils.MockProvider, cfg *brokerForTestConfig) providers.Provider {
+	capabilities := testutils.ProviderCapabilities{}
+	if cfg.supportsFetchingGroups {
+		capabilities.GroupFetcher = provider
+	}
+	if cfg.supportsDeviceRegistration {
+		capabilities.DeviceRegisterer = &testutils.MockDeviceRegistererProvider{MockProvider: provider}
+	}
+	if cfg.supportsMetadata {
+		capabilities.MetadataProvider = &testutils.MockMetadataProvider{MockProvider: provider, GetMetadataErr: cfg.metadataGetErr}
+	}
+	if cfg.supportsUserDisabledCheck {
+		capabilities.UserDisabledChecker = &testutils.MockUserDisabledCheckerProvider{
+			MockProvider:          provider,
+			UserDisabledErrorCode: cfg.userDisabledErrorCode,
+		}
+	}
+
+	return testutils.ComposeProvider(provider, capabilities)
 }
 
 // newBrokerForTests is a helper function to easily create a new broker for tests.
@@ -57,11 +90,20 @@ func newBrokerForTests(t *testing.T, cfg *brokerForTestConfig) (b *broker.Broker
 	if cfg.issuerURL != "" {
 		cfg.SetIssuerURL(cfg.issuerURL)
 	}
-	if cfg.forceProviderAuthentication {
-		cfg.SetForceProviderAuthentication(cfg.forceProviderAuthentication)
+	if cfg.clientSecret != "" {
+		cfg.SetClientSecret(cfg.clientSecret)
+	}
+	if cfg.forceAccessCheckWithProvider {
+		cfg.SetforceAccessCheckWithProvider(cfg.forceAccessCheckWithProvider)
 	}
 	if cfg.registerDevice {
 		cfg.SetRegisterDevice(cfg.registerDevice)
+	}
+	if cfg.deviceAuthFlowDisabled || cfg.entraAuthFlowDisabled {
+		cfg.SetFlows(!cfg.deviceAuthFlowDisabled, !cfg.entraAuthFlowDisabled)
+	} else {
+		// Most broker tests exercise the authentication flows explicitly.
+		cfg.SetFlows(true, true)
 	}
 	if cfg.homeBaseDir != "" {
 		cfg.SetHomeBaseDir(cfg.homeBaseDir)
@@ -91,22 +133,31 @@ func newBrokerForTests(t *testing.T, cfg *brokerForTestConfig) (b *broker.Broker
 		cfg.SetOwnerExtraGroups(cfg.ownerExtraGroups)
 	}
 
-	provider := &testutils.MockProvider{
-		GetGroupsFails:                     cfg.getGroupsFails,
-		ProviderSupportsDeviceRegistration: cfg.supportsDeviceRegistration,
-		FirstCallDelay:                     cfg.firstCallDelay,
-		SecondCallDelay:                    cfg.secondCallDelay,
-		GetGroupsFunc:                      cfg.getGroupsFunc,
+	provider := cfg.provider
+	if provider == nil {
+		mockProvider := &testutils.MockProvider{
+			GetGroupsFails:                cfg.getGroupsFails,
+			RequireNameClaimOnInitialAuth: cfg.requireNameClaimOnInitialAuth,
+			FirstCallDelay:                cfg.firstCallDelay,
+			SecondCallDelay:               cfg.secondCallDelay,
+			GetGroupsFunc:                 cfg.getGroupsFunc,
+		}
+		provider = brokerProviderWithOptionalCapabilities(mockProvider, cfg)
 	}
-
-	if cfg.provider == nil {
-		cfg.SetProvider(provider)
-	}
+	cfg.SetProvider(provider)
 	if cfg.DataDir == "" {
 		cfg.DataDir = t.TempDir()
 	}
 	if cfg.ClientID() == "" {
 		cfg.SetClientID("test-client-id")
+	}
+	if !cfg.entraAuthFlowDisabled && cfg.clientSecret == "" && !cfg.registerDevice {
+		if _, ok := providers.ProviderAs[himmelblau.EntraAuthProvider](provider); ok {
+			// Most Entra auth broker tests are not exercising startup validation;
+			// give them a minimal Graph group source so they keep building a valid
+			// broker after New() started rejecting unusable entra_auth configs.
+			cfg.SetClientSecret("test-client-secret")
+		}
 	}
 
 	if cfg.IssuerURL() == "" {
@@ -123,7 +174,22 @@ func newBrokerForTests(t *testing.T, cfg *brokerForTestConfig) (b *broker.Broker
 		cfg.SetIssuerURL(issuerURL)
 	}
 
-	b, err := broker.New(cfg.Config, broker.WithCustomProvider(provider))
+	apiVersion := broker.LatestAPIVersion
+	if cfg.apiVersion != 0 {
+		apiVersion = cfg.apiVersion
+	}
+
+	opts := []broker.Option{broker.WithCustomProvider(provider)}
+	// Override the FIDO authenticator when a mock is provided: the real one
+	// enumerates USB devices, which would make tests depend on the hardware
+	// plugged into the machine running them. When no mock is provided, the
+	// default stays nil (in non-withmsentraid builds), so the broker's
+	// b.fido == nil guards keep the FIDO auth modes disabled.
+	if cfg.fidoAuthenticator != nil {
+		opts = append(opts, broker.WithCustomFIDOAuthenticator(cfg.fidoAuthenticator))
+	}
+
+	b, err := broker.New(cfg.Config, apiVersion, opts...)
 	require.NoError(t, err, "Setup: New should not have returned an error")
 	return b
 }
@@ -140,7 +206,7 @@ func newSessionForTests(t *testing.T, b *broker.Broker, username, mode string) (
 		mode = sessionmode.Login
 	}
 
-	id, key, err := b.NewSession(username, "some lang", mode)
+	id, key, err := b.NewSession(username, "some lang", mode, "")
 	require.NoError(t, err, "Setup: NewSession should not have returned an error")
 
 	return id, key
@@ -178,6 +244,22 @@ func updateAuthModes(t *testing.T, b *broker.Broker, sessionID, selectedMode str
 	require.NoError(t, err, "Setup: SelectAuthenticationMode should not have returned an error")
 }
 
+// requireAuthModes asserts the authentication modes offered to the client, in
+// order. It also primes the session: GetAuthenticationModes replaces the
+// session's valid-mode list, which a later SelectAuthenticationMode validates
+// against.
+func requireAuthModes(t *testing.T, b *broker.Broker, sessionID string, want ...string) {
+	t.Helper()
+
+	modes, err := b.GetAuthenticationModes(sessionID, supportedLayouts)
+	require.NoError(t, err, "GetAuthenticationModes should not have returned an error")
+	got := make([]string, 0, len(modes))
+	for _, mode := range modes {
+		got = append(got, mode["id"])
+	}
+	require.Equal(t, want, got, "the client must be offered these modes, in this order")
+}
+
 func generateAndStoreCachedInfo(t *testing.T, options tokenOptions, path string) {
 	t.Helper()
 
@@ -193,19 +275,22 @@ func generateAndStoreCachedInfo(t *testing.T, options tokenOptions, path string)
 type tokenOptions struct {
 	username string
 	issuer   string
+	gecos    string
 	groups   []info.Group
 
-	expired                   bool
-	noRefreshToken            bool
-	refreshTokenExpired       bool
-	noIDToken                 bool
-	invalid                   bool
-	invalidClaims             bool
-	noUserInfo                bool
-	isForDeviceRegistration   bool
-	noIsForDeviceRegistration bool
-	deviceIsDisabled          bool
-	userIsDisabled            bool
+	expired                     bool
+	noRefreshToken              bool
+	refreshTokenExpired         bool
+	refreshTokenInactiveExpired bool
+	refreshTokenStale           bool
+	noIDToken                   bool
+	invalid                     bool
+	invalidClaims               bool
+	noUserInfo                  bool
+	isForDeviceRegistration     bool
+	deviceIsDisabled            bool
+	userIsDisabled              bool
+	obtainedViaEntraAuth        bool
 }
 
 func generateCachedInfo(t *testing.T, options tokenOptions) *token.AuthCachedInfo {
@@ -241,8 +326,9 @@ func generateCachedInfo(t *testing.T, options tokenOptions) *token.AuthCachedInf
 			RefreshToken: "refreshtoken",
 			Expiry:       time.Now().Add(1000 * time.Hour),
 		},
-		DeviceIsDisabled: options.deviceIsDisabled,
-		UserIsDisabled:   options.userIsDisabled,
+		DeviceIsDisabled:     options.deviceIsDisabled,
+		UserIsDisabled:       options.userIsDisabled,
+		ObtainedViaEntraAuth: options.obtainedViaEntraAuth,
 	}
 
 	if options.expired {
@@ -254,17 +340,26 @@ func generateCachedInfo(t *testing.T, options tokenOptions) *token.AuthCachedInf
 	if options.refreshTokenExpired {
 		tok.Token.RefreshToken = testutils.ExpiredRefreshToken
 	}
-	if !options.noIsForDeviceRegistration {
-		tok.ExtraFields = map[string]any{testutils.IsForDeviceRegistrationClaim: options.isForDeviceRegistration}
+	if options.refreshTokenInactiveExpired {
+		tok.Token.RefreshToken = testutils.InactiveExpiredRefreshToken
+	}
+	if options.refreshTokenStale {
+		tok.Token.RefreshToken = testutils.StaleRefreshToken
+	}
+	if options.isForDeviceRegistration {
+		tok.DeviceRegistrationData = []byte("device-registration-data")
 	}
 
 	if !options.noUserInfo {
+		if options.gecos == "" {
+			options.gecos = options.username
+		}
 		tok.UserInfo = info.User{
-			Name:  options.username,
-			UUID:  "saved-user-id",
-			Home:  "/home/" + options.username,
-			Gecos: options.username,
-			Shell: "/usr/bin/bash",
+			Name:       options.username,
+			ProviderID: "saved-user-id",
+			Home:       "/home/" + options.username,
+			Gecos:      options.gecos,
+			Shell:      "/usr/bin/bash",
 			Groups: []info.Group{
 				{Name: "saved-remote-group", UGID: "12345"},
 				{Name: "saved-local-group", UGID: ""},

@@ -36,12 +36,17 @@ type nativeModel struct {
 	currentStage         proto.Stage
 	busy                 bool
 	userSelectionAllowed bool
+	userIsBoundToBroker  bool
 }
 
 const (
 	nativeCancelKey = "r"
 
 	polkitServiceName = "polkit-1"
+	// prompt that will appear in polkit agents when the user is expected to enter a password.
+	// This is a workaround for polkit agents that keep the previous input hint visible even when not expecting user input, which can be confusing.
+	// By using a blank prompt, we avoid showing any misleading hints.
+	polkitBlankPrompt = " "
 )
 
 type inputPromptStyle int
@@ -85,7 +90,7 @@ func newNativeModel(mTx pam.ModuleTransaction, userServiceClient authd.UserServi
 		log.Errorf(context.TODO(), "failed to get the PAM service: %v", err)
 	}
 
-	m.interactive = isSSHSession(m.pamMTx) || IsTerminalTTY(m.pamMTx)
+	m.interactive = (isSSHSession(m.pamMTx) || IsTerminalTTY(m.pamMTx)) && !IsDumbTerminal()
 
 	return m
 }
@@ -200,6 +205,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 			return m, cmd
 		}
 
+		m.userIsBoundToBroker = false
 		return m.startAsyncOp(m.userSelection)
 
 	case brokersListReceived:
@@ -217,6 +223,9 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 
 	case authModesReceived:
 		m.authModes = msg.authModes
+
+	case brokerBoundToUser:
+		m.userIsBoundToBroker = true
 
 	case brokerSelectionRequired:
 		if m.busy {
@@ -317,7 +326,7 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 
 	case isAuthenticatedResultReceived:
 		access := msg.access
-		authMsg, err := dataToMsg(msg.msg)
+		authMsg, err := grantedTolerantMsg(access, msg.msg)
 		if cmd := maybeSendPamError(err); cmd != nil {
 			return m, cmd
 		}
@@ -331,6 +340,9 @@ func (m nativeModel) Update(msg tea.Msg) (nativeModel, tea.Cmd) {
 		case auth.Retry:
 			return m, maybeSendPamError(m.sendError(authMsg))
 		case auth.Denied:
+			// This is handled by the main authentication model
+			return m, nil
+		case auth.DeniedMaxTries:
 			// This is handled by the main authentication model
 			return m, nil
 		case auth.Cancelled:
@@ -362,7 +374,11 @@ func (m nativeModel) promptForInput(style pam.Style, inputStyle inputPromptStyle
 		case inputPromptStyleInline:
 			format = "%s: "
 		case inputPromptStyleMultiLine:
-			format = "%s:\n> "
+			if m.serviceName == polkitServiceName && prompt == polkitBlankPrompt {
+				format = "%s\n> "
+			} else {
+				format = "%s:\n> "
+			}
 		}
 	}
 
@@ -414,12 +430,22 @@ func (m nativeModel) sendError(errorMsg string, args ...any) error {
 	return err
 }
 
-func (m nativeModel) sendInfo(infoMsg string, args ...any) error {
+func (m nativeModel) sendInfo(infoMsg string) error {
 	if infoMsg == "" {
 		return nil
 	}
-	_, err := m.pamMTx.StartStringConvf(pam.TextInfo, infoMsg, args...)
+	_, err := m.pamMTx.StartStringConvf(pam.TextInfo, infoMsg)
 	return err
+}
+
+func (m nativeModel) formatInfo(title, message string) string {
+	if m.serviceName == polkitServiceName {
+		return message
+	}
+	if message == "" {
+		return fmt.Sprintf("== %s ==", title)
+	}
+	return fmt.Sprintf("== %s ==\n%s", title, message)
 }
 
 type choicePair struct {
@@ -428,9 +454,9 @@ type choicePair struct {
 }
 
 func (m nativeModel) promptForChoiceWithMessage(title string, message string, choices []choicePair, prompt string) (string, error) {
-	msg := fmt.Sprintf("== %s ==\n", title)
-	if message != "" {
-		msg += message + "\n"
+	msg := m.formatInfo(title, message)
+	if msg != "" {
+		msg += "\n"
 	}
 
 	for i, choice := range choices {
@@ -537,8 +563,8 @@ func (m nativeModel) authModeSelection() tea.Cmd {
 		choices = append(choices, choicePair{id: am.Id, label: am.Label})
 	}
 
-	id, err := m.promptForChoice("Authentication method selection", choices,
-		"Choose your authentication method")
+	id, err := m.promptForChoice("Authentication flow selection", choices,
+		"Choose your authentication flow")
 	if errors.Is(err, errGoBack) {
 		return sendEvent(nativeGoBack{})
 	}
@@ -548,7 +574,7 @@ func (m nativeModel) authModeSelection() tea.Cmd {
 	if err != nil {
 		return sendEvent(pamError{
 			status: pam.ErrSystem,
-			msg:    fmt.Sprintf("Authentication method selection error: %v", err),
+			msg:    fmt.Sprintf("Authentication flow selection error: %v", err),
 		})
 	}
 
@@ -636,14 +662,25 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 		})
 	}
 
+	// For wait-only forms (no entry field), display the message and wait for authentication without prompting for user input.
+	// Input text box is still present but not interactable (cannot be removed due to GNOME shell limitation)
+	// This is used for MFA challenges as in MS Entra flow where the user has to approve the sign-in in their authenticator app.
+	if m.serviceName == polkitServiceName && hasWait && m.uiLayout.GetEntry() == "" {
+		info := m.formatInfo(authMode, prompt)
+		if cmd := maybeSendPamError(m.sendInfo(info)); cmd != nil {
+			return cmd
+		}
+		return sendAuthWaitCommand()
+	}
+
 	var instructions string
 	if m.canGoBack() {
 		instructions = "Enter '%[1]s' to cancel the request and %[2]s"
 	}
 
 	if hasWait {
-		// Duplicating some contents here, as it will be better for translators once we've them
-		instructions = "Leave the input field empty to wait for the alternative authentication method"
+		// Duplicating some contents here, as it will be better for translators once we have them
+		instructions = "Leave the input field empty to wait for the alternative authentication flow"
 		if m.uiLayout.GetEntry() == "" {
 			instructions = "Press Enter to wait for authentication"
 		}
@@ -654,9 +691,23 @@ func (m nativeModel) handleFormChallenge(hasWait bool) tea.Cmd {
 	}
 
 	if goBackLabel := m.goBackActionLabel(); goBackLabel != "" {
-		instructions = "\n" + fmt.Sprintf(instructions, nativeCancelKey, m.goBackActionLabel())
+		instructions = fmt.Sprintf(instructions, nativeCancelKey, m.goBackActionLabel())
 	}
-	if cmd := maybeSendPamError(m.sendInfo("== %s ==%s", authMode, instructions)); cmd != nil {
+
+	if m.serviceName == polkitServiceName {
+		// Polkit agents keep the previous input hint visible while showing
+		// information messages. Keep that hint blank and show the form label
+		// as information instead.
+		if instructions == "" {
+			instructions = prompt
+		} else {
+			instructions = fmt.Sprintf("%s\n\n%s", prompt, instructions)
+		}
+		prompt = polkitBlankPrompt
+	}
+
+	info := m.formatInfo(authMode, instructions)
+	if cmd := maybeSendPamError(m.sendInfo(info)); cmd != nil {
 		return cmd
 	}
 
@@ -721,22 +772,19 @@ func (m nativeModel) handleQrCode() tea.Cmd {
 	var qrcodeView []string
 	qrcodeView = append(qrcodeView, m.uiLayout.GetLabel())
 
-	var firstQrCodeLine string
+	// Add some extra vertical space to improve readability
+	qrcodeView = append(qrcodeView, " ")
+
 	if m.isQrcodeRenderingSupported() {
 		qrcode := m.renderQrCode(qrCode)
 		qrcodeView = append(qrcodeView, qrcode)
-		firstQrCodeLine = strings.SplitN(qrcode, "\n", 2)[0]
-	}
-	if firstQrCodeLine == "" {
-		firstQrCodeLine = m.uiLayout.GetContent()
 	}
 
-	centeredContent := centerString(m.uiLayout.GetContent(), firstQrCodeLine)
-	qrcodeView = append(qrcodeView, centeredContent)
-
+	labeledFields := []labeledField{{"URL", m.uiLayout.GetContent()}}
 	if code := m.uiLayout.GetCode(); code != "" {
-		qrcodeView = append(qrcodeView, centerString(code, firstQrCodeLine))
+		labeledFields = append(labeledFields, labeledField{"Code", code})
 	}
+	qrcodeView = append(qrcodeView, formatAlignedFields(labeledFields)...)
 
 	// Add some extra vertical space to improve readability
 	qrcodeView = append(qrcodeView, " ")
@@ -778,19 +826,8 @@ func (m nativeModel) isQrcodeRenderingSupported() bool {
 		if isSSHSession(m.pamMTx) {
 			return false
 		}
-		return IsTerminalTTY(m.pamMTx)
+		return IsTerminalTTY(m.pamMTx) && !IsDumbTerminal()
 	}
-}
-
-func centerString(s string, reference string) string {
-	sizeDiff := len([]rune(reference)) - len(s)
-	if sizeDiff <= 0 {
-		return s
-	}
-
-	// We put padding in both sides, so that it's respected also by non-terminal UIs
-	padding := strings.Repeat(" ", sizeDiff/2)
-	return padding + s + padding
 }
 
 func (m nativeModel) handleNewPassword() tea.Cmd {
@@ -827,11 +864,12 @@ func (m nativeModel) newPasswordChallenge(previousPassword *string) tea.Cmd {
 	if previousPassword == nil {
 		var instructions string
 		if goBackLabel := m.goBackActionLabel(); goBackLabel != "" {
-			instructions = fmt.Sprintf("\nEnter '%[1]s' to cancel the request and %[2]s",
+			instructions = fmt.Sprintf("Enter '%[1]s' to cancel the request and %[2]s",
 				nativeCancelKey, goBackLabel)
 		}
 		title := m.selectedAuthModeLabel("Password Update")
-		if cmd := maybeSendPamError(m.sendInfo("== %s ==%s", title, instructions)); cmd != nil {
+		info := m.formatInfo(title, instructions)
+		if cmd := maybeSendPamError(m.sendInfo(info)); cmd != nil {
 			return cmd
 		}
 	}
@@ -894,7 +932,7 @@ func (m nativeModel) previousStage() proto.Stage {
 	if m.currentStage > proto.Stage_authModeSelection && len(m.authModes) > 1 {
 		return proto.Stage_authModeSelection
 	}
-	if m.currentStage > proto.Stage_brokerSelection && len(m.availableBrokers) > 1 {
+	if !m.userIsBoundToBroker && m.currentStage > proto.Stage_brokerSelection && len(m.availableBrokers) > 1 {
 		return proto.Stage_brokerSelection
 	}
 	return proto.Stage_userSelection

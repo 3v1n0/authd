@@ -26,6 +26,8 @@ type Manager struct {
 	usersToBrokerMu sync.RWMutex
 
 	transactionsToBroker   map[string]*Broker
+	sessionsToUsername     map[string]string
+	sessionsToServiceName  map[string]string
 	transactionsToBrokerMu sync.RWMutex
 
 	cleanup func()
@@ -110,8 +112,10 @@ func NewManager(ctx context.Context, brokersConfPath string, configuredBrokers [
 		brokers:      brokers,
 		brokersOrder: brokersOrder,
 
-		usersToBroker:        make(map[string]*Broker),
-		transactionsToBroker: make(map[string]*Broker),
+		usersToBroker:         make(map[string]*Broker),
+		transactionsToBroker:  make(map[string]*Broker),
+		sessionsToUsername:    make(map[string]string),
+		sessionsToServiceName: make(map[string]string),
 
 		cleanup: cleanup,
 	}, nil
@@ -125,9 +129,9 @@ func (m *Manager) AvailableBrokers() (r []*Broker) {
 	return r
 }
 
-// SetDefaultBrokerForUser memorizes which broker was used for which user.
-func (m *Manager) SetDefaultBrokerForUser(brokerID, username string) error {
-	broker, err := m.brokerFromID(brokerID)
+// SetBroker memorizes which broker was used for which user.
+func (m *Manager) SetBroker(brokerID, username string) error {
+	broker, err := m.BrokerFromID(brokerID)
 	if err != nil {
 		return fmt.Errorf("invalid broker: %v", err)
 	}
@@ -152,7 +156,7 @@ func (m *Manager) BrokerFromSessionID(id string) (broker *Broker, err error) {
 
 	// no session ID means local broker
 	if id == "" {
-		return m.brokerFromID(LocalBrokerName)
+		return m.BrokerFromID(LocalBrokerName)
 	}
 
 	broker, exists := m.transactionsToBroker[id]
@@ -164,13 +168,13 @@ func (m *Manager) BrokerFromSessionID(id string) (broker *Broker, err error) {
 }
 
 // NewSession create a new session for the broker and store the sessionID on the manager.
-func (m *Manager) NewSession(brokerID, username, lang, mode string) (sessionID string, encryptionKey string, err error) {
-	broker, err := m.brokerFromID(brokerID)
+func (m *Manager) NewSession(brokerID, username, lang, mode, providerID, serviceName string) (sessionID string, encryptionKey string, err error) {
+	broker, err := m.BrokerFromID(brokerID)
 	if err != nil {
 		return "", "", fmt.Errorf("invalid broker: %v", err)
 	}
 
-	sessionID, encryptionKey, err = broker.newSession(context.Background(), username, lang, mode)
+	sessionID, encryptionKey, err = broker.newSession(context.Background(), username, lang, mode, providerID)
 	if err != nil {
 		return "", "", err
 	}
@@ -180,6 +184,8 @@ func (m *Manager) NewSession(brokerID, username, lang, mode string) (sessionID s
 	log.Debugf(context.Background(), "%s: New %s session for %q",
 		sessionID, mode, username)
 	m.transactionsToBroker[sessionID] = broker
+	m.sessionsToUsername[sessionID] = username
+	m.sessionsToServiceName[sessionID] = serviceName
 	return sessionID, encryptionKey, nil
 }
 
@@ -197,10 +203,26 @@ func (m *Manager) EndSession(sessionID string) error {
 
 	m.transactionsToBrokerMu.Lock()
 	log.Debugf(context.Background(), "%s: End session %q",
-		sessionID, m.transactionsToBroker[sessionID].Name)
+		sessionID, b.Name)
 	delete(m.transactionsToBroker, sessionID)
+	delete(m.sessionsToUsername, sessionID)
+	delete(m.sessionsToServiceName, sessionID)
 	m.transactionsToBrokerMu.Unlock()
 	return nil
+}
+
+// UsernameFromSessionID returns the username associated with the given session ID.
+func (m *Manager) UsernameFromSessionID(sessionID string) string {
+	m.transactionsToBrokerMu.RLock()
+	defer m.transactionsToBrokerMu.RUnlock()
+	return m.sessionsToUsername[sessionID]
+}
+
+// ServiceNameFromSessionID returns the PAM service name associated with the given session ID.
+func (m *Manager) ServiceNameFromSessionID(sessionID string) string {
+	m.transactionsToBrokerMu.RLock()
+	defer m.transactionsToBrokerMu.RUnlock()
+	return m.sessionsToServiceName[sessionID]
 }
 
 // BrokerExists returns true if the brokerID is known by the manager.
@@ -209,8 +231,8 @@ func (m *Manager) BrokerExists(brokerID string) bool {
 	return exists
 }
 
-// brokerFromID returns the broker matching this brokerID.
-func (m *Manager) brokerFromID(id string) (broker *Broker, err error) {
+// BrokerFromID returns the broker matching this brokerID.
+func (m *Manager) BrokerFromID(id string) (broker *Broker, err error) {
 	broker, exists := m.brokers[id]
 	if !exists {
 		return nil, fmt.Errorf("no broker found matching %q", id)

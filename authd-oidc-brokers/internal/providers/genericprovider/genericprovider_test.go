@@ -9,6 +9,7 @@ import (
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/genericprovider"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/info"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 )
 
 func TestGetUserInfo(t *testing.T) {
@@ -27,7 +28,7 @@ func TestGetUserInfo(t *testing.T) {
 				"email_verified": true,
 				"home":           "/home/user",
 				"shell":          "/bin/bash",
-				"gecos":          "Test User",
+				"name":           "Test User",
 			},
 			wantUser: info.NewUser("user@example.com", "/home/user", "sub123", "/bin/bash", "Test User", nil),
 		},
@@ -59,7 +60,7 @@ func TestGetUserInfo(t *testing.T) {
 				"email": "user@example.com",
 			},
 			wantErr:     true,
-			wantErrType: &providerErrors.ForDisplayError{},
+			wantErrType: &providerErrors.MissingClaimError{Claim: "email_verified"},
 		},
 		"Error_when_email_is_not_verified": {
 			claims: map[string]interface{}{
@@ -79,15 +80,14 @@ func TestGetUserInfo(t *testing.T) {
 			p := genericprovider.New()
 			mockToken := &mockIDToken{claims: tc.claims}
 
-			user, err := p.GetUserInfo(mockToken)
+			user, err := p.GetUserInfo(mockToken, false)
 			t.Logf("GetUserInfo error: %v", err)
 
 			if tc.wantErr {
 				require.Error(t, err)
-				return
-			}
-			if tc.wantErrType != nil {
-				require.ErrorIs(t, err, tc.wantErrType)
+				if tc.wantErrType != nil {
+					require.ErrorAs(t, err, &tc.wantErrType)
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -111,4 +111,38 @@ func (m *mockIDToken) Claims(v interface{}) error {
 	}
 
 	return nil
+}
+
+func TestIsTokenExpiredError(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		errorCode        string
+		errorDescription string
+
+		wantExpired bool
+	}{
+		"Keycloak_session_not_active":         {errorCode: "invalid_grant", errorDescription: "Session not active", wantExpired: true},
+		"Keycloak_offline_session_not_active": {errorCode: "invalid_grant", errorDescription: "Offline session not active", wantExpired: true},
+		"Keycloak_token_not_active":           {errorCode: "invalid_grant", errorDescription: "Token is not active", wantExpired: true},
+		"Keycloak_stale_token":                {errorCode: "invalid_grant", errorDescription: "Stale token", wantExpired: true},
+
+		"Non_invalid_grant_error":           {errorCode: "access_denied", errorDescription: "Session not active", wantExpired: false},
+		"Keycloak_user_disabled":            {errorCode: "invalid_grant", errorDescription: "User disabled", wantExpired: false},
+		"Unknown_invalid_grant_description": {errorCode: "invalid_grant", errorDescription: "The user has not consented to the application.", wantExpired: false},
+		"Empty_description":                 {errorCode: "invalid_grant", errorDescription: "", wantExpired: false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			p := genericprovider.New()
+			err := &oauth2.RetrieveError{
+				ErrorCode:        tc.errorCode,
+				ErrorDescription: tc.errorDescription,
+			}
+			got := p.IsTokenExpiredError(err)
+			require.Equal(t, tc.wantExpired, got, "IsTokenExpiredError returned unexpected result")
+		})
+	}
 }

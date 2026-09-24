@@ -1,30 +1,28 @@
 *** Settings ***
-Resource        ./resources/authd/utils.resource
-Resource        ./resources/authd/authd.resource
+Resource        resources/utils.resource
+Resource        resources/authd.resource
 
-Resource        ./resources/broker/broker.resource
+Resource        resources/broker.resource
 
 # Test Tags       robot:exit-on-failure
 
-Test Setup    utils.Test Setup
+Test Setup    utils.Test Setup    snapshot=%{BROKER}-installed
 Test Teardown   utils.Test Teardown
 
 
 *** Variables ***
-${snapshot}    %{BROKER}-installed
 ${username}    %{E2E_USER}
 ${local_password}    qwer1234
-${remote_group}    %{E2E_USER}-group
 
 
 *** Test Cases ***
 Test login with CLI and QR code regeneration
-    [Documentation]    This test verifies that a remote user can log in using device authentication via CLI with QR code regeneration, and subsequently log in using a local password.
+    [Documentation]    This test verifies that a remote user can log in using device code flow via CLI with QR code regeneration, and subsequently log in using a local password.
 
     # Log in with local user
     Log In
 
-    # Log in with remote user with device authentication
+    # Log in with remote user with device code flow
     Open Terminal
     Start Log In With Remote User Through CLI: QR Code   ${username}
     Select Provider
@@ -41,5 +39,5 @@ Test login with CLI and QR code regeneration
     Close Focused Window
 
     # Log in with remote user with local password
-    Open Terminal In Sudo Mode
+    Open Terminal
     Log In With Remote User Through CLI: Local Password    ${username}    ${local_password}

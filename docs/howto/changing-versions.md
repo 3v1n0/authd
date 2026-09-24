@@ -16,16 +16,24 @@ the authd database in a non-reversible way, which can make it difficult to roll
 back to the stable version of authd.
 ```
 
+```{note}
+The default installation source depends on your Ubuntu release:
+
+- **Ubuntu 26.04 LTS and later**: `authd` is available directly from the Ubuntu archive.
+- **Ubuntu 24.04 LTS**: `authd` must be installed from the [stable PPA](https://launchpad.net/~ubuntu-enterprise-desktop/+archive/ubuntu/authd).
+
+Using the edge PPA lets you test pre-release deb packages on either release.
+```
+
 ## Switch authd to the edge PPA
 
 The [edge
 PPA](https://launchpad.net/~ubuntu-enterprise-desktop/+archive/ubuntu/authd-edge) contains
-the latest fixes and features for authd, in addition to its GNOME Shell (GDM)
-counterpart.
+the latest fixes and features for authd.
 
 ```shell
 sudo add-apt-repository ppa:ubuntu-enterprise-desktop/authd-edge
-sudo apt install authd gnome-shell
+sudo apt install authd
 ```
 
 Keep in mind that this version is not tested and may be incompatible with the current released version of the brokers.
@@ -44,21 +52,21 @@ You can also switch to the edge channel of the broker snap:
 ::::{tab-set}
 :sync-group: broker
 
-:::{tab-item} Google IAM
-:sync: google
-
-```shell
-sudo snap switch authd-google --edge
-sudo snap refresh authd-google
-```
-:::
-
 :::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
 ```shell
 sudo snap switch authd-msentraid --edge
 sudo snap refresh authd-msentraid
+```
+:::
+
+:::{tab-item} Google IAM
+:sync: google
+
+```shell
+sudo snap switch authd-google --edge
+sudo snap refresh authd-google
 ```
 :::
 ::::
@@ -70,15 +78,6 @@ To switch back to stable after trying the edge channel:
 ::::{tab-set}
 :sync-group: broker
 
-:::{tab-item} Google IAM
-:sync: google
-
-```shell
-sudo snap switch authd-google --stable
-sudo snap refresh authd-google
-```
-:::
-
 :::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
@@ -87,9 +86,18 @@ sudo snap switch authd-msentraid --stable
 sudo snap refresh authd-msentraid
 ```
 :::
+
+:::{tab-item} Google IAM
+:sync: google
+
+```shell
+sudo snap switch authd-google --stable
+sudo snap refresh authd-google
+```
+:::
 ::::
 
 ```{note}
 If using an edge release, you can read the
-[edge version of the documentation](https://documentation.ubuntu.com/authd/edge-docs/)
+[edge version of the documentation](https://ubuntu.com/docs/authd/edge-docs/)
 ```

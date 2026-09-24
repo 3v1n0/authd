@@ -28,9 +28,15 @@ Then restart the SSH server:
 sudo systemctl restart ssh
 ```
 
+```{admonition} Managing SSH securely for authd deployments
+:class: tip
+More detail on securely managing SSH authentication is provided in the [SSH
+section of the security overview](/explanation/security.md#login-via-ssh).
+```
+
 ### Broker configuration
 
-To configure the broker edit the file `/var/snap/authd-<broker_name>/current/broker.conf` and set the key `ssh_allowed_suffixes` with the list of domains that you want to allow.
+To configure the broker edit the file `/var/snap/authd-<broker_name>/current/broker.conf` and set the key `ssh_allowed_suffixes_first_auth` with the list of domains that you want to allow.
 
 ```ini
 ...
@@ -38,13 +44,13 @@ To configure the broker edit the file `/var/snap/authd-<broker_name>/current/bro
 [users]
 # The username suffixes that are allowed to log in via ssh without existing previously in the system.
 # The suffixes must be separated by commas.
-ssh_allowed_suffixes = <ALLOWED DOMAINS>
+ssh_allowed_suffixes_first_auth = <ALLOWED DOMAINS>
 ```
 
 You can set several domains separated by a comma. For instance:
 
 ```ini
-ssh_allowed_suffixes = @example.com,@ubuntu.com
+ssh_allowed_suffixes_first_auth = @example.com,@ubuntu.com
 ```
 
 ## Usage
@@ -57,4 +63,4 @@ For instance, here is an example using Microsoft Entra ID as a provider:
 ssh user@domain.tld@remote.host
 ```
 
-![Terminal interface showing option to authentice by login code when user tries to ssh into server](../assets/ssh-login.png)
+![Terminal interface showing option to authenticate by login code when user tries to ssh into server](../assets/ssh-login.png)

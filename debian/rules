@@ -4,6 +4,31 @@
 include /usr/share/dpkg/pkg-info.mk
 include /usr/share/rustc/architecture.mk
 
+ifeq ($(DEB_DISTRIBUTION),noble)
+GNOME_SHELL_PATCHED_VERSION := 46.3.1-1ubuntu1~24.04.1authd11
+else ifeq ($(DEB_DISTRIBUTION),resolute)
+# Keep the patched PPA build as the lower bound until the PPA catches up with
+# the archive SRU. Newer archive versions are also compatible on Resolute.
+GNOME_SHELL_PATCHED_VERSION := 50.1-0ubuntu1.2+authd1~26.04.1
+else ifeq ($(DEB_DISTRIBUTION),stonking)
+GNOME_SHELL_PATCHED_VERSION := 51~beta-0ubuntu1
+else
+$(error Unsupported distribution "$(DEB_DISTRIBUTION)" for gnome-shell dependency)
+endif
+
+# Keep gnome-shell optional for server installations. Newer versions are
+# accepted on Resolute and Stonking because the patch that fixes
+# https://bugs.launchpad.net/ubuntu/+source/gnome-shell/+bug/2160622 already
+# landed in the archive for those releases.
+ifeq ($(DEB_DISTRIBUTION),noble)
+# On Noble, reject versions other than the patched one from the authd PPA,
+# because they would cause https://github.com/canonical/authd/issues/1424 to
+# occur almost every time.
+GNOME_SHELL_BREAKS := gnome-shell (<< $(GNOME_SHELL_PATCHED_VERSION)), gnome-shell (>> $(GNOME_SHELL_PATCHED_VERSION))
+else
+GNOME_SHELL_BREAKS := gnome-shell (<< $(GNOME_SHELL_PATCHED_VERSION))
+endif
+
 # The package name for authd, used only locally to avoid repetitions
 AUTHD_GO_PACKAGE := $(shell grep-dctrl -s XS-Go-Import-Path -n - ./debian/control)
 
@@ -21,9 +46,6 @@ export DH_GOLANG_INSTALL_ALL := 1
 # as long as it matches the go.mod go stenza which is the language requirement.
 export GOTOOLCHAIN := local
 
-# Use the debian cargo wrapper
-export CARGO_PATH := /usr/share/cargo/bin/cargo
-
 # Needed for Rust vendored sources tracking
 export CARGO_VENDOR_DIR := $(CURDIR)/vendor_rust
 
@@ -34,10 +56,6 @@ export CARGO_HOME = $(CURDIR)/debian/cargo_home
 # Used not to hardcode the daemons and PAM module paths
 export AUTHD_DAEMONS_PATH := /usr/libexec
 export AUTHD_PAM_MODULES_PATH = /usr/lib/$(DEB_TARGET_GNU_TYPE)/security
-
-# Skip some tests that rely on external dependencies when building package:
-# they need external commands (e.g. `vhs`) that are not available in the build environment.
-export AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS=1
 
 # Skip some tests that fail when running as root as it may happen when building the packages
 # in sbuild or similar environments.
@@ -50,10 +68,14 @@ export DH_GOLANG_BUILDPKG := \
 	$(AUTHD_GO_PACKAGE)/pam \
 	$(NULL)
 
-# We add the required backported version to the $PATH so that if it exists, then
-# we can use it. Otherwise we default to the go installed in original $PATH that
-# always matches with the latest available go version in the archive.
-export PATH := $(shell printenv PATH):$(shell ./debian/get-depends-go-bin-path.sh)
+# Prepend the following paths to PATH:
+# * The cargo wrapper. This will either be the path to the wrapper installed by
+#   dh-cargo, or the path to the wrapper installed by the cargo-$VERSION package.
+# * The Go executable from the backported Go package. It's possible that no
+#   backported Go package is installed, because the golang-go package already
+#   satisfies the dependency. It's still fine to also add the path in that case,
+#   it will be ignored if it doesn't exist.
+export PATH := $(shell ./debian/get-depends-cargo-bin-paths.sh):$(shell ./debian/get-depends-go-bin-path.sh):$(shell printenv PATH)
 
 BUILDDIR := $(CURDIR)/obj-$(DEB_HOST_GNU_TYPE)
 
@@ -63,9 +85,25 @@ export BUILT_PAM_LIBS_PATH := obj-$(DEB_HOST_GNU_TYPE)/src/$(AUTHD_GO_PACKAGE)/p
 	# --without=single-binary can be removed with dh 15.
 	dh $@ --buildsystem=golang --with=golang,apport --without=single-binary
 
+override_dh_gencontrol:
+	dh_gencontrol -- -Vauthd:gnome-shell-breaks="$(GNOME_SHELL_BREAKS)"
+
 override_dh_auto_clean:
 	dh_auto_clean
-	dh_auto_clean --buildsystem=cargo
+
+	# 'dh_auto_clean --buildsystem=cargo' calls /usr/share/cargo/bin/cargo.
+	# If the cargo in $PATH is the one from /usr/share/cargo/bin/cargo,
+	# then we can just call 'dh_auto_clean --buildsystem=cargo'.
+	# Otherwise, we need to do what 'dh_auto_clean --buildsystem=cargo' does
+	# ourselves, but using the cargo in $PATH.
+	if [ "$$(command -v cargo)" = "/usr/share/cargo/bin/cargo" ]; then \
+		dh_auto_clean --buildsystem=cargo; \
+	else \
+		touch --no-create --date='@$(SOURCE_DATE_EPOCH)' .cargo_vcs_info.json; \
+		cargo clean --verbose --verbose; \
+		rm -f .cargo-checksum.json; \
+		rm -rf debian/cargo_registry; \
+	fi
 
 	# Vendor Go dependencies when building the source package
 	[ -d vendor/ ] || go mod vendor
@@ -84,16 +122,36 @@ override_dh_auto_configure:
 
 	touch debian/cargo-checksum.json
 
-	# Go manual if cargo-vendor-filterer is not around, otherwise dh-cargo will
-	# ensure that what we've filtered won't be still listed in debian/control.
+	# If cargo-vendor-filterer is not installed then
+	# 'dh_auto_configure --buildsystem=cargo' will cause a build failure because
+	# of vendoring checks. In that case, we need to do what
+	# 'dh_auto_configure --buildsystem=cargo' does ourselves, but without the
+	# vendoring checks.
 	# TODO: Drop this when we won't care about noble anymore.
+	# The XS-Vendored-Sources-Rust field is generated with newer filtering
+	# semantics. Noble's older helper includes empty platform stubs, so the
+	# Noble build always prepares the tree itself and skips that check, even
+	# when cargo-vendor-filterer is installed.
+	# If cargo-vendor-filterer is installed, we can still only call
+	# 'dh_auto_configure --buildsystem=cargo' if the cargo in $PATH is the one
+	# from /usr/share/cargo/bin/cargo, for the same reason as in the
+	# override_dh_auto_clean target. Otherwise we have to do what
+	# 'dh_auto_configure --buildsystem=cargo' does ourselves,
+	# but using the cargo in $PATH.
 	if ! command -v cargo-vendor-filterer 2>/dev/null; then \
 		env DEB_CARGO_CRATE="$(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM)" \
-		  $(CARGO_PATH) prepare-debian "$(CARGO_VENDOR_DIR)"; \
-	else \
-	    echo "cargo version: $$(cargo --version)"; \
-	    echo "cargo-vendor-filterer version: $$(cargo-vendor-filterer --version)"; \
+		  cargo prepare-debian "$(CARGO_VENDOR_DIR)"; \
+	elif [ "$(DEB_DISTRIBUTION)" = noble ]; then \
+		cp debian/cargo-checksum.json .cargo-checksum.json; \
+		env DEB_CARGO_CRATE="$(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM)" \
+		  cargo prepare-debian "$(CARGO_VENDOR_DIR)"; \
+	elif [ "$$(command -v cargo)" = "/usr/share/cargo/bin/cargo" ]; then \
 		dh_auto_configure --buildsystem=cargo; \
+	else \
+		cp debian/cargo-checksum.json .cargo-checksum.json; \
+		env DEB_CARGO_CRATE="$(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM)" \
+		  cargo prepare-debian "$(CARGO_VENDOR_DIR)"; \
+		/usr/share/cargo/bin/dh-cargo-vendored-sources; \
 	fi
 
 	for i in debian/*.service.in debian/pam-configs/*.in; do \
@@ -105,7 +163,9 @@ override_dh_auto_build:
 	DH_GOLANG_GO_GENERATE=1 dh_auto_build -- $(AUTHD_GO_PACKAGE)/pam
 
 	# Build the NSS library
-	$(CARGO_PATH) build --release
+	echo "PATH: $(PATH)"
+	echo "Building NSS library with $$(which cargo) ($$(cargo --version))"
+	cargo build --release
 
 	# Build the daemon
 	dh_auto_build -- $(AUTHD_GO_PACKAGE)/cmd/authd

@@ -27,32 +27,26 @@ The steps you need to follow when allowing more users are outlined in
 
 ## Broker discovery
 
-Create the directory that will contain the declaration files of the broker(s):
-
-```shell
-sudo mkdir -p /etc/authd/brokers.d/
-```
-
-Then copy the `.conf` file from the broker snap package corresponding to the
-identity provider you want to use:
+Copy the `.conf` file from the broker snap to the directory used to declare
+which brokers are available on the system:
 
 :::::{tab-set}
 :sync-group: broker
-
-::::{tab-item} Google IAM
-:sync: google
-
-```shell
-sudo cp /snap/authd-google/current/conf/authd/google.conf /etc/authd/brokers.d/
-```
-
-::::
 
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
 ```shell
 sudo cp /snap/authd-msentraid/current/conf/authd/msentraid.conf /etc/authd/brokers.d/
+```
+
+::::
+
+::::{tab-item} Google IAM
+:sync: google
+
+```shell
+sudo cp /snap/authd-google/current/conf/authd/google.conf /etc/authd/brokers.d/
 ```
 
 ::::
@@ -67,8 +61,6 @@ sudo cp /snap/authd-oidc/current/conf/authd/oidc.conf /etc/authd/brokers.d/
 ::::
 :::::
 
-This file is used to declare the brokers available on the system.
-
 ```{note}
 Several brokers can be enabled at the same time.
 ```
@@ -80,32 +72,6 @@ broker can then use to authenticate users.
 
 :::::{tab-set}
 :sync-group: broker
-
-::::{tab-item} Google IAM
-:sync: google
-
-To register a new application in Google IAM, go to the [Credentials page](https://console.cloud.google.com/apis/credentials).
-
-Click {menuselection}`Create credentials --> OAuth client ID`.
-
-![Menu showing selection of Create credentials > OAuth client ID.](../assets/google-app-registration.png)
-
-Select the {guilabel}`TVs and Limited Input devices` application type.
-
-![Menu showing app type.](../assets/google-choose-app-type.png)
-
-Name your OAuth 2.0 client and click {guilabel}`Create`.
-
-Your app's `Client ID` and `Client secret` will be shown on the page, store them
-somewhere as you will need them in the next step.
-
-![Screen showing app credentials.](../assets/google-app-credentials.png)
-
-For more detailed information please refer to the [OAuth 2.0 for TV and
-Limited-Input Device Applications documentation](https://developers.google.com/identity/protocols/oauth2/limited-input-device).
-
-
-::::
 
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
@@ -137,10 +103,11 @@ Ensure the API permission type is set to **Delegated** for each permission.
 The {guilabel}`GroupMember.Read.All` permission needs admin consent. Click on
 {guilabel}`Grant admin consent for <TENANT_NAME>` to provide this consent.
 
-Finally, as the supported authentication mechanism is the device workflow, you
-need to allow the public client workflows. In {menuselection}`Manage -->
-Authentication (Preview) --> Settings`, ensure that {guilabel}`Allow public
-client flows` is set to **Enabled**.
+If you plan to use the [device code flow](ref::config-device-code-flow), you also need to allow public client
+flows. In {menuselection}`Manage --> Authentication (Preview) --> Settings`,
+ensure that {guilabel}`Allow public client flows` is set to **Enabled**. This
+isn't required if only the Entra authentication flow is used, since it
+authenticates through the Microsoft Broker App.
 
 [The Microsoft documentation](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
 provides detailed instructions for registering an application with the Microsoft
@@ -157,6 +124,32 @@ and desktop applications` and select the following URI:
 ```
 https://login.microsoftonline.com/common/oauth2/nativeclient
 ```
+
+::::
+
+::::{tab-item} Google IAM
+:sync: google
+
+To register a new application in Google IAM, go to the [Credentials page](https://console.cloud.google.com/apis/credentials).
+
+Click {menuselection}`Create credentials --> OAuth client ID`.
+
+![Menu showing selection of Create credentials > OAuth client ID.](../assets/google-app-registration.png)
+
+Select the {guilabel}`TVs and Limited Input devices` application type.
+
+![Menu showing app type.](../assets/google-choose-app-type.png)
+
+Name your OAuth 2.0 client and click {guilabel}`Create`.
+
+Your app's `Client ID` and `Client secret` will be shown on the page, store them
+somewhere as you will need them in the next step.
+
+![Screen showing app credentials.](../assets/google-app-credentials.png)
+
+For more detailed information please refer to the [OAuth 2.0 for TV and
+Limited-Input Device Applications documentation](https://developers.google.com/identity/protocols/oauth2/limited-input-device).
+
 
 ::::
 
@@ -205,6 +198,18 @@ different configuration data.
 :::::{tab-set}
 :sync-group: broker
 
+::::{tab-item} Microsoft Entra ID
+:sync: msentraid
+
+To configure Entra ID, edit  `/var/snap/authd-msentraid/current/broker.conf`:
+
+```ini
+[oidc]
+issuer = https://login.microsoftonline.com/<ISSUER_ID>/v2.0
+client_id = <CLIENT_ID>
+```
+::::
+
 ::::{tab-item} Google IAM
 :sync: google
 
@@ -215,18 +220,6 @@ To configure Google IAM, edit  `/var/snap/authd-google/current/broker.conf`:
 issuer = https://accounts.google.com
 client_id = <CLIENT_ID>
 client_secret = <CLIENT_SECRET>
-```
-::::
-
-::::{tab-item} Microsoft Entra ID
-:sync: msentraid
-
-To configure Entra ID, edit  `/var/snap/authd-msentraid/current/broker.conf`:
-
-```ini
-[oidc]
-issuer = https://login.microsoftonline.com/<ISSUER_ID>/v2.0
-client_id = <CLIENT_ID>
 ```
 ::::
 
@@ -252,42 +245,31 @@ client_secret = <CLIENT_SECRET>
 :::::
 
 (ref::config-force-provider-auth)=
-## Force remote authentication with the identity provider
+## Force remote access check with the identity provider
 
 By default, remote authentication with the identity provider only happens if
 there is a working internet connection and the provider is reachable during
 login.
 
-If you want to force remote authentication, even when the provider is
-unreachable, enable it as follows:
+To ensure that user access permissions are always checked with the identity
+provider during login, even when the provider is unreachable, enable the check
+as follows:
 
 ```ini
 [oidc]
 ...
-force_provider_authentication = true
+force_access_check_with_provider = true
 ```
+
+This check works by forcing a token refresh during login, which fails if the
+user does not have the necessary permissions in the identity provider.
 
 ```{warning}
-In some cases, this may prevent login, such as when there are network issues.
+In some cases, forcing the access check may prevent login, such as when there are network issues.
 ```
 
-(ref::config-extra-scopes)=
-
-## Configure extra scopes
-
-Some identity providers require additional OIDC scopes beyond the default ones
-to function correctly. For example, Okta requires the `offline_access` scope to
-return a refresh token in the authentication response.
-
-You can specify extra scopes in the `oidc` section of the broker configuration
-file:
-
-```ini
-[oidc]
-...
-## Comma-separated list of extra OIDC scopes to request
-extra_scopes = offline_access
-```
+Additional information on the forced access check is provided in the [security
+overview](ref::force-auth-security).
 
 (ref::config-allowed-users)=
 ## Configure allowed users
@@ -363,19 +345,19 @@ they can ensure that the next user to log in becomes the owner by removing the
 ::::{tab-set}
 :sync-group: broker
 
-:::{tab-item} Google IAM
-:sync: google
-
-```shell
-sudo rm /var/snap/authd-google/current/broker.conf.d/20-owner-autoregistration.conf
-```
-:::
-
 :::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
 ```shell
 sudo rm /var/snap/authd-msentraid/current/broker.conf.d/20-owner-autoregistration.conf
+```
+:::
+
+:::{tab-item} Google IAM
+:sync: google
+
+```shell
+sudo rm /var/snap/authd-google/current/broker.conf.d/20-owner-autoregistration.conf
 ```
 :::
 
@@ -421,6 +403,8 @@ Changing the base directory only affects users logging in for the first time.
 
 Some brokers support adding users to groups that are configured in the identity
 provider.
+Group membership can be used to manage user privileges, including **sudo** and
+**docker** rights.
 
 > See the [group management reference](reference::group-management) for more details.
 
@@ -454,12 +438,6 @@ is added:
 :::::{tab-set}
 :sync-group: broker
 
-::::{tab-item} Google IAM
-:sync: google
-
-The Google IAM broker does not support device registration.
-::::
-
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
@@ -484,8 +462,8 @@ option in the `msentraid` section of the broker configuration file:
 
 ```{admonition} Changing this option forces re-authentication
 :class: note
-When changing this option, users are forced to re-authenticate via device
-authentication on the next login.
+When changing this option, users are forced to re-authenticate on the next
+login.
 ```
 
 ```{admonition} Set the redirect URI
@@ -495,10 +473,86 @@ redirect URI configured as described in [Redirect URI](#redirect-uri).
 ```
 ::::
 
+::::{tab-item} Google IAM
+:sync: google
+
+The Google IAM broker does not support device registration.
+::::
+
 ::::{tab-item} Keycloak
 :sync: keycloak
 
 The authd-oidc broker does not support device registration.
+::::
+:::::
+
+(ref::config-auth-flows)=
+
+## Configure authentication flows
+
+:::::{tab-set}
+:sync-group: broker
+
+::::{tab-item} Microsoft Entra ID
+:sync: msentraid
+
+The `[flows]` section of the broker configuration file controls which
+authentication flows are offered to the user at login.
+
+### Entra authentication flow
+
+If `entra_auth` is omitted, it follows the `register_device` setting: it is
+enabled when device registration is enabled and disabled otherwise. New Entra
+broker configurations explicitly set `entra_auth = false`. After enabling
+device registration or configuring a client secret, enable the flow explicitly:
+
+```ini
+[flows]
+entra_auth = true
+```
+
+When `entra_auth` is enabled, users can sign in with their Entra ID password
+followed by an MFA challenge, such as a number-matching prompt or a one-time
+code, or use a passwordless method instead, such as a FIDO2 security key or
+passwordless sign-in in the Microsoft Authenticator app.
+
+When a local security key cannot complete a FIDO2 challenge, authd can fall back
+to Entra ID password authentication if the account supports it.
+
+```{admonition} Local password after a passwordless login
+:class: note
+Users who log in without entering their Entra ID password are asked to create a
+local password at the end of their first login. Only a salted hash of
+this password is stored for subsequent offline logins.
+```
+
+> See [Authentication flows](/reference/authentication-flows) for a full
+> description of the sign-in steps and their requirements.
+
+(ref::config-device-code-flow)=
+
+### Device code flow
+
+The `device_code` flow is enabled by default. When it is enabled, the user is
+presented with a device code and a URL to visit in a browser to complete
+authentication. This is the standard OAuth 2.0 Device Authorization Grant flow.
+
+At least one authentication flow must be enabled. A configuration that
+explicitly disables both flows is invalid, and the broker fails to start.
+::::
+
+::::{tab-item} Google IAM
+:sync: google
+
+The Google IAM broker only supports the device code flow, where the user visits a URL
+and enters a code to complete authentication.
+::::
+
+::::{tab-item} Keycloak
+:sync: keycloak
+
+The authd-oidc broker only supports the device code flow, where the user visits a URL
+and enters a code to complete authentication.
 ::::
 :::::
 
@@ -516,20 +570,38 @@ broker:
 :::::{tab-set}
 :sync-group: broker
 
-::::{tab-item} Google IAM
-:sync: google
+::::{tab-item} Microsoft Entra ID
+:sync: msentraid
+
+On Ubuntu 26.04 or later, you can restart the broker and print its logs with:
 
 ```shell
-sudo snap restart authd-google
+sudo systemctl restart -v snap.authd-msentraid.authd-msentraid.service
+```
+
+On earlier Ubuntu versions, use:
+
+```shell
+sudo systemctl restart snap.authd-msentraid.authd-msentraid.service
+sudo systemctl status snap.authd-msentraid.authd-msentraid.service
 ```
 
 ::::
 
-::::{tab-item} Microsoft Entra ID
-:sync: msentraid
+::::{tab-item} Google IAM
+:sync: google
+
+On Ubuntu 26.04 or later, you can restart the broker and print its logs with:
 
 ```shell
-sudo snap restart authd-msentraid
+sudo systemctl restart -v snap.authd-google.authd-google.service
+```
+
+On earlier Ubuntu versions, use:
+
+```shell
+sudo systemctl restart snap.authd-google.authd-google.service
+sudo systemctl status snap.authd-google.authd-google.service
 ```
 
 ::::
@@ -537,8 +609,17 @@ sudo snap restart authd-msentraid
 ::::{tab-item} Keycloak
 :sync: keycloak
 
+On Ubuntu 26.04 or later, you can restart the broker and print its logs with:
+
 ```shell
-sudo snap restart authd-oidc
+sudo systemctl restart -v snap.authd-oidc.authd-oidc.service
+```
+
+On earlier Ubuntu versions, use:
+
+```shell
+sudo systemctl restart snap.authd-oidc.authd-oidc.service
+sudo systemctl status snap.authd-oidc.authd-oidc.service
 ```
 
 ::::
@@ -568,8 +649,15 @@ If your mobile device management (MDM) solution includes a compliance check for
 the passwords of authd users, you may also need to configure authd's password
 policy so that it matches that of the MDM.
 
-authd depends on the libpwquality library, which supports configuring password
+authd depends on the `libpwquality` library, which supports configuring password
 quality.
+
+```{note}
+This policy applies only to local passwords created or changed through authd.
+To reject weak Entra ID passwords, configure the tenant password policy. See
+[Cached Entra ID passwords](ref::cached-entra-passwords) in the security
+overview.
+```
 
 To configure the local password policy for authd, create a drop file in
 `/etc/security/pwquality.conf.d/`.

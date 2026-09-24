@@ -28,8 +28,8 @@ type options struct {
 	availableBrokersRet []*authd.ABResponse_BrokerInfo
 	availableBrokersErr error
 
-	getPreviousBrokerRet string
-	getPreviousBrokerErr error
+	getBrokerRet string
+	getBrokerErr error
 
 	selectBrokerRet *authd.SBResponse
 	selectBrokerErr error
@@ -50,8 +50,7 @@ type options struct {
 
 	endSessionErr error
 
-	defaultBrokerForUser       map[string]string
-	setDefaultBrokerForUserErr error
+	brokerForUser map[string]string
 
 	uiLayouts map[string]*authd.UILayout
 	authModes map[string]*authd.GAMResponse_AuthenticationMode
@@ -85,18 +84,18 @@ func WithAvailableBrokers(ret []*authd.ABResponse_BrokerInfo, err error) func(o 
 	}
 }
 
-// WithPreviousBrokerForUser is the option to define the default broker ID for users.
-func WithPreviousBrokerForUser(user string, brokerID string) func(o *options) {
+// WithBrokerForUser is the option to define the default broker ID for users.
+func WithBrokerForUser(user string, brokerID string) func(o *options) {
 	return func(o *options) {
-		o.defaultBrokerForUser[user] = brokerID
+		o.brokerForUser[user] = brokerID
 	}
 }
 
-// WithGetPreviousBrokerReturn is the option to define the GetPreviousBroker return values.
-func WithGetPreviousBrokerReturn(ret string, err error) func(o *options) {
+// WithGetBrokerReturn is the option to define the GetBroker return values.
+func WithGetBrokerReturn(ret string, err error) func(o *options) {
 	return func(o *options) {
-		o.getPreviousBrokerRet = ret
-		o.getPreviousBrokerErr = err
+		o.getBrokerRet = ret
+		o.getBrokerErr = err
 	}
 }
 
@@ -174,13 +173,6 @@ func WithEndSessionReturn(err error) func(o *options) {
 	}
 }
 
-// WithSetDefaultBrokerReturn is the option to define the SetDefaultBroker return values.
-func WithSetDefaultBrokerReturn(err error) func(o *options) {
-	return func(o *options) {
-		o.setDefaultBrokerForUserErr = err
-	}
-}
-
 // WithUILayout is the option to define the UI layouts supported return values.
 func WithUILayout(authModeID string, label string, uiLayout *authd.UILayout) func(o *options) {
 	return func(o *options) {
@@ -218,7 +210,7 @@ func NewDummyClient(privateKey *rsa.PrivateKey, args ...DummyClientOptions) *Dum
 		dc.encryptionKey = base64.StdEncoding.EncodeToString(pubASN1)
 	}
 
-	dc.defaultBrokerForUser = make(map[string]string)
+	dc.brokerForUser = make(map[string]string)
 	dc.uiLayouts = make(map[string]*authd.UILayout)
 	dc.authModes = make(map[string]*authd.GAMResponse_AuthenticationMode)
 
@@ -249,25 +241,28 @@ func (dc *DummyClient) availableBrokers() (*authd.ABResponse, error) {
 	return &authd.ABResponse{BrokersInfos: dc.availableBrokersRet}, nil
 }
 
-// GetPreviousBroker simulates GetPreviousBroker using the provided parameters.
-func (dc *DummyClient) GetPreviousBroker(ctx context.Context, in *authd.GPBRequest, opts ...grpc.CallOption) (*authd.GPBResponse, error) {
-	log.Debugf(ctx, "GetPreviousBroker Called: %#v", in)
+// GetBroker simulates GetBroker using the provided parameters.
+func (dc *DummyClient) GetBroker(ctx context.Context, in *authd.GBRequest, opts ...grpc.CallOption) (*authd.GBResponse, error) {
+	log.Debugf(ctx, "GetBroker Called: %#v", in)
 	dc.mu.Lock()
 	defer dc.mu.Unlock()
-	if dc.getPreviousBrokerErr != nil {
-		return nil, dc.getPreviousBrokerErr
+	if dc.getBrokerErr != nil {
+		return nil, dc.getBrokerErr
 	}
-	if dc.getPreviousBrokerRet != "" {
-		return &authd.GPBResponse{PreviousBroker: dc.getPreviousBrokerRet}, nil
+	if dc.getBrokerRet != "" {
+		return &authd.GBResponse{Broker: dc.getBrokerRet}, nil
 	}
 	if in == nil {
-		return &authd.GPBResponse{}, nil
+		return &authd.GBResponse{}, nil
 	}
 	if in.Username == "" {
 		return nil, errors.New("no username provided")
 	}
-	brokerID := dc.defaultBrokerForUser[in.Username]
-	return &authd.GPBResponse{PreviousBroker: brokerID}, nil
+	brokerID := dc.brokerForUser[in.Username]
+	if brokerID != "" {
+		return &authd.GBResponse{Broker: brokerID}, nil
+	}
+	return &authd.GBResponse{}, nil
 }
 
 // SelectBroker simulates SelectBroker using the provided parameters.
@@ -513,27 +508,6 @@ func (dc *DummyClient) EndSession(ctx context.Context, in *authd.ESRequest, opts
 	}
 	dc.currentSessionID = ""
 	dc.selectedUsername = ""
-	return &authd.Empty{}, nil
-}
-
-// SetDefaultBrokerForUser simulates SetDefaultBrokerForUser using the provided parameters.
-func (dc *DummyClient) SetDefaultBrokerForUser(ctx context.Context, in *authd.SDBFURequest, opts ...grpc.CallOption) (*authd.Empty, error) {
-	log.Debugf(ctx, "SetDefaultBrokerForUser Called: %#v", in)
-	dc.mu.Lock()
-	defer dc.mu.Unlock()
-	if dc.setDefaultBrokerForUserErr != nil {
-		return nil, dc.setDefaultBrokerForUserErr
-	}
-	if in == nil {
-		return nil, errors.New("no input values provided")
-	}
-	if in.Username == "" {
-		return nil, errors.New("no valid username provided")
-	}
-	if in.BrokerId == "" {
-		return nil, errors.New("no valid broker ID provided")
-	}
-	dc.defaultBrokerForUser[in.Username] = in.BrokerId
 	return &authd.Empty{}, nil
 }
 

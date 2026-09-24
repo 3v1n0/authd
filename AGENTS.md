@@ -21,7 +21,7 @@ authd is an authentication daemon for cloud-based identity providers (MS Entra I
 - `internal/brokers/`: Broker manager and D-Bus integration
 - `internal/services/`: gRPC service implementations (PAM, NSS, user management)
 - `internal/users/`: User/group database management (SQLite + BoltDB legacy)
-- `pam/`: PAM module with two build modes (see `pam/Hacking.md`)
+- `pam/`: PAM module with two build modes (see `pam/README.md`)
 - `nss/`: Rust NSS module using `libnss` crate
 - `examplebroker/`: Reference broker implementation
 
@@ -34,19 +34,36 @@ debuild --prepend-path=${HOME}/.cargo/bin
 
 # Individual components (development)
 go build ./cmd/authd                    # authd daemon only
-go generate ./pam/ && go build -tags pam_binary_exec -o ./pam/authd-pam ./pam  # PAM test client
+go generate ./pam/ && go build -o ./pam/authd-pam ./pam  # PAM helper client
 cargo build                              # NSS (debug mode)
 ```
 
 ### Testing Conventions
 - **Run tests**: `go test ./...` (add `-race` for race detection)
+- Use Go's `testing/synctest` for tests that exercise timers, deadlines, sleeps,
+  or other time-based concurrency when applicable. Prefer fake time over
+  real-time waits.
 - **Golden files**: Use `internal/testutils/golden` package
   - Update with `TESTS_UPDATE_GOLDEN=1 go test ./...`
   - Compare/update: `golden.CheckOrUpdate(t, got)` or `golden.CheckOrUpdateYAML(t, got)`
 - **Test helpers with underscores**: Functions prefixed `Z_ForTests_` are test-only exports (e.g., `Z_ForTests_CreateDBFromYAML`)
 - **Environment variables**:
-  - `AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS=1`: Skip tests requiring external tools (vhs)
   - `AUTHD_SKIP_ROOT_TESTS=1`: Skip tests that fail when run as root
+- **Broker provider build tags**: An untagged broker test run does not compile
+  the provider-specific wiring. When changing broker code, run tests for every
+  provider configuration:
+  ```bash
+  go -C authd-oidc-brokers test ./...
+  go -C authd-oidc-brokers test -tags withgoogle ./...
+  go -C authd-oidc-brokers generate --tags withmsentraid ./internal/providers/msentraid/...
+  go -C authd-oidc-brokers test -tags withmsentraid ./...
+  ```
+  The `withmsentraid` generation step requires the recursive
+  `libhimmelblau` submodule and generates the `himmelblau.h` and library
+  artifacts.
+- **Broker linting**: Pass provider tags explicitly, for example:
+  `scripts/golangci-lint -C authd-oidc-brokers run --build-tags withmsentraid`.
+  Use `--build-tags withgoogle` for Google-specific changes.
 
 ### Code Generation
 Critical: Run `go generate` before building PAM or when modifying protobuf files:
@@ -65,7 +82,7 @@ go generate ./shell-completion/         # Shell completions
 - Brokers must implement the D-Bus interface defined in `internal/brokers/dbusbroker.go`
 
 ### PAM Module Dual Mode
-The PAM module has two implementations (see `pam/Hacking.md`):
+The PAM module has two implementations (see `pam/README.md`):
 1. **GDM mode** (`pam_authd.so`): Native Go shared library with GDM JSON protocol support
 2. **Generic mode** (`pam_authd_exec.so` + `authd-pam` executable): C wrapper launching Go program via private D-Bus
    - Required for reliability with non-GDM PAM apps (avoids Go threading issues)
@@ -80,7 +97,7 @@ The PAM module has two implementations (see `pam/Hacking.md`):
 - Use `testify/require` for assertions (not `assert`)
 - Golden files in `testdata/golden/` subdirectories matching test structure
 - Test-only exports via `export_test.go` files (no build tag, package-level visibility)
-- PAM integration tests use `vhs` tapes in `pam/integration-tests/testdata/tapes/`
+- PAM integration tests use `ptytest` in `pam/integration-tests/`
 
 ## Common Workflows
 
@@ -100,13 +117,66 @@ The PAM module has two implementations (see `pam/Hacking.md`):
 - Enable debug: `authd daemon -vvv` (3 levels of verbosity)
 - Socket path: `/run/authd.sock` (override with `AUTHD_NSS_SOCKET` for NSS tests)
 
+## Git Usage
+
+Always pass `--no-pager` to git commands that may invoke a pager, to prevent them from hanging:
+```bash
+git --no-pager diff
+git --no-pager show
+git --no-pager log
+```
+
+Agent-authored changes should generally be committed once complete.
+Do not leave finished agent-created changes uncommitted unless the user
+explicitly asks for no commit.
+
+When creating commits for agent-authored changes, use atomic commits:
+each commit must contain one coherent, self-contained logical change.
+
+## Commit messages
+
+Explain why, not what — the diff shows what changed.
+
+- For bug fixes, describe the observable symptom before the root cause
+- Document non-obvious decisions and rejected alternatives
+- One-liners are fine for mechanical changes; anything behavioral needs a body
+- Try to keep the subject line at 72 characters or less; wrap body lines at 72 characters
+  (URLs that cannot be split are the only accepted exception)
+
+Don't narrate your activity ("Fixed X as requested") or describe the diff
+("Add null check before calling Process()").
+
+### How to commit with correct wrapping
+
+Use `git commit -F -` with a heredoc and insert explicit newlines at
+word boundaries before reaching 72 characters. Do **not** use
+`git commit -m "..."` for multi-line messages — it will not wrap.
+
 ## Dependencies & Tools
 - **Go**: See `go.mod` for version requirements, uses go modules with vendoring
 - **Rust**: Cargo with vendor filtering (see `Cargo.toml` workspace)
 - **Required**: `libpam-dev`, `libglib2.0-dev`, `protoc`, `cargo-vendor-filterer`
-- **Optional**: `vhs` (PAM CLI tests), `delta` (colored diffs in tests)
+- **Optional**: `delta` (colored diffs in tests)
 
 ## Code Style
 - Follow [Effective Go](https://go.dev/doc/effective_go) for Go style conventions
 - Use `go fmt` and `gofmt -s`
 - Rust: Standard cargo fmt conventions
+
+## Prose Style
+
+Write all prose in plain, simple English. This includes code comments,
+commit messages, and documentation. Use short sentences and everyday words.
+Do not omit technical details.
+
+## Linting
+
+After making changes to Go files, run `scripts/golangci-lint` to check for lint errors:
+```bash
+scripts/golangci-lint run
+```
+
+If the changed files are below `authd-oidc-brokers/`, use the `-C` flag to run the linter in that directory:
+```bash
+scripts/golangci-lint -C authd-oidc-brokers run
+```

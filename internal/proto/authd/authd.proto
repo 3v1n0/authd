@@ -8,7 +8,7 @@ message Empty {
 
 service PAM {
   rpc AvailableBrokers(Empty) returns (ABResponse);
-  rpc GetPreviousBroker(GPBRequest) returns (GPBResponse);
+  rpc GetBroker(GBRequest) returns (GBResponse);
 
   rpc SelectBroker(SBRequest) returns (SBResponse);
   rpc GetAuthenticationModes(GAMRequest) returns (GAMResponse);
@@ -16,15 +16,14 @@ service PAM {
   rpc IsAuthenticated(IARequest) returns (IAResponse);
   rpc EndSession(ESRequest) returns (Empty);
 
-  rpc SetDefaultBrokerForUser(SDBFURequest) returns (Empty);
 }
 
-message GPBRequest {
+message GBRequest {
   string username = 1;
 }
 
-message GPBResponse {
-  string previous_broker = 1;
+message GBResponse {
+  string broker = 1;
 }
 
 message ABResponse {
@@ -52,6 +51,7 @@ message SBRequest {
   string username = 2;
   string lang = 3;
   SessionMode mode = 4;
+  string service_name = 5;
 }
 
 message SBResponse {
@@ -120,10 +120,6 @@ message IAResponse {
   string msg = 2;
 }
 
-message SDBFURequest {
-  string broker_id = 1;
-  string username = 2;
-}
 
 message ESRequest {
   string session_id = 1;
@@ -137,6 +133,10 @@ service UserService {
   rpc UnlockUser(UnlockUserRequest) returns (Empty);
   rpc SetUserID(SetUserIDRequest) returns (SetUserIDResponse);
   rpc SetGroupID(SetGroupIDRequest) returns (SetGroupIDResponse);
+  rpc SetShell(SetShellRequest) returns (SetShellResponse);
+  rpc SetHomeDir(SetHomeDirRequest) returns (SetHomeDirResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  rpc DeleteGroup(DeleteGroupRequest) returns (Empty);
 
   rpc GetGroupByName(GetGroupByNameRequest) returns (Group);
   rpc GetGroupByID(GetGroupByIDRequest) returns (Group);
@@ -157,6 +157,16 @@ message LockUserRequest{
 }
 
 message UnlockUserRequest{
+  string name = 1;
+}
+
+message DeleteUserRequest{
+  string name = 1;
+  // If true, remove the user's home directory.
+  bool remove_home = 2;
+}
+
+message DeleteGroupRequest{
   string name = 1;
 }
 
@@ -194,6 +204,30 @@ message SetGroupIDResponse {
   bool id_changed = 1;
   bool home_dir_owner_changed = 2;
   repeated string warnings = 3;
+}
+
+message SetShellRequest {
+  string name = 1;
+  string shell = 2;
+}
+
+message SetShellResponse {
+  repeated string warnings = 1;
+}
+
+message SetHomeDirRequest {
+  string name = 1;
+  string home = 2;
+}
+
+message SetHomeDirResponse {
+  bool home_dir_changed = 1;
+  bool home_dir_moved = 2;
+  repeated string warnings = 3;
+}
+
+message DeleteUserResponse {
+  repeated string warnings = 1;
 }
 
 message User {

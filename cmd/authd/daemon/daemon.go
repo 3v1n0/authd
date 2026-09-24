@@ -10,6 +10,7 @@ import (
 	"github.com/canonical/authd/internal/daemon"
 	"github.com/canonical/authd/internal/decorate"
 	"github.com/canonical/authd/internal/services"
+	"github.com/canonical/authd/internal/services/pam"
 	"github.com/canonical/authd/internal/users"
 	"github.com/canonical/authd/log"
 	"github.com/spf13/cobra"
@@ -21,6 +22,9 @@ const cmdName = "authd"
 
 // oldDBDir is the path of the old DB directory.
 var oldDBDir = consts.OldDBDir
+
+// pamDDirs are the directories containing PAM service configuration files.
+var pamDDirs = []string{"/etc/pam.d", "/usr/lib/pam.d"}
 
 // App encapsulate commands and options of the daemon, which can be controlled by env variables and config files.
 type App struct {
@@ -46,6 +50,7 @@ type daemonConfig struct {
 	Verbosity   int
 	Paths       systemPaths
 	UsersConfig *users.Config `mapstructure:",squash" yaml:",inline"`
+	PAMConfig   *pam.Config   `mapstructure:"pam" yaml:"pam"`
 }
 
 type options struct {
@@ -91,6 +96,7 @@ func New(args ...Option) *App {
 					Socket:      "",
 				},
 				UsersConfig: &users.DefaultConfig,
+				PAMConfig:   &pam.DefaultConfig,
 			}
 
 			// Install and unmarshall configuration
@@ -104,16 +110,16 @@ func New(args ...Option) *App {
 			setVerboseMode(a.config.Verbosity)
 			log.Debugf(context.Background(), "Verbosity: %d", a.config.Verbosity)
 
+			if a.config.PAMConfig != nil {
+				a.config.PAMConfig.WarnOnUnknownServices(context.Background(), pamDDirs)
+			}
+
 			// If we are only checking the configuration, we exit now.
 			if check, _ := cmd.Flags().GetBool("check-config"); check {
 				return nil
 			}
 
 			if err := maybeMigrateOldDBDir(oldDBDir, a.config.Paths.Database); err != nil {
-				return err
-			}
-
-			if _, err := maybeMigrateBBoltToSQLite(a.config.Paths.Database); err != nil {
 				return err
 			}
 
@@ -156,7 +162,12 @@ func (a *App) serve(config daemonConfig) error {
 		panic("Users config must be set! This is a programmer error.")
 	}
 
-	m, err := services.NewManager(ctx, dbDir, config.Paths.BrokersConf, config.Brokers, *config.UsersConfig)
+	if config.PAMConfig == nil {
+		// This is an assert, since we assume that the daemonConfig on [New] is properly defined.
+		panic("PAM config must be set! This is a programmer error.")
+	}
+
+	m, err := services.NewManager(ctx, dbDir, config.Paths.BrokersConf, config.Brokers, *config.UsersConfig, *config.PAMConfig)
 	if err != nil {
 		close(a.ready)
 		return err

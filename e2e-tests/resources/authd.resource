@@ -1,0 +1,90 @@
+*** Settings ***
+Documentation       Authd related test resources
+
+Resource            kvm.resource
+Resource            ./utils.resource
+
+
+*** Variables ***
+${local_password}    qwer1234
+
+
+*** Keywords ***
+Disable Authd Socket And Service
+    SSH.Execute    systemctl mask --now authd.socket
+    SSH.Execute    systemctl mask --now authd.service
+
+
+Change Password
+    [Arguments]    ${local_password}    ${new_password}
+    Hid.Type String    passwd
+    Hid.Keys Combo    Return
+
+    Match Text    regex:Enter\\s*your\\s*(?:local\\s*)?password:    15
+    Builtin.Sleep    2
+    Hid.Type String    ${local_password}
+    Hid.Keys Combo    Return
+
+    Match Text    New password:    15
+    Builtin.Sleep    2
+    Hid.Type String    ${new_password}
+    Hid.Keys Combo    Return
+
+    Match Text    Confirm password:    15
+    Builtin.Sleep    2
+    Hid.Type String    ${new_password}
+    Hid.Keys Combo    Return
+
+    Match Text    passwd: password updated successfully    15
+
+
+Try Log In With Remote User
+    [Arguments]    ${username}
+    Try machinectl login Prompt
+    Hid.Type String    ${username}
+    Hid.Keys Combo    Return
+
+
+# Conditional checks
+Check That Remote User Has No Available Authentication Modes
+    Match Text    Error connecting to provider. Check your network connection.    120
+
+
+Check That Log In Fails Because Authd Is Disabled
+    Match Text    could not connect to unix:///run/authd.sock    120
+
+
+Check That User Is Redirected To Local Broker
+    Match Text    Password:    120    confidence=88
+
+
+Check That Authenticated User Does Not Match Requested User
+    [Arguments]    ${requested_user}
+    Match Text    Authentication failure: requested username "${requested_user}" does not match the authenticated username    120
+
+
+Check That Remote User Can Run Sudo Commands
+    [Arguments]    ${local_password}
+    SSH.Execute    echo ${local_password} | sudo -S touch sudo-test.txt
+    ${output} =    SSH.Execute    ls -l sudo-test.txt
+    Should Contain    ${output}    sudo-test.txt
+
+
+Check that GNOME keyring is unlocked
+    SSH.Execute As Current User    echo '' | secret-tool store --label=test test key
+
+
+Store Secret In GNOME Keyring
+    [Arguments]    ${secret}
+    # Storing succeeds only if the keyring is unlocked, so this both seeds a
+    # known secret and asserts the keyring is currently unlocked.
+    SSH.Execute As Current User    printf '%s' '${secret}' | secret-tool store --label=e2e-test e2e-test keyring-persistence
+
+
+Check Secret In GNOME Keyring
+    [Arguments]    ${expected_secret}
+    # Looking up the secret succeeds only if the *same* keyring that stored it is
+    # unlocked. If the password change re-created the keyring instead of re-keying
+    # it, the secret is gone and this fails.
+    ${secret} =    SSH.Execute As Current User    secret-tool lookup e2e-test keyring-persistence
+    Should Be Equal    ${secret}    ${expected_secret}

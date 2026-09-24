@@ -5,8 +5,8 @@
 
 [license-image]: https://img.shields.io/badge/License-GPL3.0-blue.svg
 
-[codecov-image]: https://codecov.io/gh/ubuntu/authd/graph/badge.svg
-[codecov-url]: https://codecov.io/gh/ubuntu/authd
+[codecov-image]: https://codecov.io/gh/canonical/authd/graph/badge.svg
+[codecov-url]: https://codecov.io/gh/canonical/authd
 
 [reference-documentation-image]: https://pkg.go.dev/badge/github.com/canonical/authd.svg
 [reference-documentation-url]: https://pkg.go.dev/github.com/canonical/authd
@@ -15,8 +15,8 @@
 [goreport-url]: https://goreportcard.com/report/github.com/canonical/authd
 
 [docs-image]: https://readthedocs.com/projects/canonical-authd/badge/?version=edge-docs
-[docs-url-stable]: https://documentation.ubuntu.com/authd/stable-docs/
-[docs-url-edge]: https://documentation.ubuntu.com/authd/edge-docs/
+[docs-url-stable]: https://ubuntu.com/docs/authd/stable-docs/
+[docs-url-edge]: https://ubuntu.com/docs/authd/edge-docs/
 
 [![Code quality][actions-image]][actions-url]
 [![License][license-image]](COPYING)
@@ -52,7 +52,7 @@ authd uses brokers to interface with cloud identity providers through a
 Currently [MS Entra ID](https://learn.microsoft.com/en-us/entra/fundamentals/whatis)
 and [Google IAM](https://cloud.google.com/iam/docs/overview)
 are supported as identity providers.
-They allow you to authenticate using MFA and the device authentication flow.
+They allow you to authenticate using MFA and the device code flow.
 
 For development purposes, authd also provides an
 [example broker](https://github.com/canonical/authd/tree/main/examplebroker)

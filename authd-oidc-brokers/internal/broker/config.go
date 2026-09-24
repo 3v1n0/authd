@@ -1,23 +1,30 @@
 package broker
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"text/template"
+	"unicode"
 
+	"github.com/canonical/authd/authd-oidc-brokers/internal/broker/authmodes"
+	"github.com/canonical/authd/log"
 	"gopkg.in/ini.v1"
 )
 
 // Configuration sections and keys.
 const (
-	// forceProviderAuthenticationKey is the key in the config file for the option to force provider authentication during login.
-	forceProviderAuthenticationKey = "force_provider_authentication"
+	// forceAccessCheckWithProviderKey is the key in the config file for the setting to force verification with the
+	// identity provider during login.
+	forceAccessCheckWithProviderKey    = "force_access_check_with_provider"
+	forceAccessCheckWithProviderKeyOld = "force_provider_authentication"
 
 	// oidcSection is the section name in the config file for the OIDC specific configuration.
 	oidcSection = "oidc"
@@ -56,6 +63,13 @@ const (
 	// ownerUserKeyword is the keyword for the `allowed_users` key that allows access to the owner.
 	ownerUserKeyword = "OWNER"
 
+	// flowsSection is the section name in the config file for the authentication flow control.
+	flowsSection = "flows"
+	// flowsDeviceAuthKey controls whether the device_auth and device_auth_qr modes are enabled.
+	flowsDeviceAuthKey = "device_code"
+	// flowsEntraAuthKey controls whether entra_auth mode is enabled.
+	flowsEntraAuthKey = "entra_auth"
+
 	// ownerAutoRegistrationConfigPath is the name of the file that will be auto-generated to register the owner.
 	ownerAutoRegistrationConfigPath     = "20-owner-autoregistration.conf"
 	ownerAutoRegistrationConfigTemplate = "templates/20-owner-autoregistration.conf.tmpl"
@@ -64,10 +78,45 @@ const (
 var (
 	//go:embed templates/20-owner-autoregistration.conf.tmpl
 	ownerAutoRegistrationConfig embed.FS
+
+	// knownConfigKeys maps each known config section to its known keys.
+	knownConfigKeys = map[string]map[string]struct{}{
+		oidcSection: {
+			issuerKey:                          {},
+			clientIDKey:                        {},
+			clientSecret:                       {},
+			extraScopesKey:                     {},
+			forceAccessCheckWithProviderKey:    {},
+			forceAccessCheckWithProviderKeyOld: {},
+		},
+		entraIDSection: {
+			registerDeviceKey: {},
+		},
+		usersSection: {
+			allowedUsersKey:     {},
+			ownerKey:            {},
+			homeDirKey:          {},
+			sshSuffixesKey:      {},
+			sshSuffixesKeyOld:   {},
+			extraGroupsKey:      {},
+			ownerExtraGroupsKey: {},
+		},
+		flowsSection: {
+			flowsDeviceAuthKey: {},
+			flowsEntraAuthKey:  {},
+		},
+	}
 )
 
 type provider interface {
 	NormalizeUsername(username string) string
+	SupportedOnlineAuthModes() []string
+}
+
+// configFile holds the path and content of a configuration file.
+type configFile struct {
+	path    string
+	content []byte
 }
 
 type templateEnv struct {
@@ -79,8 +128,8 @@ type userConfig struct {
 	clientSecret string
 	issuerURL    string
 
-	forceProviderAuthentication bool
-	registerDevice              bool
+	forceAccessCheckWithProvider bool
+	registerDevice               bool
 
 	allowedUsers          map[string]struct{}
 	allUsersAllowed       bool
@@ -94,7 +143,26 @@ type userConfig struct {
 	ownerExtraGroups      []string
 	extraScopes           []string
 
+	flows flowsConfig
+
 	provider provider
+}
+
+// flowsConfig holds the parsed [flows] section configuration.
+type flowsConfig struct {
+	DeviceAuth bool
+	EntraAuth  bool
+}
+
+// defaultFlowsConfig returns the defaults for flow settings omitted from the
+// configuration. Device-code authentication stays enabled for compatibility.
+// Entra authentication follows register_device so existing configurations keep
+// using it when device registration was enabled.
+func defaultFlowsConfig(registerDevice bool) flowsConfig {
+	return flowsConfig{
+		DeviceAuth: true,
+		EntraAuth:  registerDevice,
+	}
 }
 
 // GetDropInDir takes the broker configuration path and returns the drop in dir path.
@@ -102,7 +170,7 @@ func GetDropInDir(cfgPath string) string {
 	return cfgPath + ".d"
 }
 
-func readDropInFiles(cfgPath string) ([]any, error) {
+func readDropInFiles(cfgPath string) ([]configFile, error) {
 	// Check if a .d directory exists and return the paths to the files in it.
 	dropInDir := GetDropInDir(cfgPath)
 	files, err := os.ReadDir(dropInDir)
@@ -113,18 +181,19 @@ func readDropInFiles(cfgPath string) ([]any, error) {
 		return nil, err
 	}
 
-	var dropInFiles []any
+	var dropInFiles []configFile
 	// files is empty if the directory does not exist
 	for _, file := range files {
 		if file.IsDir() {
 			continue
 		}
 
-		dropInFile, err := os.ReadFile(filepath.Join(dropInDir, file.Name()))
+		p := filepath.Join(dropInDir, file.Name())
+		content, err := os.ReadFile(p)
 		if err != nil {
-			return nil, fmt.Errorf("could not read drop-in file %q: %v", file.Name(), err)
+			return nil, fmt.Errorf("could not read drop-in file %q: %v", p, err)
 		}
-		dropInFiles = append(dropInFiles, dropInFile)
+		dropInFiles = append(dropInFiles, configFile{path: p, content: content})
 	}
 
 	return dropInFiles, nil
@@ -186,10 +255,11 @@ func (uc *userConfig) populateUsersConfig(users *ini.Section) {
 
 // parseConfigFromPath parses the config file and returns a map with the configuration keys and values.
 func parseConfigFromPath(cfgPath string, p provider) (userConfig, error) {
-	cfgFile, err := os.ReadFile(cfgPath)
+	content, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return userConfig{}, fmt.Errorf("could not open config file %q: %v", cfgPath, err)
 	}
+	cfgFile := configFile{path: cfgPath, content: content}
 
 	dropInFiles, err := readDropInFiles(cfgPath)
 	if err != nil {
@@ -199,54 +269,141 @@ func parseConfigFromPath(cfgPath string, p provider) (userConfig, error) {
 	return parseConfig(cfgFile, dropInFiles, p)
 }
 
-// parseConfig parses the config file and returns a userConfig struct with the configuration keys and values.
-// It also checks if the keys contain any placeholders and returns an error if they do.
-func parseConfig(cfgContent []byte, dropInContent []any, p provider) (userConfig, error) {
-	cfg := userConfig{provider: p, ownerMutex: &sync.RWMutex{}}
-
-	iniCfg, err := ini.Load(cfgContent, dropInContent...)
-	if err != nil {
-		return userConfig{}, err
-	}
-
-	// Check if any of the keys still contain the placeholders.
+// validatePlaceholders checks that no values in iniCfg still contain unedited
+// template placeholders (e.g. "<ISSUER_ID>"). path is used only for the error
+// message and should be the main config file path.
+func validatePlaceholders(path string, iniCfg *ini.File) error {
+	var placeholderErr error
 	for _, section := range iniCfg.Sections() {
 		for _, key := range section.Keys() {
-			if strings.Contains(key.Value(), "<") && strings.Contains(key.Value(), ">") {
-				err = errors.Join(err, fmt.Errorf("found invalid character in section %q, key %q", section.Name(), key.Name()))
+			v := key.Value()
+			if strings.Contains(v, "<") && strings.Contains(v, ">") {
+				placeholderErr = errors.Join(placeholderErr, fmt.Errorf("unedited template placeholder found in section '%s', key '%s'", section.Name(), key.Name()))
 			}
 		}
 	}
-	if err != nil {
-		return userConfig{}, fmt.Errorf("config file has invalid values, did you edit the config file?\n%w", err)
+	if placeholderErr != nil {
+		return fmt.Errorf("config file %q has invalid values, did you edit the config file?\n%w", path, placeholderErr)
+	}
+	return nil
+}
+
+// validateConfigFile checks a parsed ini config for validity: parseable boolean
+// fields, and returns errors for unknown sections/keys. It does not check for
+// template placeholders; call validatePlaceholders for that.
+func validateConfigFile(path string, iniCfg *ini.File) error {
+	// Return errors for unknown sections and keys.
+	for _, section := range iniCfg.Sections() {
+		if section.Name() == ini.DefaultSection {
+			if len(section.Keys()) > 0 {
+				return fmt.Errorf("keys outside of any section in config file %q", path)
+			}
+			continue
+		}
+		sectionKeys, ok := knownConfigKeys[section.Name()]
+		if !ok {
+			return fmt.Errorf("unknown section %q in config file %q", section.Name(), path)
+		}
+
+		for _, key := range section.Keys() {
+			if _, ok := sectionKeys[key.Name()]; !ok {
+				return fmt.Errorf("unknown key %q in section %q in config file %q", key.Name(), section.Name(), path)
+			}
+		}
 	}
 
 	oidc := iniCfg.Section(oidcSection)
 	if oidc != nil {
-		cfg.issuerURL = oidc.Key(issuerKey).String()
-		cfg.clientID = oidc.Key(clientIDKey).String()
-		cfg.clientSecret = oidc.Key(clientSecret).String()
-		cfg.extraScopes = oidc.Key(extraScopesKey).Strings(",")
-
-		if oidc.HasKey(forceProviderAuthenticationKey) {
-			cfg.forceProviderAuthentication, err = oidc.Key(forceProviderAuthenticationKey).Bool()
-			if err != nil {
-				return userConfig{}, fmt.Errorf("error parsing '%s': %w", forceProviderAuthenticationKey, err)
+		forceAccessCheckKey := forceAccessCheckWithProviderKey
+		if !oidc.HasKey(forceAccessCheckKey) {
+			forceAccessCheckKey = forceAccessCheckWithProviderKeyOld
+		}
+		if oidc.HasKey(forceAccessCheckKey) {
+			if _, err := oidc.Key(forceAccessCheckKey).Bool(); err != nil {
+				return fmt.Errorf("error parsing '%s' in config file %q: %w", forceAccessCheckKey, path, err)
 			}
 		}
 	}
 
 	entraID := iniCfg.Section(entraIDSection)
 	if entraID != nil && entraID.HasKey(registerDeviceKey) {
-		cfg.registerDevice, err = entraID.Key(registerDeviceKey).Bool()
-		if err != nil {
-			return userConfig{}, fmt.Errorf("error parsing '%s': %w", registerDeviceKey, err)
+		if _, err := entraID.Key(registerDeviceKey).Bool(); err != nil {
+			return fmt.Errorf("error parsing '%s' in config file %q: %w", registerDeviceKey, path, err)
 		}
 	}
 
-	cfg.populateUsersConfig(iniCfg.Section(usersSection))
+	return nil
+}
 
-	return cfg, nil
+// parseConfig parses the config file and returns a userConfig struct with the configuration keys and values.
+// It also checks if the keys contain any placeholders and returns an error if they do.
+func parseConfig(cfg configFile, dropInCfgs []configFile, p provider) (userConfig, error) {
+	uc := userConfig{provider: p, ownerMutex: &sync.RWMutex{}}
+
+	iniCfg, err := ini.Load(cfg.content)
+	if err != nil {
+		return userConfig{}, fmt.Errorf("error in config file %q: %w", cfg.path, err)
+	}
+
+	// Validate syntax of the main config, but defer the placeholder check until
+	// after all drop-ins are applied: drop-in files in broker.conf.d are allowed
+	// to override placeholder values from the main config.
+	if err := validateConfigFile(cfg.path, iniCfg); err != nil {
+		return userConfig{}, err
+	}
+
+	for _, dropIn := range dropInCfgs {
+		dropInCfg, err := ini.Load(dropIn.content)
+		if err != nil {
+			return userConfig{}, fmt.Errorf("error in drop-in config file %q: %w", dropIn.path, err)
+		}
+
+		if err := validateConfigFile(dropIn.path, dropInCfg); err != nil {
+			return userConfig{}, err
+		}
+
+		if err := iniCfg.Append(dropIn.content); err != nil {
+			return userConfig{}, fmt.Errorf("error in drop-in config file %q: %w", dropIn.path, err)
+		}
+	}
+
+	// Check that all placeholders from the main config were overridden by drop-ins.
+	if err := validatePlaceholders(cfg.path, iniCfg); err != nil {
+		return userConfig{}, err
+	}
+
+	oidc := iniCfg.Section(oidcSection)
+	if oidc != nil {
+		uc.issuerURL = oidc.Key(issuerKey).String()
+		uc.clientID = oidc.Key(clientIDKey).String()
+		uc.clientSecret = strings.TrimSpace(oidc.Key(clientSecret).String())
+		uc.extraScopes = oidc.Key(extraScopesKey).Strings(",")
+
+		forceAccessCheckKey := forceAccessCheckWithProviderKey
+		// If we don't have the new key, we should try reading the old one instead.
+		if !oidc.HasKey(forceAccessCheckKey) {
+			forceAccessCheckKey = forceAccessCheckWithProviderKeyOld
+		}
+		if oidc.HasKey(forceAccessCheckKey) {
+			// Already validated per-file above; ignore error.
+			uc.forceAccessCheckWithProvider, _ = oidc.Key(forceAccessCheckKey).Bool()
+		}
+	}
+
+	entraID := iniCfg.Section(entraIDSection)
+	if entraID != nil && entraID.HasKey(registerDeviceKey) {
+		// Already validated per-file above; ignore error.
+		uc.registerDevice, _ = entraID.Key(registerDeviceKey).Bool()
+	}
+
+	uc.flows, err = parseFlowsConfig(iniCfg.Section(flowsSection), uc.registerDevice, p)
+	if err != nil {
+		return userConfig{}, err
+	}
+
+	uc.populateUsersConfig(iniCfg.Section(usersSection))
+
+	return uc, nil
 }
 
 func (uc *userConfig) userNameIsAllowed(userName string) bool {
@@ -283,13 +440,28 @@ func (uc *userConfig) registerOwner(cfgPath, userName string) error {
 	uc.ownerMutex.Lock()
 	defer uc.ownerMutex.Unlock()
 
+	// Reject any non-graphic characters in the username before writing it to
+	// the INI drop-in config. Control characters allow INI key injection, and
+	// other non-graphic runes are not valid content for a generated config
+	// value.
+	if strings.ContainsFunc(userName, func(r rune) bool { return !unicode.IsGraphic(r) }) {
+		return fmt.Errorf("username %q contains invalid characters and cannot be used for owner registration", userName)
+	}
+
 	if cfgPath == "" {
 		uc.owner = uc.provider.NormalizeUsername(userName)
 		uc.firstUserBecomesOwner = false
 		return nil
 	}
 
-	p := filepath.Join(GetDropInDir(cfgPath), ownerAutoRegistrationConfigPath)
+	dropInDir := GetDropInDir(cfgPath)
+	//nolint:gosec // G301: World-readable so admins can list and tab-complete config files.
+	// Secrets are protected by the 0600 permissions of the files themselves.
+	if err := os.MkdirAll(dropInDir, 0755); err != nil {
+		return fmt.Errorf("failed to create drop-in directory %q: %w", dropInDir, err)
+	}
+
+	p := filepath.Join(dropInDir, ownerAutoRegistrationConfigPath)
 
 	templateName := filepath.Base(ownerAutoRegistrationConfigTemplate)
 	t, err := template.New(templateName).ParseFS(ownerAutoRegistrationConfig, ownerAutoRegistrationConfigTemplate)
@@ -313,4 +485,67 @@ func (uc *userConfig) registerOwner(cfgPath, userName string) error {
 	uc.firstUserBecomesOwner = false
 
 	return nil
+}
+
+// parseFlowsConfig parses the [flows] section and returns a flowsConfig with
+// defaults for missing keys.
+func parseFlowsConfig(section *ini.Section, registerDevice bool, p provider) (flowsConfig, error) {
+	fc := defaultFlowsConfig(registerDevice)
+
+	if section != nil {
+		if section.HasKey(flowsDeviceAuthKey) {
+			val, err := section.Key(flowsDeviceAuthKey).Bool()
+			if err != nil {
+				log.Warningf(context.Background(), "invalid value for %q in [%s] section, using default (%t)", flowsDeviceAuthKey, flowsSection, fc.DeviceAuth)
+			} else {
+				fc.DeviceAuth = val
+			}
+		}
+
+		if section.HasKey(flowsEntraAuthKey) {
+			val, err := section.Key(flowsEntraAuthKey).Bool()
+			if err != nil {
+				log.Warningf(context.Background(), "invalid value for %q in [%s] section, using default (%t)", flowsEntraAuthKey, flowsSection, fc.EntraAuth)
+			} else {
+				fc.EntraAuth = val
+			}
+		}
+	}
+
+	supportedModes := p.SupportedOnlineAuthModes()
+	if !hasEnabledSupportedFlow(fc, supportedModes) {
+		return flowsConfig{}, invalidFlowsConfigError(supportedModes)
+	}
+
+	return fc, nil
+}
+
+func hasEnabledSupportedFlow(fc flowsConfig, supportedModes []string) bool {
+	deviceAuthSupported := slices.Contains(supportedModes, authmodes.Device) || slices.Contains(supportedModes, authmodes.DeviceQr)
+	entraAuthSupported := slices.Contains(supportedModes, authmodes.EntraAuth)
+
+	return (fc.DeviceAuth && deviceAuthSupported) || (fc.EntraAuth && entraAuthSupported)
+}
+
+// Keep the error provider-specific so it only suggests flows the broker can
+// actually offer, such as not mentioning Entra authentication for Google.
+func invalidFlowsConfigError(supportedModes []string) error {
+	var flowKeys []string
+	if slices.Contains(supportedModes, authmodes.Device) || slices.Contains(supportedModes, authmodes.DeviceQr) {
+		flowKeys = append(flowKeys, flowsDeviceAuthKey)
+	}
+	if slices.Contains(supportedModes, authmodes.EntraAuth) {
+		flowKeys = append(flowKeys, flowsEntraAuthKey)
+	}
+
+	switch len(flowKeys) {
+	case 0:
+		return fmt.Errorf("invalid [%s] configuration: all supported authentication flows are disabled", flowsSection)
+	case 1:
+		return fmt.Errorf("invalid [%s] configuration: no supported authentication flows are enabled; the %q flow must be enabled",
+			flowsSection, flowKeys[0])
+	default:
+		return fmt.Errorf("invalid [%s] configuration: no supported authentication flows are enabled; at least one of the %q or %q flows must be enabled",
+			flowsSection, flowKeys[0], flowKeys[1])
+	}
 }

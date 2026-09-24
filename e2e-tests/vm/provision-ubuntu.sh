@@ -7,14 +7,17 @@ LIB_DIR="${SCRIPT_DIR}/lib"
 SSH="${SCRIPT_DIR}/ssh.sh"
 LIBVIRT_XML_TEMPLATE="${SCRIPT_DIR}/e2e-runner-template.xml"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/authd-e2e-tests"
-DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests"
+DATA_DIR_ARG=
 
 usage(){
     cat << EOF
-Usage: $0 [--config-file <file>] [--force]
+Usage: $0 [--config-file <file>] [--release <release>] [--data-dir <directory>] [--force]
 
 Options:
-   --config-file <file>  Path to the configuration file (default: config.sh)
+   --config-file <file>  Path to the configuration file (default: config.env)
+   --release <release>   Ubuntu release to provision (e.g. noble, resolute); overrides config file
+   --data-dir <directory>
+                         Base directory for VM artifacts (or AUTHD_E2E_DATA_DIR)
    --force               Force provisioning: remove existing VM and artifacts and create a fresh VM
    --no-snapshot         Do not create a snapshot after initial setup
   -h, --help             Show this help message and exit
@@ -27,6 +30,14 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --config-file)
             CONFIG_FILE="$2"
+            shift 2
+            ;;
+        --release)
+            RELEASE_ARG="$2"
+            shift 2
+            ;;
+        --data-dir)
+            DATA_DIR_ARG="$2"
             shift 2
             ;;
         --force)
@@ -59,37 +70,69 @@ fi
 
 # Set default config file if not provided
 if [ -z "${CONFIG_FILE:-}" ]; then
-    CONFIG_FILE="${SCRIPT_DIR}/config.sh"
+    CONFIG_FILE="${SCRIPT_DIR}/config.env"
+    # A linked worktree does not have its own copy of the gitignored config.
+    # Reuse the config from the main worktree when it is available.
+    if [[ ! -f "${CONFIG_FILE}" ]]; then
+        _git_common_dir=
+        if command -v git >/dev/null 2>&1; then
+            _git_common_dir="$(git -C "${SCRIPT_DIR}" rev-parse --git-common-dir 2>/dev/null || true)"
+        fi
+        if [[ "${_git_common_dir}" == /* ]]; then
+            _linked_config="$(dirname "${_git_common_dir}")/e2e-tests/vm/config.env"
+            if [[ -f "${_linked_config}" ]]; then
+                CONFIG_FILE="${_linked_config}"
+            fi
+        fi
+        unset _git_common_dir _linked_config
+    fi
 fi
 
 # Load the configuration file (if it exists)
 if [ -f "${CONFIG_FILE}" ]; then
-    # shellcheck source=config.sh disable=SC1091
+    set -a
+    # shellcheck source=config.env disable=SC1091
     source "${CONFIG_FILE}"
+    set +a
 fi
 
 # shellcheck source=lib/libprovision.sh
 source "${LIB_DIR}/libprovision.sh"
 
-assert_env_vars RELEASE VM_NAME_BASE SSH_PUBLIC_KEY_FILE
+# CLI --release overrides the config file value
+RELEASE="${RELEASE_ARG:-${RELEASE:-}}"
+
+VM_NAME_BASE="${VM_NAME_BASE:-e2e-runner}"
+
+assert_env_vars RELEASE
+
+if [ -z "${CI:-}" ]; then
+    assert_env_vars SSH_PUBLIC_KEY_FILE
+
+    if [ ! -f "${SSH_PUBLIC_KEY_FILE}" ]; then
+        echo "SSH public key file not found: ${SSH_PUBLIC_KEY_FILE}"
+        exit 1
+    fi
+
+    if [[ "${SSH_PUBLIC_KEY_FILE}" != *.pub ]]; then
+        echo "SSH public key file must have a .pub extension"
+        exit 1
+    fi
+fi
 
 # Resolve the actual release name if "devel" is specified
 # shellcheck disable=SC2153 # RELEASE is not misspelled
 RELEASE_NAME=$(resolve_devel_release "${RELEASE}")
 
-# Validate SSH public key file
-if [ ! -f "${SSH_PUBLIC_KEY_FILE}" ]; then
-    echo "SSH public key file not found: ${SSH_PUBLIC_KEY_FILE}"
-    exit 1
+DATA_DIR="${DATA_DIR_ARG:-${AUTHD_E2E_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/authd-e2e-tests}}"
+if [[ -n "${DATA_DIR_ARG}" || -n "${AUTHD_E2E_DATA_DIR:-}" ]]; then
+    ARTIFACTS_DIR="${DATA_DIR}/${RELEASE}"
 fi
 
-if [[ "${SSH_PUBLIC_KEY_FILE}" != *.pub ]]; then
-    echo "SSH public key file must have a .pub extension"
-    exit 1
+# Cache sudo password early unless we're run by an agent harness
+if [[ -z "${AGENTS:-}" && -z "${COPILOT_CLI:-}" && -z "${CLAUDECODE:-}" ]]; then
+    sudo -v
 fi
-
-# Cache sudo password early
-sudo -v
 
 # Installing all the packages can take some time, so we set the timeout to 15 minutes
 CLOUT_INIT_TIMEOUT=900
@@ -98,7 +141,7 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:-${DATA_DIR}/${RELEASE}}"
 CLOUD_INIT_TEMPLATE="${SCRIPT_DIR}/cloud-init-template-${RELEASE_NAME}.yaml"
 
 if [ -z "${VM_NAME:-}" ]; then
-    VM_NAME="${VM_NAME_BASE}-${RELEASE}"
+    export VM_NAME="${VM_NAME_BASE}-${RELEASE}"
 fi
 
 function cloud_init_finished() {
@@ -161,14 +204,35 @@ if [ ! -f "${CLOUD_INIT_ISO}" ]; then
     trap 'rm -rf ${CLOUD_INIT_DIR}' EXIT
 
     systemd_ver=$(systemctl --version | awk 'NR==1 {print $2}')
-    if dpkg --compare-versions "$systemd_ver" "ge" "256"; then
+    if dpkg --compare-versions "$systemd_ver" "ge" "256" && [ -z "${FORCE_JOURNAL_TCP:-}" ]; then
         SOCAT_ADDRESS="VSOCK-CONNECT:2:55000"
     else
         SOCAT_ADDRESS="TCP-LISTEN:55000,bind=0.0.0.0,reuseaddr"
     fi
 
-    SSH_PUBLIC_KEY=$(cat "${SSH_PUBLIC_KEY_FILE}") \
+    # In CI environments, we want to allow the root user to log in without a
+    # password to avoid having to create a secret SSH key which must be shared
+    # between the job that provisions the VM and the jobs that run the tests.
+    if [ -n "${CI:-}" ]; then
+        CI_ROOT_SSHD_CONFIG="$(cat <<-EOF
+			Match User root
+		        PasswordAuthentication yes
+		        PermitEmptyPasswords yes
+		        PermitRootLogin yes
+		EOF
+        )"
+        CI_ROOT_PASSWD_CMD="- passwd -d root"
+        SSH_PUBLIC_KEY=""
+    else
+        CI_ROOT_SSHD_CONFIG=""
+        CI_ROOT_PASSWD_CMD=""
+        SSH_PUBLIC_KEY=$(cat "${SSH_PUBLIC_KEY_FILE}")
+    fi
+
+    SSH_PUBLIC_KEY="${SSH_PUBLIC_KEY}" \
       SOCAT_ADDRESS="${SOCAT_ADDRESS}" \
+      CI_ROOT_SSHD_CONFIG="${CI_ROOT_SSHD_CONFIG}" \
+      CI_ROOT_PASSWD_CMD="${CI_ROOT_PASSWD_CMD}" \
       envsubst < "${CLOUD_INIT_TEMPLATE}" > "${CLOUD_INIT_DIR}/user-data"
 
     cloud-localds "${CLOUD_INIT_ISO}" "${CLOUD_INIT_DIR}/user-data"
@@ -216,7 +280,7 @@ if ! cloud_init_finished "${IMAGE}"; then
     VM_CONSOLE_PID=$!
 
     timeout "${CLOUT_INIT_TIMEOUT}" retry --delay 1 -- \
-      sh -c "sudo virsh domstate \"${VM_NAME}\" | grep -q '^shut off'"
+      sh -c "virsh domstate \"${VM_NAME}\" | grep -q '^shut off'"
 
     kill "${VM_CONSOLE_PID}" || true
 

@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"strings"
+	"regexp"
 
 	"github.com/canonical/authd/internal/testsdetection"
 )
+
+// uidInMsgRegex matches the uid field in gRPC peer credential messages (e.g. "uid: 0, pid: 123").
+var uidInMsgRegex = regexp.MustCompile(`\buid: \d+`)
 
 // Z_ForTests_WithCurrentUserAsRoot returns an Option that sets the rootUID to the current user's UID.
 //
@@ -37,27 +40,15 @@ func currentUserUID() uint32 {
 	return uint32(uid)
 }
 
-// Z_ForTests_SetCurrentUserAsRoot mutates a default permission to the current user's UID if currentUserAsRoot is true.
-//
-// nolint:revive,nolintlint // We want to use underscores in the function name here.
-func Z_ForTests_SetCurrentUserAsRoot(m *Manager, currentUserAsRoot bool) {
-	testsdetection.MustBeTesting()
-
-	if !currentUserAsRoot {
-		m.rootUID = defaultOptions.rootUID
-		return
-	}
-
-	m.rootUID = currentUserUID()
-}
-
-// Z_ForTests_IdempotentPermissionError strips the UID from the permission error message.
+// Z_ForTests_IdempotentPermissionError strips the UID from gRPC peer credential
+// messages (format: "uid: <number>, pid: <number>") to make test output deterministic
+// regardless of which user runs the tests.
 //
 // nolint:revive,nolintlint // We want to use underscores in the function name here.
 func Z_ForTests_IdempotentPermissionError(msg string) string {
 	testsdetection.MustBeTesting()
 
-	return strings.ReplaceAll(msg, fmt.Sprint(currentUserUID()), "XXXX")
+	return uidInMsgRegex.ReplaceAllString(msg, "uid: XXXX")
 }
 
 // Z_ForTests_DefaultCurrentUserAsRoot mocks the current user as root for the permission manager.

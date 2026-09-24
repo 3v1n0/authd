@@ -6,15 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"os"
 	"os/user"
+	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/canonical/authd/internal/brokers"
 	"github.com/canonical/authd/internal/brokers/auth"
 	"github.com/canonical/authd/internal/brokers/layouts"
 	"github.com/canonical/authd/internal/decorate"
 	"github.com/canonical/authd/internal/proto/authd"
-	"github.com/canonical/authd/internal/services/permissions"
 	"github.com/canonical/authd/internal/users"
 	"github.com/canonical/authd/internal/users/types"
 	"github.com/canonical/authd/log"
@@ -25,23 +29,180 @@ import (
 
 var _ authd.PAMServer = Service{}
 
+// authFailMaxTracked is the maximum number of distinct (service, username) pairs tracked
+// simultaneously to bound memory usage.
+var authFailMaxTracked = 10000
+
+// BruteForceMitigationConfig holds brute-force mitigation parameters for one PAM service context.
+type BruteForceMitigationConfig struct {
+	// AuthFailDelayThreshold is the number of consecutive authentication failures before
+	// a delay is imposed on subsequent attempts, to mitigate brute-force attacks.
+	AuthFailDelayThreshold int `mapstructure:"auth_fail_delay_threshold" yaml:"auth_fail_delay_threshold"`
+	// AuthFailDelay is the delay imposed after AuthFailDelayThreshold consecutive failures.
+	AuthFailDelay time.Duration `mapstructure:"auth_fail_delay" yaml:"auth_fail_delay"`
+	// AuthFailResetWindow is the duration after the last failure before the failure count
+	// is automatically reset, to avoid penalizing users indefinitely.
+	AuthFailResetWindow time.Duration `mapstructure:"auth_fail_reset_window" yaml:"auth_fail_reset_window"`
+}
+
+// BruteForceOverride holds optional per-service overrides for BruteForceMitigationConfig.
+// A nil pointer means "not set" and falls back to the default value.
+type BruteForceOverride struct {
+	AuthFailDelayThreshold *int           `mapstructure:"auth_fail_delay_threshold" yaml:"auth_fail_delay_threshold,omitempty"`
+	AuthFailDelay          *time.Duration `mapstructure:"auth_fail_delay" yaml:"auth_fail_delay,omitempty"`
+	AuthFailResetWindow    *time.Duration `mapstructure:"auth_fail_reset_window" yaml:"auth_fail_reset_window,omitempty"`
+}
+
+// Config holds the configurable parameters for the PAM service.
+// The BruteForceMitigationConfig fields are the defaults applied to all PAM services;
+// per-service overrides can be specified in the Services map.
+type Config struct {
+	BruteForceMitigationConfig `mapstructure:",squash" yaml:",inline"`
+	Services                   map[string]BruteForceOverride `mapstructure:"services" yaml:"services,omitempty"`
+}
+
+// DefaultConfig is the default configuration for the PAM service.
+var DefaultConfig = Config{
+	BruteForceMitigationConfig: BruteForceMitigationConfig{
+		AuthFailDelayThreshold: 3,
+		AuthFailDelay:          2 * time.Second,
+		AuthFailResetWindow:    15 * time.Minute,
+	},
+	Services: map[string]BruteForceOverride{
+		// SSH is a common brute-force target; use a longer delay by default.
+		"sshd": {AuthFailDelay: durPtr(5 * time.Second)},
+	},
+}
+
+// ForService returns the BruteForceMitigationConfig for the given PAM service name,
+// merging the default config with any service-specific override.
+func (c Config) ForService(name string) BruteForceMitigationConfig {
+	override, ok := c.Services[name]
+	if !ok {
+		return c.BruteForceMitigationConfig
+	}
+
+	result := c.BruteForceMitigationConfig
+	if override.AuthFailDelayThreshold != nil {
+		result.AuthFailDelayThreshold = *override.AuthFailDelayThreshold
+	}
+	if override.AuthFailDelay != nil {
+		result.AuthFailDelay = *override.AuthFailDelay
+	}
+	if override.AuthFailResetWindow != nil {
+		result.AuthFailResetWindow = *override.AuthFailResetWindow
+	}
+	return result
+}
+
+// WarnOnUnknownServices logs a warning for each service name in cfg.Services that
+// does not have a corresponding PAM configuration file in pamDDirs.
+// We don't treat this as an error to avoid authd failing to start when a PAM service
+// is removed from the system but still present in the config file.
+func (c Config) WarnOnUnknownServices(ctx context.Context, pamDDirs []string) {
+	for name := range c.Services {
+		found := false
+		for _, pamDDir := range pamDDirs {
+			if _, err := os.Stat(filepath.Join(pamDDir, name)); err == nil {
+				found = true
+				break
+			} else if !os.IsNotExist(err) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			log.Warningf(ctx, "PAM service %q configured in authd but not found in %s", name, strings.Join(pamDDirs, " or "))
+		}
+	}
+}
+
+// durPtr returns a pointer to the given duration value.
+func durPtr(d time.Duration) *time.Duration { return &d }
+
+// authFailEntry holds the failure count and the time of the most recent failure for one user.
+type authFailEntry struct {
+	count    int
+	lastFail time.Time
+}
+
+// authFailKey is the composite key used to track failures per (service, user) pair
+// so that each service's brute-force policy is enforced independently.
+type authFailKey struct {
+	serviceName string
+	username    string
+}
+
+// authFailTracker counts consecutive per-user authentication failures and imposes
+// a delay once the threshold is reached.
+type authFailTracker struct {
+	mu      sync.Mutex
+	entries map[authFailKey]*authFailEntry
+}
+
+func newAuthFailTracker() *authFailTracker {
+	return &authFailTracker{
+		entries: make(map[authFailKey]*authFailEntry),
+	}
+}
+
+// recordFailure increments the failure count for the (serviceName, username) pair
+// and returns the new count.
+// If the previous failure is older than resetWindow the counter is reset first.
+// A resetWindow of 0 keeps failures accumulated indefinitely (no inactivity reset).
+// When the tracker is at capacity the entry is not stored, but math.MaxInt is
+// returned so that the delay is still applied (fail-secure).
+func (t *authFailTracker) recordFailure(serviceName, username string, resetWindow time.Duration) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	key := authFailKey{serviceName: serviceName, username: username}
+	e, ok := t.entries[key]
+	if ok && resetWindow > 0 && time.Since(e.lastFail) >= resetWindow {
+		// Stale entry: treat as fresh start.
+		ok = false
+	}
+	if !ok {
+		if len(t.entries) >= authFailMaxTracked {
+			// At capacity: return a count that always exceeds the threshold so
+			// the delay is applied.  This prevents a fill attack (flooding the
+			// tracker with bogus usernames) from disabling brute-force protection
+			// for the real target.
+			return math.MaxInt
+		}
+		e = &authFailEntry{}
+		t.entries[key] = e
+	}
+	e.count++
+	e.lastFail = time.Now()
+	return e.count
+}
+
+// recordSuccess resets the failure count for the (serviceName, username) pair.
+func (t *authFailTracker) recordSuccess(serviceName, username string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.entries, authFailKey{serviceName: serviceName, username: username})
+}
+
 // Service is the implementation of the PAM module service.
 type Service struct {
-	userManager       *users.Manager
-	brokerManager     *brokers.Manager
-	permissionManager *permissions.Manager
+	userManager    *users.Manager
+	brokerManager  *brokers.Manager
+	failedAuths    *authFailTracker
+	authFailConfig Config
 
 	authd.UnimplementedPAMServer
 }
 
 // NewService returns a new PAM GRPC service.
-func NewService(ctx context.Context, userManager *users.Manager, brokerManager *brokers.Manager, permissionManager *permissions.Manager) Service {
+func NewService(ctx context.Context, userManager *users.Manager, brokerManager *brokers.Manager, cfg Config) Service {
 	log.Debug(ctx, "Building new gRPC PAM service")
 
 	return Service{
-		userManager:       userManager,
-		brokerManager:     brokerManager,
-		permissionManager: permissionManager,
+		userManager:    userManager,
+		brokerManager:  brokerManager,
+		failedAuths:    newAuthFailTracker(),
+		authFailConfig: cfg,
 	}
 }
 
@@ -60,69 +221,69 @@ func (s Service) AvailableBrokers(ctx context.Context, _ *authd.Empty) (*authd.A
 	return &r, nil
 }
 
-// GetPreviousBroker returns the previous broker set for a given user, if any.
+// GetBroker returns the previous broker set for a given user, if any.
 // If the user is not in our cache/database, it will try to check if it’s on the system, and return then "local".
-func (s Service) GetPreviousBroker(ctx context.Context, req *authd.GPBRequest) (*authd.GPBResponse, error) {
+func (s Service) GetBroker(ctx context.Context, req *authd.GBRequest) (*authd.GBResponse, error) {
 	// authd usernames are lowercase
 	username := strings.ToLower(req.GetUsername())
 
 	// Use in memory cache first
 	if b := s.brokerManager.BrokerForUser(username); b != nil {
-		return &authd.GPBResponse{PreviousBroker: b.ID}, nil
+		return &authd.GBResponse{Broker: b.ID}, nil
 	}
 
 	// Load from database.
 	brokerID, err := s.userManager.BrokerForUser(username)
 	// User is not in our database.
 	if err != nil && errors.Is(err, users.NoDataFoundError{}) {
-		// FIXME: this part will not be here in the v2 API version, as we won’t have GetPreviousBroker and handle
+		// FIXME: this part will not be here in the v2 API version, as we won’t have GetBroker and handle
 		// autoselection silently in authd.
 		// User not in database, if there is only the local broker available, return this one without saving it.
 		if len(s.brokerManager.AvailableBrokers()) == 1 {
-			log.Debugf(ctx, "GetPreviousBroker: User %q not found in database and only local broker available, selecting local broker", req.GetUsername())
-			return &authd.GPBResponse{PreviousBroker: brokers.LocalBrokerName}, nil
+			log.Debugf(ctx, "GetBroker: User %q not found in database and only local broker available, selecting local broker", req.GetUsername())
+			return &authd.GBResponse{Broker: brokers.LocalBrokerName}, nil
 		}
 
 		// User not accessible through NSS, first time login or no valid user. Anyway, no broker selected.
 		if _, err := user.Lookup(username); err != nil {
-			log.Debugf(ctx, "GetPreviousBroker: User %q not found", username)
-			return &authd.GPBResponse{}, nil
+			log.Debugf(ctx, "GetBroker: User %q not found", username)
+			return &authd.GBResponse{}, nil
 		}
 
 		// We could resolve the user through NSS, which means then that another non authd service
 		// service (passwd, winbind, sss…) is handling that user.
 		brokerID = brokers.LocalBrokerName
 	} else if err != nil {
-		log.Infof(ctx, "GetPreviousBroker: Could not get broker for user %q from database: %v", username, err)
-		return &authd.GPBResponse{}, nil
+		log.Infof(ctx, "GetBroker: Could not get broker for user %q from database: %v", username, err)
+		return &authd.GBResponse{}, nil
 	}
 
 	// No error but the brokerID is empty (broker in database but default broker not stored yet due no successful login)
 	if brokerID == "" {
-		log.Infof(ctx, "GetPreviousBroker: No broker set for user %q, letting the user select a new one", username)
-		return &authd.GPBResponse{}, nil
+		log.Infof(ctx, "GetBroker: No broker set for user %q, letting the user select a new one", username)
+		return &authd.GBResponse{}, nil
 	}
 
 	// Check if the broker still exists. Its config file might have been removed from the config directory after the
 	// user logged in the last time, in which case we let the user select a new broker.
 	if !s.brokerManager.BrokerExists(brokerID) {
-		log.Warningf(ctx, "GetPreviousBroker: Broker %q set for user %q does not exist, letting the user select a new one", brokerID, req.GetUsername())
-		return &authd.GPBResponse{}, nil
+		log.Warningf(ctx, "GetBroker: Broker %q set for user %q does not exist, letting the user select a new one", brokerID, req.GetUsername())
+		return &authd.GBResponse{}, nil
 	}
 
 	// Cache the broker which should be used for the user, so that we don't have to query the database again next time -
 	// except if the broker is the local broker, because then the decision to use the local broker should be made each
 	// time the user tries to log in, based on whether the user is provided by any other NSS service.
 	if brokerID == brokers.LocalBrokerName {
-		return &authd.GPBResponse{PreviousBroker: brokerID}, nil
+		return &authd.GBResponse{Broker: brokerID}, nil
 	}
-	if err = s.brokerManager.SetDefaultBrokerForUser(brokerID, username); err != nil {
-		log.Warningf(ctx, "GetPreviousBroker: Could not cache broker %q for user %q: %v", brokerID, username, err)
-		return &authd.GPBResponse{}, nil
+	if err = s.brokerManager.SetBroker(brokerID, username); err != nil {
+		log.Warningf(ctx, "GetBroker: Could not cache broker %q for user %q: %v", brokerID, username, err)
+		return &authd.GBResponse{}, nil
 	}
 
-	return &authd.GPBResponse{
-		PreviousBroker: brokerID,
+	return &authd.GBResponse{
+		Broker: brokerID,
 	}, nil
 }
 
@@ -156,8 +317,26 @@ func (s Service) SelectBroker(ctx context.Context, req *authd.SBRequest) (resp *
 		return nil, status.Error(codes.InvalidArgument, "invalid session mode")
 	}
 
+	// Look up the user's stored broker and stable provider identifier. If the
+	// user is already bound to a different broker, reject early before opening
+	// a session that would inevitably fail after authentication completes.
+	storedBrokerID, userProviderID, err := s.userManager.BrokerAndProviderIDForUser(username)
+	if err != nil && !errors.Is(err, users.NoDataFoundError{}) {
+		log.Errorf(ctx, "SelectBroker: Could not look up broker and provider ID for user %q: %v", username, err)
+		return nil, fmt.Errorf("could not look up broker for user %q: %w", username, err)
+	}
+	if storedBrokerID != "" && storedBrokerID != brokerID {
+		log.Errorf(ctx, "SelectBroker: User %q is bound to broker %q and cannot authenticate with broker %q", username, storedBrokerID, brokerID)
+		return nil, status.Errorf(codes.PermissionDenied, "user %q is already bound to broker %q and cannot authenticate with broker %q", username, storedBrokerID, brokerID)
+	}
+	// If the requested broker doesn't match the stored one, the provider ID
+	// from the stored broker is not applicable.
+	if storedBrokerID != brokerID {
+		userProviderID = ""
+	}
+
 	// Create a session and Memorize selected broker for it.
-	sessionID, encryptionKey, err := s.brokerManager.NewSession(brokerID, username, lang, mode)
+	sessionID, encryptionKey, err := s.brokerManager.NewSession(brokerID, username, lang, mode, userProviderID, req.GetServiceName())
 	if err != nil {
 		log.Errorf(ctx, "SelectBroker: Could not create session for user %q with broker %q: %v", username, brokerID, err)
 		return nil, err
@@ -275,25 +454,43 @@ func (s Service) IsAuthenticated(ctx context.Context, req *authd.IARequest) (res
 
 	log.Debugf(ctx, "%s: Authentication result: %s", sessionID, access)
 
+	username := s.brokerManager.UsernameFromSessionID(sessionID)
+	serviceName := s.brokerManager.ServiceNameFromSessionID(sessionID)
+	bfCfg := s.authFailConfig.ForService(serviceName)
+
 	if access != auth.Granted {
+		if access == auth.Denied || access == auth.DeniedMaxTries || access == auth.Retry {
+			if count := s.failedAuths.recordFailure(serviceName, username, bfCfg.AuthFailResetWindow); count > bfCfg.AuthFailDelayThreshold {
+				log.Debugf(ctx, "%s: Delaying response after %d consecutive authentication failures for %q", sessionID, count, username)
+				timer := time.NewTimer(bfCfg.AuthFailDelay)
+				select {
+				case <-timer.C:
+				case <-ctx.Done():
+					timer.Stop()
+				}
+			}
+		}
 		return &authd.IAResponse{
 			Access: access,
 			Msg:    data,
 		}, nil
 	}
 
-	var uInfo types.UserInfo
-	if err := json.Unmarshal([]byte(data), &uInfo); err != nil {
+	var grantedData struct {
+		UserInfo types.UserInfo `json:"userinfo"`
+		Message  string         `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(data), &grantedData); err != nil {
 		log.Errorf(ctx, "IsAuthenticated: Could not unmarshal user data for session %q: %v", sessionID, err)
 		return nil, fmt.Errorf("user data from broker invalid: %v", err)
 	}
-
+	uInfo := grantedData.UserInfo
 	// authd uses lowercase user and group names
 	uInfo.Name = strings.ToLower(uInfo.Name)
+	uInfo.BrokerID = broker.ID
 	for i, g := range uInfo.Groups {
 		uInfo.Groups[i].Name = strings.ToLower(g.Name)
 	}
-
 	// Check if the user is locked. We can only do this after the broker has granted access, because we want to avoid
 	// leaking whether a user exists or not to unauthenticated users.
 	// TODO: We might want to let the broker know whether the user is locked or not, so that it can avoid storing any
@@ -303,55 +500,59 @@ func (s Service) IsAuthenticated(ctx context.Context, req *authd.IARequest) (res
 		log.Errorf(ctx, "IsAuthenticated: Could not check if user %q is locked: %v", uInfo.Name, err)
 		return nil, fmt.Errorf("could not check if user %q is locked: %w", uInfo.Name, err)
 	}
-	// Throw an error if the user trying to authenticate already exists in the database and is locked
-	if err == nil && userIsLocked {
+	// The username may have changed at the IdP, in which case the locked row is still stored under the
+	// previous name and the name-based lookup above misses it. Resolve the stable identity by the
+	// broker-scoped provider ID and honor its locked state too.
+	if errors.Is(err, users.NoDataFoundError{}) && uInfo.BrokerID != "" && uInfo.ProviderID != "" {
+		userIsLocked, err = s.userManager.IsUserLockedByProviderID(uInfo.BrokerID, uInfo.ProviderID)
+		if err != nil && !errors.Is(err, users.NoDataFoundError{}) {
+			log.Errorf(ctx, "IsAuthenticated: Could not check if user %q is locked: %v", uInfo.Name, err)
+			return nil, fmt.Errorf("could not check if user %q is locked: %w", uInfo.Name, err)
+		}
+	}
+	// Throw an error if the user trying to authenticate already exists in the database and is locked.
+	if userIsLocked {
 		log.Noticef(ctx, "Authentication failure: user %q is locked", uInfo.Name)
 		return nil, status.Error(codes.PermissionDenied, fmt.Sprintf("user %s is locked", uInfo.Name))
 	}
-
 	// Update database and local groups on granted auth.
 	if err := s.userManager.UpdateUser(uInfo); err != nil {
 		log.Errorf(ctx, "IsAuthenticated: Could not update user %q in database: %v", uInfo.Name, err)
 		return nil, err
 	}
+	// IAResponse.Msg carries a JSON {"message": ...} envelope (or an empty
+	// string when there is no message), matching the format expected by the
+	// PAM client's dataToMsg parser.
+	msg := ""
+	if grantedData.Message != "" {
+		messageData, err := json.Marshal(map[string]string{"message": grantedData.Message})
+		if err != nil {
+			log.Warningf(ctx, "IsAuthenticated: Could not marshal granted message for session %q, ignoring: %v", sessionID, err)
+		} else {
+			msg = string(messageData)
+		}
+	}
+
+	// Set the broker as the default for the user on each successful authentication,
+	// unless it's the local broker (which is selected based on NSS resolution, not stored).
+	if broker.ID != brokers.LocalBrokerName {
+		if err = s.brokerManager.SetBroker(broker.ID, uInfo.Name); err != nil {
+			log.Errorf(ctx, "IsAuthenticated: Could not set default broker %q for user %q: %v", broker.ID, uInfo.Name, err)
+			return nil, err
+		}
+		if err = s.userManager.UpdateBrokerForUser(uInfo.Name, broker.ID); err != nil {
+			// A write failure (e.g. read-only filesystem) must not prevent a
+			// successfully authenticated user from logging in.
+			log.Errorf(ctx, "IsAuthenticated: Could not update broker for user %q in database: %v", uInfo.Name, err)
+		}
+	}
+
+	s.failedAuths.recordSuccess(serviceName, username)
 
 	return &authd.IAResponse{
 		Access: access,
-		Msg:    "",
+		Msg:    msg,
 	}, nil
-}
-
-// SetDefaultBrokerForUser sets the default broker for the given user.
-func (s Service) SetDefaultBrokerForUser(ctx context.Context, req *authd.SDBFURequest) (empty *authd.Empty, err error) {
-	defer decorate.OnError(&err, "can't set default broker %q for user %q", req.GetBrokerId(), req.GetUsername())
-
-	// authd usernames are lowercase
-	username := strings.ToLower(req.GetUsername())
-	brokerID := req.GetBrokerId()
-
-	if username == "" {
-		log.Errorf(ctx, "SetDefaultBrokerForUser: No user name given")
-		return nil, status.Error(codes.InvalidArgument, "no user name given")
-	}
-
-	// Don't allow setting the default broker to the local broker, because the decision to use the local broker should
-	// be made each time the user tries to log in, based on whether the user is provided by any other NSS service.
-	if brokerID == brokers.LocalBrokerName {
-		log.Errorf(ctx, "SetDefaultBrokerForUser: Can't set local broker as default for user %q", username)
-		return nil, status.Error(codes.InvalidArgument, "can't set local broker as default")
-	}
-
-	if err = s.brokerManager.SetDefaultBrokerForUser(brokerID, username); err != nil {
-		log.Errorf(ctx, "SetDefaultBrokerForUser: Could not set default broker %q for user %q: %v", brokerID, username, err)
-		return &authd.Empty{}, err
-	}
-
-	if err = s.userManager.UpdateBrokerForUser(username, brokerID); err != nil {
-		log.Errorf(ctx, "SetDefaultBrokerForUser: Could not update broker for user %q in database: %v", username, err)
-		return &authd.Empty{}, err
-	}
-
-	return &authd.Empty{}, nil
 }
 
 // EndSession asks the broker associated with the sessionID to end the session.

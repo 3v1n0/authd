@@ -1,23 +1,47 @@
 package broker
 
 import (
+	"context"
 	"sync"
+	"time"
+
+	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/msentraid/himmelblau"
 )
+
+// IsFIDOMethod and IsPromptMethod expose the unexported MFA method classifiers for tests.
+var (
+	IsFIDOMethod   = isFIDOMethod
+	IsPromptMethod = isPromptMethod
+)
+
+// SetFIDODeviceWaitTimeout overrides how long entraAuthFidoAuth waits for a
+// security key before the local FIDO fallback runs, so tests need not wait the
+// production timeout. It returns a func that restores the default.
+func SetFIDODeviceWaitTimeout(d time.Duration) (restore func()) {
+	prev := fidoDeviceWaitTimeout
+	fidoDeviceWaitTimeout = d
+	return func() { fidoDeviceWaitTimeout = prev }
+}
 
 func (cfg *Config) Init() {
 	cfg.ownerMutex = &sync.RWMutex{}
+	cfg.flows = defaultFlowsConfig(false)
 }
 
 func (cfg *Config) SetClientID(clientID string) {
 	cfg.clientID = clientID
 }
 
+func (cfg *Config) SetClientSecret(clientSecret string) {
+	cfg.clientSecret = clientSecret
+}
+
 func (cfg *Config) SetIssuerURL(issuerURL string) {
 	cfg.issuerURL = issuerURL
 }
 
-func (cfg *Config) SetForceProviderAuthentication(value bool) {
-	cfg.forceProviderAuthentication = value
+func (cfg *Config) SetforceAccessCheckWithProvider(value bool) {
+	cfg.forceAccessCheckWithProvider = value
 }
 
 func (cfg *Config) SetRegisterDevice(value bool) {
@@ -67,6 +91,13 @@ func (cfg *Config) SetOwnerExtraGroups(ownerExtraGroups []string) {
 
 func (cfg *Config) SetAllowedSSHSuffixes(allowedSSHSuffixes []string) {
 	cfg.allowedSSHSuffixes = allowedSSHSuffixes
+}
+
+func (cfg *Config) SetFlows(deviceAuth, entraAuth bool) {
+	cfg.flows = flowsConfig{
+		DeviceAuth: deviceAuth,
+		EntraAuth:  entraAuth,
+	}
 }
 
 func (cfg *Config) SetProvider(provider provider) {
@@ -125,6 +156,40 @@ func (b *Broker) DataDir() string {
 	return b.cfg.DataDir
 }
 
+// UserDataDir exposes the broker's userDataDir method for tests.
+func (b *Broker) UserDataDir(username string) (string, error) {
+	return b.userDataDir(username)
+}
+
+// EnsuredCachePaths captures the cache-related fields of a session after running
+// ensureProviderIDCacheDir, so that tests can assert on the resulting state.
+type EnsuredCachePaths struct {
+	ProviderID   string
+	UserDataDir  string
+	TokenPath    string
+	PasswordPath string
+}
+
+// EnsureProviderIDCacheDir builds a session for username whose cache paths are
+// rooted at currentDataDir, runs ensureProviderIDCacheDir for providerID and
+// returns the resulting cache-related session fields.
+func (b *Broker) EnsureProviderIDCacheDir(username, currentDataDir, providerID string) EnsuredCachePaths {
+	s := &session{username: username}
+	setCachePaths(s, currentDataDir)
+	b.ensureProviderIDCacheDir(s, providerID)
+	return EnsuredCachePaths{
+		ProviderID:   s.providerID,
+		UserDataDir:  s.userDataDir,
+		TokenPath:    s.tokenPath,
+		PasswordPath: s.passwordPath,
+	}
+}
+
+// NormalizedIssuer exposes the broker's normalizedIssuer method for tests.
+func (b *Broker) NormalizedIssuer(issuerURL string) string {
+	return normalizedIssuer(issuerURL)
+}
+
 // GetNextAuthModes returns the next auth mode of the specified session.
 func (b *Broker) GetNextAuthModes(sessionID string) []string {
 	b.currentSessionsMu.Lock()
@@ -170,5 +235,48 @@ func (b *Broker) IsOffline(sessionID string) (bool, error) {
 	return session.isOffline, nil
 }
 
+func (b *Broker) SetAttemptsPerMode(sessionID, mode string, attempts int) error {
+	s, err := b.getSession(sessionID)
+	if err != nil {
+		return err
+	}
+	if s.attemptsPerMode == nil {
+		s.attemptsPerMode = make(map[string]int)
+	}
+	s.attemptsPerMode[mode] = attempts
+
+	return b.updateSession(sessionID, s)
+}
+
 // MaxRequestDuration exposes the broker's maxRequestDuration for tests.
 const MaxRequestDuration = maxRequestDuration
+
+// MaxAuthAttempts exposes the broker's maxAuthAttempts for tests.
+const MaxAuthAttempts = maxAuthAttempts
+
+// CachedPasswordMessage exposes the broker's cachedPasswordMessage for tests.
+const CachedPasswordMessage = cachedPasswordMessage
+
+// SetSessionMFAFlowActive lets tests set mfaFlowActive on a session without
+// going through entraAuth. The challenge info is left nil so that
+// tests can exercise the "flow active but no challenge metadata" guard in
+// entraMFAWaitAuth.
+func (b *Broker) SetSessionMFAFlowActive(sessionID string, flow *himmelblau.MFAFlowState) error {
+	s, err := b.getSession(sessionID)
+	if err != nil {
+		return err
+	}
+	s.mfaFlowActive = flow
+	return b.updateSession(sessionID, s)
+}
+
+// HandleIsAuthenticated runs handleIsAuthenticated synchronously with the
+// given context so tests can exercise cancellation handling directly;
+// through IsAuthenticated the outer ctx.Done() select returns first.
+func (b *Broker) HandleIsAuthenticated(ctx context.Context, sessionID string, authData map[string]string) (string, any) {
+	session, err := b.getSession(sessionID)
+	if err != nil {
+		return AuthDenied, unexpectedErrMsg("session not found")
+	}
+	return b.handleIsAuthenticated(ctx, &session, authData)
+}

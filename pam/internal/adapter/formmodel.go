@@ -11,6 +11,7 @@ import (
 	"github.com/canonical/authd/log"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/msteinert/pam/v2"
 )
 
 // formModel is the form layout type to allow authentication and return a password.
@@ -20,7 +21,8 @@ type formModel struct {
 	focusableModels []authenticationComponent
 	focusIndex      int
 
-	wait bool
+	wait       bool
+	submitting bool
 }
 
 // newFormModel initializes and return a new formModel.
@@ -60,6 +62,7 @@ func (m formModel) Init() tea.Cmd {
 func (m formModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case startAuthentication:
+		m.submitting = false
 		// Reset the entry.
 		for _, fm := range m.focusableModels {
 			switch entry := fm.(type) {
@@ -79,14 +82,26 @@ func (m formModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	// Key presses
 	case tea.KeyMsg:
+		if m.submitting {
+			return m, nil
+		}
+
 		switch msg.String() {
-		case "enter":
+		case "enter", "ctrl+d":
 			if m.focusIndex >= len(m.focusableModels) {
 				return m, nil
 			}
 			entry := m.focusableModels[m.focusIndex]
 			switch entry := entry.(type) {
 			case *textinputModel:
+				if msg.String() == "ctrl+d" && len(entry.Value()) == 0 {
+					return m, sendEvent(pamError{
+						status: pam.ErrAbort,
+						msg:    "Authentication aborted by user",
+					})
+				}
+
+				m.submitting = true
 				return m, sendEvent(isAuthenticatedRequested{
 					item: &authd.IARequest_AuthenticationData_Secret{
 						Secret: entry.Value(),

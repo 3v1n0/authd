@@ -32,33 +32,39 @@ CLIENT_ID=<CLIENT_ID>
 
 ## Installation
 
-Install the authd deb and the broker snap:
+For Ubuntu 26.04 LTS, install the authd deb and the broker snap from the archive:
 
-:::::{tab-set}
-:sync-group: broker
-
-::::{tab-item} Google IAM
-:sync: google
+:::{admonition} Add PPA before installing on Ubuntu 24.04
+:class: note
+On Ubuntu 24.04 LTS, add the following line at the start of your script, before `apt-get install authd`, to add the stable PPA:
 
 ```shell
 add-apt-repository -y ppa:ubuntu-enterprise-desktop/authd
-apt-get upgrade -y
-apt-get install -y authd
-snap install authd-google
 ```
-::::
+:::
 
+:::::{tab-set}
+:sync-group: broker
 
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
 ```shell
-add-apt-repository -y ppa:ubuntu-enterprise-desktop/authd
 apt-get upgrade -y
 apt-get install -y authd
 snap install authd-msentraid
 ```
 
+::::
+
+::::{tab-item} Google IAM
+:sync: google
+
+```shell
+apt-get upgrade -y
+apt-get install -y authd
+snap install authd-google
+```
 ::::
 
 
@@ -76,34 +82,34 @@ Configure authd and the broker:
 :::::{tab-set}
 :sync-group: broker
 
-::::{tab-item} Google IAM
-:sync: google
+::::{tab-item} Microsoft Entra ID
+:sync: msentraid
 
 ```shell
-sed -i "s|<CLIENT_ID>|$CLIENT_ID|g; s|<ISSUER_ID>|$ISSUER_ID|g" /var/snap/authd-google/current/broker.conf
-echo "ssh_allowed_suffixes = @example.com" >> /var/snap/authd-google/current/broker.conf
+sed -i "s|<CLIENT_ID>|$CLIENT_ID|g; s|<ISSUER_ID>|$ISSUER_ID|g" /var/snap/authd-msentraid/current/broker.conf
+echo "ssh_allowed_suffixes_first_auth = @example.onmicrosoft.com" >> /var/snap/authd-msentraid/current/broker.conf
 mkdir -p /etc/authd/brokers.d/
-cp /snap/authd-google/current/conf/authd/google.conf /etc/authd/brokers.d/
+cp /snap/authd-msentraid/current/conf/authd/msentraid.conf /etc/authd/brokers.d/
 cat <<EOF >> /etc/ssh/sshd_config.d/authd.conf
 UsePAM yes
-Match User *@example.com
+Match User *@example.onmicrosoft.com
     KbdInteractiveAuthentication yes
 EOF
 ```
 
 ::::
 
-::::{tab-item} Microsoft Entra ID
-:sync: msentraid
+::::{tab-item} Google IAM
+:sync: google
 
 ```shell
-sed -i "s|<CLIENT_ID>|$CLIENT_ID|g; s|<ISSUER_ID>|$ISSUER_ID|g" /var/snap/authd-msentraid/current/broker.conf
-echo "ssh_allowed_suffixes = @example.onmicrosoft.com" >> /var/snap/authd-msentraid/current/broker.conf
+sed -i "s|<CLIENT_ID>|$CLIENT_ID|g; s|<ISSUER_ID>|$ISSUER_ID|g" /var/snap/authd-google/current/broker.conf
+echo "ssh_allowed_suffixes_first_auth = @example.com" >> /var/snap/authd-google/current/broker.conf
 mkdir -p /etc/authd/brokers.d/
-cp /snap/authd-msentraid/current/conf/authd/msentraid.conf /etc/authd/brokers.d/
+cp /snap/authd-google/current/conf/authd/google.conf /etc/authd/brokers.d/
 cat <<EOF >> /etc/ssh/sshd_config.d/authd.conf
 UsePAM yes
-Match User *@example.onmicrosoft.com
+Match User *@example.com
     KbdInteractiveAuthentication yes
 EOF
 ```
@@ -124,22 +130,22 @@ Restart the authd daemon, the broker snap, and the SSH service:
 :::::{tab-set}
 :sync-group: broker
 
-::::{tab-item} Google IAM
-:sync: google
-
-```shell
-systemctl restart authd ssh
-snap restart authd-google
-```
-
-::::
-
 ::::{tab-item} Microsoft Entra ID
 :sync: msentraid
 
 ```shell
 systemctl restart authd ssh
 snap restart authd-msentraid
+```
+
+::::
+
+::::{tab-item} Google IAM
+:sync: google
+
+```shell
+systemctl restart authd ssh
+snap restart authd-google
 ```
 
 ::::

@@ -3,20 +3,84 @@ package main_test
 import (
 	"fmt"
 	"os"
-	"path/filepath"
+	"regexp"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/canonical/authd/examplebroker"
 	"github.com/canonical/authd/internal/proto/authd"
 	"github.com/canonical/authd/internal/testutils"
 	"github.com/canonical/authd/internal/testutils/golden"
+	"github.com/canonical/authd/internal/testutils/ptytest"
 	localgroupstestutils "github.com/canonical/authd/internal/users/localentries/testutils"
 	"github.com/canonical/authd/pam/internal/pam_test"
 	"github.com/stretchr/testify/require"
 )
 
-const nativeTapeBaseCommand = "./pam_authd %s socket=${%s} force_native_client=true"
+type nativePtySessionRunner struct {
+	clientPath string
+	socketPath string
+	cliEnv     []string
+}
+
+type nativePtySessionSpec struct {
+	action           pam_test.RunnerAction
+	clientOptions    clientOptions
+	username         string
+	extraArgs        []string
+	expectedExitCode int
+	// skipForceNative prevents force_native_client=true from being added to the
+	// PAM args, allowing the module to detect the client type from the environment
+	// (e.g. via TERM=dumb).
+	skipForceNative bool
+}
+
+type nativePtyTestContext struct {
+	runner      nativePtySessionRunner
+	baseSpec    nativePtySessionSpec
+	rawOutputs  []string
+	authdCancel func()
+}
+
+func (r nativePtySessionRunner) start(t *testing.T, spec nativePtySessionSpec) *ptytest.Console {
+	t.Helper()
+
+	// Native PAM client uses text-based prompts via PAM conversation, so it
+	// needs the pam-runner to support conversations (unlike the CLI client
+	// which handles all interaction via its own bubbletea TUI).
+	cliEnv := append(r.cliEnv,
+		fmt.Sprintf("%s=1", pam_test.RunnerEnvSupportsConversation),
+	)
+	extraArgs := spec.extraArgs
+	if !spec.skipForceNative {
+		extraArgs = append([]string{"force_native_client=true"}, extraArgs...)
+	}
+	c := startPAMRunner(t, r.clientPath, r.socketPath, spec.action, cliEnv, spec.clientOptions, extraArgs...)
+	if spec.username != "" && spec.clientOptions.PamUser == "" {
+		nativeEnterUsername(t, c, spec.username)
+	}
+
+	return c
+}
+
+func (ctx *nativePtyTestContext) waitForExitAndCapture(t *testing.T, c *ptytest.Console, expectedExitCode int) {
+	t.Helper()
+
+	c.RequireExitCode(t, expectedExitCode)
+	ctx.rawOutputs = append(ctx.rawOutputs, c.RawOutput())
+}
+
+func (ctx *nativePtyTestContext) run(t *testing.T, spec nativePtySessionSpec, test func(t *testing.T, c *ptytest.Console)) {
+	t.Helper()
+
+	c := ctx.runner.start(t, spec)
+	if test != nil {
+		test(t, c)
+	}
+	ctx.waitForExitAndCapture(t, c, spec.expectedExitCode)
+}
 
 func TestNativeAuthenticate(t *testing.T) {
 	t.Parallel()
@@ -25,454 +89,746 @@ func TestNativeAuthenticate(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	// Due to external dependencies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
-	// can't install the dependencies there. So we need to be able to skip these tests on-demand.
-	if os.Getenv("AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS") != "" {
-		t.Skip("Skipping tests with external dependencies as requested")
-	}
-
 	clientPath := t.TempDir()
 	cliEnv := preparePamRunnerTest(t, clientPath)
-	tapeCommand := fmt.Sprintf(nativeTapeBaseCommand, pam_test.RunnerActionLogin,
-		vhsTapeSocketVariable)
 
 	tests := map[string]struct {
-		tape          string
-		tapeSettings  []tapeSetting
-		tapeVariables map[string]string
-		tapeCommand   string
+		username string
 
 		clientOptions      clientOptions
-		currentUserNotRoot bool
-		userSelection      bool
-		oldDB              string
 		wantLocalGroups    bool
 		wantSeparateDaemon bool
 		skipRunnerCheck    bool
+		skipForceNative    bool
 		socketPath         string
+		extraArgs          []string
+		expectedUser       string
+		expectedExitCode   int
+
+		test            func(t *testing.T, c *ptytest.Console)
+		testWithSignals func(t *testing.T, c *ptytest.Console, signalFn func(username string))
+		after           func(t *testing.T, ctx *nativePtyTestContext)
 	}{
 		"Authenticate_user_successfully": {
-			tape: "simple_auth",
+			test:         nativeSimpleAuth,
+			expectedUser: testUserName(t, "native"),
+		},
+		"Authenticate_user_successfully_with_dumb_terminal": {
+			// Verify that TERM=dumb causes the module to fall back to native mode
+			// even without force_native_client=true. This covers non-interactive
+			// consumers like Emacs TRAMP, scripted sudo, and Ansible.
+			clientOptions:   clientOptions{Term: "dumb"},
+			skipForceNative: true,
+			test:            nativeSimpleAuthNonInteractive,
+			expectedUser:    testUserName(t, "dumb-terminal"),
 		},
 		"Authenticate_user_successfully_with_upper_case": {
-			tape: "simple_auth",
-			clientOptions: clientOptions{
-				PamUser: strings.ToUpper(vhsTestUserName(t, "upper-case-native")),
-			},
+			clientOptions: clientOptions{PamUser: strings.ToUpper(testUserName(t, "upper-case-native"))},
+			test:          nativeSimpleAuth,
+			expectedUser:  strings.ToUpper(testUserName(t, "upper-case-native")),
 		},
 		"Authenticate_user_successfully_with_user_selection": {
-			tape:          "simple_auth_with_user_selection",
-			userSelection: true,
-			tapeVariables: map[string]string{
-				vhsTapeUserVariable: examplebroker.UserIntegrationPrefix + "native-user-selection@example.com",
-			},
+			username:     testUserName(t, "user-selection-native"),
+			test:         nativeSimpleAuth,
+			expectedUser: testUserName(t, "user-selection-native"),
 		},
 		"Authenticate_user_successfully_using_upper_case_with_user_selection": {
-			tape:          "simple_auth_with_user_selection",
-			userSelection: true,
-			tapeVariables: map[string]string{
-				vhsTapeUserVariable: strings.ToUpper(vhsTestUserName(t, "selection-upper-case-native")),
-			},
+			username:     strings.ToUpper(testUserName(t, "selection-upper-case-native")),
+			test:         nativeSimpleAuth,
+			expectedUser: strings.ToUpper(testUserName(t, "selection-upper-case-native")),
 		},
 		"Authenticate_user_successfully_with_invalid_connection_timeout": {
-			tape: "simple_auth",
-			clientOptions: clientOptions{
-				PamUser:    "user-integration-simple-auth-invalid-timeout-native@example.com",
-				PamTimeout: "invalid",
-			},
+			clientOptions: clientOptions{PamTimeout: "invalid"},
+			test:          nativeSimpleAuth,
+			expectedUser:  testUserName(t, "invalid-timeout-native"),
 		},
 		"Authenticate_user_successfully_with_password_only_supported_method": {
-			tape: "simple_auth",
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationAuthModesPrefix + "password-integration-native@example.com",
-			},
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationAuthModesPrefix, "password-integration-native")},
+			test:          nativeSimpleAuth,
+			expectedUser:  testUserNameFull(t, examplebroker.UserIntegrationAuthModesPrefix, "password-integration-native"),
 		},
 		"Authenticate_user_successfully_with_password_only_supported_method_in_polkit": {
-			tape: "simple_auth_one_broker_only",
 			clientOptions: clientOptions{
 				PamServiceName: "polkit-1",
-				PamUser: vhsTestUserNameFull(t,
-					examplebroker.UserIntegrationAuthModesPrefix, "password-integration-polkit-native@example.com"),
+				PamUser:        testUserNameFull(t, examplebroker.UserIntegrationAuthModesPrefix, "password-integration-polkit-native"),
 			},
-		},
-		"Authenticate_user_successfully_after_db_migration": {
-			tape:  "simple_auth_with_auto_selected_broker",
-			oldDB: "authd_0.4.1_bbolt_with_mixed_case_users",
-			clientOptions: clientOptions{
-				PamUser: "user-integration-cached@example.com",
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Gimme your password`)
+				c.SendLine(t, "goodpass")
+				nativeWaitForResult(t, c)
 			},
-		},
-		"Authenticate_user_with_upper_case_using_lower_case_after_db_migration": {
-			tape:  "simple_auth_with_auto_selected_broker",
-			oldDB: "authd_0.4.1_bbolt_with_mixed_case_users",
-			clientOptions: clientOptions{
-				PamUser: "user-integration-upper-case@example.com",
-			},
-		},
-		"Authenticate_user_with_mixed_case_after_db_migration": {
-			tape:  "simple_auth_with_auto_selected_broker",
-			oldDB: "authd_0.4.1_bbolt_with_mixed_case_users",
-			clientOptions: clientOptions{
-				PamUser: "user-integration-WITH-Mixed-CaSe@example.com",
-			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationAuthModesPrefix, "password-integration-polkit-native"),
 		},
 		"Authenticate_user_with_mfa": {
-			tape:         "mfa_auth",
-			tapeSettings: []tapeSetting{{vhsHeight, 1200}},
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationMfaPrefix + "auth-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "auth-native")},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeMfaAuth(t, c, func() { signalFn("") })
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "auth-native"),
+		},
+		"Authenticate_twice_with_mfa_user": {
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "mfa-twice-native")},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeMfaAuth(t, c, func() { signalFn("") })
+			},
+			after: func(t *testing.T, ctx *nativePtyTestContext) {
+				t.Helper()
+				signalFn := func() {
+					testutils.CreateBrokerCompletionSignal(t, ctx.runner.socketPath, ctx.baseSpec.clientOptions.PamUser)
+				}
+				ctx.run(t, nativePtySessionSpec{
+					action:        pam_test.RunnerActionLogin,
+					clientOptions: ctx.baseSpec.clientOptions,
+				}, func(t *testing.T, c *ptytest.Console) {
+					t.Helper()
+					nativeMfaAuth(t, c, signalFn)
+				})
+			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "mfa-twice-native"),
 		},
 		"Authenticate_user_with_form_mode_with_button": {
-			tape:         "form_with_button",
-			tapeSettings: []tapeSetting{{vhsHeight, 700}},
-			tapeVariables: map[string]string{
-				"AUTHD_FORM_BUTTON_TAPE_ITEM": "8",
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "8")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "2")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				c.WaitFor(t, `Enter your one time credential:`)
+				sendEchoedLine(t, c, "temporary pass00")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Authenticate_user_with_form_mode_with_button_two_supported_methods": {
-			tape: "form_with_button",
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationAuthModesPrefix + "totp_with_button,password-integration-native@example.com",
+			clientOptions: clientOptions{PamUser: examplebroker.UserIntegrationAuthModesPrefix + "totp_with_button,password-integration-native@example.com"},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "2")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "2")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				c.WaitFor(t, `Enter your one time credential:`)
+				sendEchoedLine(t, c, "temporary pass00")
+				nativeWaitForResult(t, c)
 			},
-			tapeSettings: []tapeSetting{{vhsHeight, 700}},
-			tapeVariables: map[string]string{
-				"AUTHD_FORM_BUTTON_TAPE_ITEM": "2",
-			},
+			expectedUser: examplebroker.UserIntegrationAuthModesPrefix + "totp_with_button,password-integration-native@example.com",
 		},
 		"Authenticate_user_with_form_mode_with_button_in_polkit": {
-			tape:          "form_with_button_polkit",
-			tapeSettings:  []tapeSetting{{vhsHeight, 700}},
 			clientOptions: clientOptions{PamServiceName: "polkit-1"},
-			tapeVariables: map[string]string{
-				"AUTHD_FORM_BUTTON_TAPE_ITEM": "7",
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Gimme your password`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "7")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "2")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				c.WaitFor(t, `Enter your one time credential`)
+				sendEchoedLine(t, c, "temporary pass00")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Authenticate_user_with_qr_code": {
-			tape:         "qr_code",
-			tapeSettings: []tapeSetting{{vhsHeight, 3000}},
-			tapeVariables: map[string]string{
-				"AUTHD_QRCODE_TAPE_ITEM":      "7",
-				"AUTHD_QRCODE_TAPE_ITEM_NAME": "QR code",
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeQRCodeAuth(t, c, "7", testUserName(t, "native"), signalFn)
 			},
+			expectedUser: testUserName(t, "native"),
+		},
+		"Authenticate_user_with_qr_code_without_code": {
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationQRcodeWithoutCodePrefix, "native")},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeQRCodeAuth(t, c, "7", testUserNameFull(t, examplebroker.UserIntegrationQRcodeWithoutCodePrefix, "native"), signalFn)
+			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationQRcodeWithoutCodePrefix, "native"),
 		},
 		"Authenticate_user_with_qr_code_in_a_TTY": {
-			tape:         "qr_code",
-			tapeSettings: []tapeSetting{{vhsHeight, 4000}},
-			tapeVariables: map[string]string{
-				"AUTHD_QRCODE_TAPE_ITEM":      "7",
-				"AUTHD_QRCODE_TAPE_ITEM_NAME": "QR code",
+			clientOptions: clientOptions{Term: "linux"},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeQRCodeAuth(t, c, "7", testUserName(t, "native"), signalFn)
 			},
-			clientOptions: clientOptions{
-				Term: "linux",
-			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Authenticate_user_with_qr_code_in_a_TTY_session": {
-			tape:         "qr_code",
-			tapeSettings: []tapeSetting{{vhsHeight, 4000}},
-			tapeVariables: map[string]string{
-				"AUTHD_QRCODE_TAPE_ITEM":      "7",
-				"AUTHD_QRCODE_TAPE_ITEM_NAME": "QR code",
+			clientOptions: clientOptions{Term: "xterm-256color", SessionType: "tty"},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeQRCodeAuth(t, c, "7", testUserName(t, "native"), signalFn)
 			},
-			clientOptions: clientOptions{
-				Term: "xterm-256color", SessionType: "tty",
-			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Authenticate_user_with_qr_code_in_screen": {
-			tape:         "qr_code",
-			tapeSettings: []tapeSetting{{vhsHeight, 4000}},
-			tapeVariables: map[string]string{
-				"AUTHD_QRCODE_TAPE_ITEM":      "7",
-				"AUTHD_QRCODE_TAPE_ITEM_NAME": "QR code",
+			clientOptions: clientOptions{Term: "screen"},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeQRCodeAuth(t, c, "7", testUserName(t, "native"), signalFn)
 			},
-			clientOptions: clientOptions{
-				Term: "screen",
-			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Authenticate_user_with_qr_code_in_ssh": {
-			tape:         "qr_code",
-			tapeSettings: []tapeSetting{{vhsHeight, 3500}},
-			tapeVariables: map[string]string{
-				"AUTHD_QRCODE_TAPE_ITEM":      "2",
-				"AUTHD_QRCODE_TAPE_ITEM_NAME": "Login code",
-			},
 			clientOptions: clientOptions{
-				PamUser:        examplebroker.UserIntegrationPreCheckPrefix + "ssh-service-qr-code-native@example.com",
+				PamUser:        testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-service-qr-code-native"),
 				PamServiceName: "sshd",
 			},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				nativeQRCodeAuth(t, c, "2", testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-service-qr-code-native"), signalFn)
+			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-service-qr-code-native"),
 		},
 		"Authenticate_user_and_reset_password_while_enforcing_policy": {
-			tape:         "mandatory_password_reset",
-			tapeSettings: []tapeSetting{{vhsHeight, 550}},
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationNeedsResetPrefix + "mandatory-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationNeedsResetPrefix, "mandatory-native")},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationNeedsResetPrefix, "mandatory-native"),
 		},
 		"Authenticate_user_and_reset_password_with_case_insensitive_user_selection": {
-			tape:          "mandatory_password_reset_case_insensitive",
-			tapeSettings:  []tapeSetting{{vhsHeight, 600}},
-			userSelection: true,
-			tapeVariables: map[string]string{
-				vhsTapeUserVariable: vhsTestUserNameFull(t,
-					examplebroker.UserIntegrationNeedsResetPrefix, "case-insensitive-native"),
-				"AUTHD_TEST_TAPE_UPPER_CASE_USERNAME": strings.ToUpper(
-					vhsTestUserNameFull(t,
-						examplebroker.UserIntegrationNeedsResetPrefix, "CASE-INSENSITIVE-NATIVE")),
-				"AUTHD_TEST_TAPE_MIXED_CASE_USERNAME": vhsTestUserNameFull(t,
-					examplebroker.UserIntegrationNeedsResetPrefix, "Case-INSENSITIVE-native"),
+			username:     testUserNameFull(t, examplebroker.UserIntegrationNeedsResetPrefix, "case-insensitive-native"),
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationNeedsResetPrefix, "case-insensitive-native"),
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForResult(t, c)
+			},
+			after: func(t *testing.T, ctx *nativePtyTestContext) {
+				t.Helper()
+
+				upper := strings.ToUpper(ctx.baseSpec.username)
+				mixed := strings.Replace(ctx.baseSpec.username, "case-insensitive", "Case-INSENSITIVE", 1)
+				for _, username := range []string{upper, mixed} {
+					ctx.run(t, nativePtySessionSpec{action: pam_test.RunnerActionLogin, username: username}, func(t *testing.T, c *ptytest.Console) {
+						t.Helper()
+						nativeWaitForLoginPasswordPrompt(t, c, `Gimme your password:`)
+						c.SendLine(t, "authd2404")
+						nativeWaitForResult(t, c)
+					})
+				}
 			},
 		},
 		"Authenticate_user_with_mfa_and_reset_password_while_enforcing_policy": {
-			tape:         "mfa_reset_pwquality_auth",
-			tapeSettings: []tapeSetting{{vhsHeight, 3000}},
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationMfaWithResetPrefix + "pwquality-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationMfaWithResetPrefix, "pwquality-native")},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				username := testUserNameFull(t, examplebroker.UserIntegrationMfaWithResetPrefix, "pwquality-native")
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+				signalFn(username)
+				c.SendLine(t, "")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				c.WaitFor(t, `Enter your new password`)
+				c.SendLine(t, "password")
+				c.WaitFor(t, `The password fails the dictionary check`)
+				c.WaitFor(t, `Enter your new password`)
+				c.SendLine(t, "1234")
+				c.WaitFor(t, `The password is shorter than`)
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationMfaWithResetPrefix, "pwquality-native"),
 		},
 		"Authenticate_user_with_mfa_and_reset_same_password": {
-			tape:         "mfa_reset_same_password",
-			tapeSettings: []tapeSetting{{vhsHeight, 3000}},
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationMfaWithResetPrefix + "same-password-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationMfaWithResetPrefix, "same-password-native")},
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				username := testUserNameFull(t, examplebroker.UserIntegrationMfaWithResetPrefix, "same-password-native")
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+				signalFn(username)
+				c.SendLine(t, "")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationMfaWithResetPrefix, "same-password-native"),
 		},
 		"Authenticate_user_and_offer_password_reset": {
-			tape: "optional_password_reset_skip",
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationCanResetPrefix + "skip-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationCanResetPrefix, "skip-native")},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "2")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationCanResetPrefix, "skip-native"),
 		},
 		"Authenticate_user_and_accept_password_reset": {
-			tape: "optional_password_reset_accept",
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationCanResetPrefix + "accept-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationCanResetPrefix, "accept-native")},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationCanResetPrefix, "accept-native"),
 		},
 		"Authenticate_user_switching_auth_mode": {
-			tape:          "switch_auth_mode",
-			tapeSettings:  []tapeSetting{{vhsHeight, 3000}},
-			clientOptions: clientOptions{PamUser: "user-integration-switch-mode-native@example.com"},
-			tapeVariables: map[string]string{
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_SEND_URL_TO_EMAIL_ITEM":   "2",
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_FIDO_DEVICE_FOO_ITEM":     "3",
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_PHONE_33_ITEM":            "4",
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_PHONE_1_ITEM":             "5",
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_PIN_CODE_ITEM":            "6",
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_QR_OR_LOGIN_CODE_ITEM":    "7",
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_AUTHENTICATION_CODE_ITEM": "8",
-
-				"AUTHD_SWITCH_AUTH_MODE_TAPE_QR_OR_LOGIN_CODE_ITEM_NAME": "QR code",
+			clientOptions: clientOptions{PamUser: testUserName(t, "switch-mode-native")},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				for _, choice := range []string{"2", "3", "4", "5", "6", "7", "8"} {
+					c.WaitFor(t, `Choose your authentication flow:`)
+					sendEchoedLine(t, c, choice)
+					switch choice {
+					case "2":
+						c.WaitFor(t, `Click on the link received at`)
+						sendEchoedLine(t, c, "r")
+					case "3":
+						c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+						sendEchoedLine(t, c, "r")
+					case "4", "5":
+						c.WaitFor(t, `Unlock your phone`)
+						sendEchoedLine(t, c, "r")
+					case "6":
+						c.WaitFor(t, `Enter your pin code:`)
+						sendEchoedLine(t, c, "r")
+					case "7":
+						c.WaitFor(t, `Choose action:`)
+						sendEchoedLine(t, c, "r")
+					case "8":
+						c.WaitFor(t, `Choose action:`)
+						sendEchoedLine(t, c, "r")
+					}
+				}
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "invalid-selection")
+				c.WaitFor(t, `PAM Error Message: Unsupported input`)
+				sendEchoedLine(t, c, "-1")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "6")
+				c.WaitFor(t, `Enter your pin code:`)
+				sendEchoedLine(t, c, "4242")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserName(t, "switch-mode-native"),
 		},
 		"Authenticate_user_switching_username": {
-			tape:          "switch_username",
-			userSelection: true,
-			tapeVariables: map[string]string{
-				vhsTapeUserVariable:               examplebroker.UserIntegrationPrefix + "native-username@example.com",
-				vhsTapeUserVariable + "_SWITCHED": examplebroker.UserIntegrationPrefix + "native-username-switched@example.com",
+			username: testUserName(t, "native-username"),
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `(?s)== Provider selection ==.*Choose your provider:`)
+				sendEchoedLine(t, c, "r")
+				nativeEnterUsername(t, c, testUserName(t, "native-username-switched"))
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				nativeWaitForResult(t, c)
 			},
 		},
 		"Authenticate_user_switching_to_local_broker": {
-			tape:         "switch_local_broker",
-			tapeSettings: []tapeSetting{{vhsHeight, 700}},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "invalid-ID")
+				c.WaitFor(t, `PAM Error Message: Unsupported input`)
+				sendEchoedLine(t, c, "555")
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "1")
+				nativeWaitForResult(t, c)
+			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Authenticate_user_and_add_it_to_local_group": {
-			tape:            "local_group",
-			tapeSettings:    []tapeSetting{{vhsHeight, 700}},
+			clientOptions:   clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationLocalGroupsPrefix, "auth-native")},
 			wantLocalGroups: true,
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationLocalGroupsPrefix + "auth-native@example.com",
-			},
+			test:            nativeSimpleAuth,
+			expectedUser:    testUserNameFull(t, examplebroker.UserIntegrationLocalGroupsPrefix, "auth-native"),
 		},
 		"Authenticate_user_on_ssh_service": {
-			tape: "simple_ssh_auth",
 			clientOptions: clientOptions{
-				PamUser:        examplebroker.UserIntegrationPreCheckPrefix + "ssh-service-native@example.com",
+				PamUser:        testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-service-native"),
 				PamServiceName: "sshd",
 			},
+			test:         nativeSimpleAuth,
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-service-native"),
 		},
 		"Authenticate_user_on_ssh_service_with_custom_name_and_connection_env": {
-			tape: "simple_ssh_auth",
 			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationPreCheckPrefix + "ssh-connection-native@example.com",
+				PamUser: testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-connection-native"),
 				PamEnv:  []string{"SSH_CONNECTION=foo-connection"},
 			},
+			test:         nativeSimpleAuth,
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-connection-native"),
 		},
 		"Authenticate_user_on_ssh_service_with_custom_name_and_auth_info_env": {
-			tape: "simple_ssh_auth",
 			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationPreCheckPrefix + "ssh-auth-info-native@example.com",
+				PamUser: testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-auth-info-native"),
 				PamEnv:  []string{"SSH_AUTH_INFO_0=foo-authinfo"},
 			},
+			test:         nativeSimpleAuth,
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationPreCheckPrefix, "ssh-auth-info-native"),
 		},
 		"Authenticate_with_warnings_on_unsupported_arguments": {
-			tape: "simple_auth_with_unsupported_args",
-			tapeCommand: strings.ReplaceAll(tapeCommand, "force_native_client=true",
-				"invalid_flag=foo force_native_client=true bar"),
+			extraArgs:    []string{"invalid_flag=foo", "bar"},
+			test:         nativeSimpleAuth,
+			expectedUser: testUserName(t, "native"),
 		},
-
 		"Remember_last_successful_broker_and_mode": {
-			tape:         "remember_broker_and_mode",
-			tapeSettings: []tapeSetting{{vhsHeight, 800}},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "8")
+				c.WaitFor(t, `Choose action:`)
+				sendEchoedLine(t, c, "1")
+				c.WaitFor(t, `Enter your one time credential:`)
+				sendEchoedLine(t, c, "temporary pass0")
+				nativeWaitForResult(t, c)
+			},
+			after: func(t *testing.T, ctx *nativePtyTestContext) {
+				t.Helper()
+				ctx.run(t, nativePtySessionSpec{action: pam_test.RunnerActionLogin, clientOptions: clientOptions{PamUser: testUserName(t, "native")}}, func(t *testing.T, c *ptytest.Console) {
+					t.Helper()
+					c.WaitFor(t, `Choose action:`)
+					sendEchoedLine(t, c, "1")
+					c.WaitFor(t, `Enter your one time credential:`)
+					sendEchoedLine(t, c, "temporary pass0")
+					nativeWaitForResult(t, c)
+				})
+			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Autoselect_local_broker_for_local_user": {
-			tape:          "local_user",
-			userSelection: true,
+			username:     "root",
+			test:         func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser: "root",
 		},
 		"Autoselect_local_broker_for_local_user_on_polkit": {
-			tape:          "local_user",
-			userSelection: true,
+			username:      "root",
 			clientOptions: clientOptions{PamServiceName: "polkit-1"},
+			test:          func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser:  "root",
 		},
 		"Autoselect_local_broker_for_local_user_preset": {
-			tape: "local_user_preset",
-			clientOptions: clientOptions{
-				PamUser: "root",
-			},
+			clientOptions: clientOptions{PamUser: "root"},
+			test:          func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser:  "root",
 		},
 		"Autoselect_local_broker_for_local_user_preset_on_polkit": {
-			tape: "local_user_preset",
-			clientOptions: clientOptions{
-				PamServiceName: "polkit-1",
-				PamUser:        "root",
-			},
+			clientOptions: clientOptions{PamServiceName: "polkit-1", PamUser: "root"},
+			test:          func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser:  "root",
 		},
-
-		"Deny_authentication_if_current_user_is_not_considered_as_root": {
-			tape: "not_root", currentUserNotRoot: true,
-		},
-
 		"Deny_authentication_if_max_attempts_reached": {
-			tape:         "max_attempts",
-			tapeSettings: []tapeSetting{{vhsHeight, 700}},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				for i := 0; i < 5; i++ {
+					c.WaitFor(t, `Gimme your password:`)
+					c.SendLine(t, "wrongpass")
+				}
+				nativeWaitForResult(t, c)
+			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Deny_authentication_if_user_does_not_exist": {
-			tape: "unexistent_user",
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationUnexistent,
+			clientOptions: clientOptions{PamUser: examplebroker.UserIntegrationUnexistent},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: examplebroker.UserIntegrationUnexistent,
 		},
 		"Deny_authentication_if_user_does_not_exist_and_matches_cancel_key": {
-			tape:          "cancel_key_user",
-			userSelection: true,
+			username:     "r",
+			test:         nativeSimpleAuth,
+			expectedUser: "r",
 		},
 		"Deny_authentication_if_newpassword_does_not_match_required_criteria": {
-			tape:         "bad_password",
-			tapeSettings: []tapeSetting{{vhsHeight, 800}},
-			clientOptions: clientOptions{
-				PamUser: examplebroker.UserIntegrationNeedsResetPrefix + "bad-password-native@example.com",
+			clientOptions: clientOptions{PamUser: testUserNameFull(t, examplebroker.UserIntegrationNeedsResetPrefix, "bad-password-native")},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "short")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "password")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "authd2404")
+				c.WaitFor(t, `Confirm Password:`)
+				c.SendLine(t, "mismatch")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "authd2404")
+				c.WaitFor(t, `Confirm Password:`)
+				c.SendLine(t, "authd2404")
+				nativeWaitForResult(t, c)
 			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationNeedsResetPrefix, "bad-password-native"),
 		},
-
 		"Prevent_preset_user_from_switching_username": {
-			tape:         "switch_preset_username",
-			tapeSettings: []tapeSetting{{vhsHeight, 800}},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Unsupported input`)
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "2")
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Unsupported input`)
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Unsupported input`)
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "2")
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				nativeWaitForResult(t, c)
+			},
+			expectedUser: testUserName(t, "native"),
 		},
-
 		"Exit_authd_if_local_broker_is_selected": {
-			tape: "local_broker",
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "1")
+				nativeWaitForResult(t, c)
+			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Exit_if_user_is_not_pre-checked_on_ssh_service": {
-			tape: "local_ssh",
-			clientOptions: clientOptions{
-				PamServiceName: "sshd",
-			},
+			clientOptions: clientOptions{PamServiceName: "sshd"},
+			test:          func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser:  testUserName(t, "native"),
 		},
 		"Exit_if_user_is_not_pre-checked_on_custom_ssh_service_with_connection_env": {
-			tape: "local_ssh",
-			clientOptions: clientOptions{
-				PamEnv: []string{"SSH_CONNECTION=foo-connection"},
-			},
+			clientOptions: clientOptions{PamEnv: []string{"SSH_CONNECTION=foo-connection"}},
+			test:          func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser:  testUserName(t, "native"),
 		},
 		"Exit_if_user_is_not_pre-checked_on_custom_ssh_service_with_auth_info_env": {
-			tape: "local_ssh",
-			clientOptions: clientOptions{
-				PamEnv: []string{"SSH_AUTH_INFO_0=foo-authinfo"},
-			},
+			clientOptions: clientOptions{PamEnv: []string{"SSH_AUTH_INFO_0=foo-authinfo"}},
+			test:          func(t *testing.T, c *ptytest.Console) { t.Helper(); nativeWaitForResult(t, c) },
+			expectedUser:  testUserName(t, "native"),
 		},
-		// FIXME: While this works now, it requires proper handling via signal_fd
 		"Exit_authd_if_user_sigints": {
-			tape:            "sigint",
-			skipRunnerCheck: true,
+			skipRunnerCheck:  true,
+			expectedExitCode: 128 + int(syscall.SIGINT),
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendKey(t, ptytest.KeyCtrlC)
+			},
+			expectedUser: testUserName(t, "native"),
 		},
 		"Exit_if_authd_is_stopped": {
-			tape:               "authd_stopped",
 			wantSeparateDaemon: true,
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Choose your provider:`)
+			},
+			after: func(t *testing.T, ctx *nativePtyTestContext) {
+				t.Helper()
+				if ctx.authdCancel != nil {
+					ctx.authdCancel()
+				}
+			},
+			expectedUser: testUserName(t, "native"),
+		},
+		//nolint:dupl // This is not a duplicate test
+		"Exit_the_pam_client_if_parent_pam_application_is_stopped": {
+			skipRunnerCheck:  true,
+			expectedExitCode: 128 + int(syscall.SIGTERM),
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+
+				c.WaitFor(t, `Choose your provider:`)
+
+				parentPID := c.Pid()
+				helperPID := findPAMExecChildPID(t, parentPID)
+				t.Logf("Found %s helper child pid %d under PAM runner pid %d",
+					pamExecChildName, helperPID, parentPID)
+
+				runnerLogPath, ok := c.Env(pam_test.RunnerEnvLogFile)
+				require.True(t, ok, "missing %s in pty runner environment", pam_test.RunnerEnvLogFile)
+				t.Logf("Found %s logfile path: %s", pamExecChildName, runnerLogPath)
+
+				// Kill the parent PAM application. This tears down the
+				// private D-Bus server that the PAM module was hosting for
+				// the helper, which is the condition the helper is supposed
+				// to detect.
+				c.Signal(t, syscall.SIGTERM)
+
+				// The helper must terminate on its own once it sees the
+				// disconnect.
+				require.Eventually(t, func() bool {
+					return syscall.Kill(helperPID, 0) == syscall.ESRCH
+				}, sleepDuration(1*time.Second), 50*time.Millisecond,
+					"authd-pam helper child (pid %d) was not terminated after parent was killed",
+					helperPID)
+
+				content, err := os.ReadFile(runnerLogPath)
+				require.NoError(t, err, "failed to read PAM runner log file")
+				require.Contains(t, string(content), "D-Bus Connection closed")
+			},
 		},
 
 		"Error_if_cannot_connect_to_authd": {
-			tape:       "connection_error",
 			socketPath: "/some-path/not-existent-socket",
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `could not connect to unix:`)
+				nativeWaitForResult(t, c)
+			},
+			expectedUser: testUserName(t, "native"),
 		},
 	}
+
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			outDir := t.TempDir()
-			err := os.Symlink(filepath.Join(clientPath, "pam_authd"),
-				filepath.Join(outDir, "pam_authd"))
-			require.NoError(t, err, "Setup: symlinking the pam client")
-
-			var socketPath, groupFileOutput, pidFile string
-			if tc.wantLocalGroups || tc.currentUserNotRoot || tc.wantSeparateDaemon ||
-				tc.oldDB != "" {
-				// For the local groups tests we need to run authd again so that it has
-				// special environment that saves the updated group file to a writable
-				// location for us to test.
-				// Similarly for the not-root tests authd has to run in a more restricted way.
-				// In the other cases this is not needed, so we can just use a shared authd.
+			var socketPath, groupFileOutput string
+			var authdCancel func()
+			switch {
+			case tc.wantSeparateDaemon:
 				var groupFile string
 				groupFileOutput, groupFile = prepareGroupFiles(t)
-
-				if tc.wantLocalGroups || tc.oldDB != "" {
-					// We don't want to use separate input ant output files here.
-					groupFileOutput = groupFile
-				}
-
-				pidFile = filepath.Join(outDir, "authd.pid")
-
-				args := []testutils.DaemonOption{
+				socketPath, authdCancel = runAuthdForTestingWithCancel(t, false,
+					testutils.WithCurrentUserAsRoot,
 					testutils.WithGroupFile(groupFile),
 					testutils.WithGroupFileOutput(groupFileOutput),
-					testutils.WithPidFile(pidFile),
-					testutils.WithEnvironment(useOldDatabaseEnv(t, tc.oldDB)...),
+				)
+				t.Cleanup(authdCancel)
+			case tc.wantLocalGroups:
+				var groupFile string
+				groupFileOutput, groupFile = prepareGroupFiles(t)
+				if tc.wantLocalGroups {
+					groupFileOutput = groupFile
 				}
-				if !tc.currentUserNotRoot {
-					args = append(args, testutils.WithCurrentUserAsRoot)
-				}
-
-				socketPath = runAuthd(t, args...)
-			} else {
+				socketPath = runAuthd(t,
+					testutils.WithCurrentUserAsRoot,
+					testutils.WithGroupFile(groupFile),
+					testutils.WithGroupFileOutput(groupFileOutput),
+				)
+			default:
 				socketPath, groupFileOutput = sharedAuthd(t)
 			}
 			if tc.socketPath != "" {
 				socketPath = tc.socketPath
 			}
 
-			if tc.tapeCommand == "" {
-				tc.tapeCommand = tapeCommand
+			clientOptions := tc.clientOptions
+			username := tc.username
+			expectedUser := tc.expectedUser
+			if clientOptions.PamUser == "" && username == "" {
+				clientOptions.PamUser = testUserName(t, "native")
+			}
+			if tc.clientOptions.PamUser == "" && tc.username == "" {
+				expectedUser = clientOptions.PamUser
+			}
+			if expectedUser == "" {
+				switch {
+				case username != "":
+					expectedUser = username
+				case clientOptions.PamUser != "":
+					expectedUser = clientOptions.PamUser
+				}
 			}
 
-			if tc.clientOptions.PamUser == "" && !tc.userSelection {
-				tc.clientOptions.PamUser = vhsTestUserName(t, "native")
+			ctx := &nativePtyTestContext{
+				runner: nativePtySessionRunner{
+					clientPath: clientPath,
+					socketPath: socketPath,
+					cliEnv:     cliEnv,
+				},
+				baseSpec: nativePtySessionSpec{
+					action:          pam_test.RunnerActionLogin,
+					clientOptions:   clientOptions,
+					username:        username,
+					extraArgs:       tc.extraArgs,
+					skipForceNative: tc.skipForceNative,
+				},
+				authdCancel: authdCancel,
 			}
 
-			td := newTapeData(tc.tape, outDir, tc.tapeSettings...)
-			td.Command = tc.tapeCommand
-			td.Env[vhsTapeSocketVariable] = socketPath
-			td.Env[pam_test.RunnerEnvSupportsConversation] = "1"
-			td.Env["AUTHD_TEST_PID_FILE"] = pidFile
-			td.Variables = tc.tapeVariables
-			td.AddClientOptions(t, tc.clientOptions)
-			td.RunVHS(t, vhsTestTypeNative, cliEnv)
-			got := td.SanitizedOutput(t)
+			c := ctx.runner.start(t, ctx.baseSpec)
+			if tc.testWithSignals != nil {
+				signalFn := func(_ string) {
+					testutils.CreateBrokerCompletionSignal(t, socketPath, expectedUser)
+				}
+				tc.testWithSignals(t, c, signalFn)
+			} else if tc.test != nil {
+				tc.test(t, c)
+			}
+			if name == "Exit_if_authd_is_stopped" && ctx.authdCancel != nil {
+				ctx.authdCancel()
+				ctx.authdCancel = nil
+				sendEchoedLine(t, c, "2")
+				nativeWaitForResult(t, c)
+			}
+			if name == "Authenticate_user_switching_username" {
+				expectedUser = testUserName(t, "native-username-switched")
+			}
+			ctx.waitForExitAndCapture(t, c, tc.expectedExitCode)
+			if tc.after != nil {
+				tc.after(t, ctx)
+			}
+
+			got := ptySanitizeOutput(t, strings.Join(ctx.rawOutputs, "\n"))
 			golden.CheckOrUpdate(t, got)
-
 			localgroupstestutils.RequireGroupFile(t, groupFileOutput, golden.Path(t))
-
 			if !tc.skipRunnerCheck {
-				requireRunnerResultForUser(t, authd.SessionMode_LOGIN, tc.clientOptions.PamUser, got)
+				requireRunnerResultForUser(t, authd.SessionMode_LOGIN, expectedUser, got)
 			}
 		})
 	}
@@ -485,147 +841,365 @@ func TestNativeChangeAuthTok(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	// Due to external dependencies such as `vhs`, we can't run the tests in some environments (like LP builders), as we
-	// can't install the dependencies there. So we need to be able to skip these tests on-demand.
-	if os.Getenv("AUTHD_SKIP_EXTERNAL_DEPENDENT_TESTS") != "" {
-		t.Skip("Skipping tests with external dependencies as requested")
-	}
-
-	// This test is flaky, see https://github.com/canonical/authd/issues/1330
-	if os.Getenv("AUTHD_SKIP_FLAKY_TESTS") != "" {
-		t.Skip("skipping flaky test")
-	}
-
 	clientPath := t.TempDir()
 	cliEnv := preparePamRunnerTest(t, clientPath)
 
-	tapeCommand := fmt.Sprintf(nativeTapeBaseCommand, pam_test.RunnerActionPasswd,
-		vhsTapeSocketVariable)
-	tapeLoginCommand := fmt.Sprintf(nativeTapeBaseCommand, pam_test.RunnerActionLogin,
-		vhsTapeSocketVariable)
-
 	tests := map[string]struct {
-		tape          string
-		tapeSettings  []tapeSetting
-		tapeVariables map[string]string
-		clientOptions clientOptions
+		username string
 
-		currentUserNotRoot bool
-		skipRunnerCheck    bool
+		clientOptions    clientOptions
+		skipRunnerCheck  bool
+		expectedUser     string
+		expectedExitCode int
+
+		test            func(t *testing.T, c *ptytest.Console)
+		testWithSignals func(t *testing.T, c *ptytest.Console, signalFn func(username string))
+		after           func(t *testing.T, ctx *nativePtyTestContext)
 	}{
 		"Change_password_successfully_and_authenticate_with_new_one": {
-			tape: "passwd_simple",
-			tapeVariables: map[string]string{
-				"AUTHD_TEST_TAPE_LOGIN_COMMAND":  tapeLoginCommand,
-				vhsTapeUserVariable:              vhsTestUserName(t, "simple"),
-				"AUTHD_TEST_TAPE_LOGIN_USERNAME": vhsTestUserName(t, "simple"),
-			},
+			username:     testUserName(t, "simple"),
+			expectedUser: testUserName(t, "simple"),
+			test:         nativePasswdSimpleChange,
+			after:        nativeReloginAfterPasswordChange,
 		},
 		"Change_password_successfully_and_authenticate_with_new_one_with_single_broker_and_password_only_supported_method": {
-			tape: "passwd_simple_one_broker_only",
-			tapeVariables: map[string]string{
-				"AUTHD_TEST_TAPE_LOGIN_COMMAND": tapeLoginCommand,
-			},
 			clientOptions: clientOptions{
 				PamServiceName: "polkit-1",
-				PamUser: vhsTestUserNameFull(t,
-					examplebroker.UserIntegrationAuthModesPrefix, "password,mandatoryreset-integration-polkit"),
+				PamUser:        testUserNameFull(t, examplebroker.UserIntegrationAuthModesPrefix, "password,mandatoryreset-integration-polkit"),
+			},
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationAuthModesPrefix, "password,mandatoryreset-integration-polkit"),
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Gimme your password`)
+				c.SendLine(t, "goodpass")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
+			after: func(t *testing.T, ctx *nativePtyTestContext) {
+				t.Helper()
+				ctx.run(t, nativePtySessionSpec{action: pam_test.RunnerActionLogin, clientOptions: ctx.baseSpec.clientOptions}, func(t *testing.T, c *ptytest.Console) {
+					t.Helper()
+					nativeWaitForLoginPasswordPrompt(t, c, `Gimme your password`)
+					c.SendLine(t, "authd2404")
+					nativeWaitForResult(t, c)
+				})
 			},
 		},
 		"Change_password_successfully_and_authenticate_with_new_one_with_different_case": {
-			tape: "passwd_simple",
-			tapeVariables: map[string]string{
-				"AUTHD_TEST_TAPE_LOGIN_COMMAND":  tapeLoginCommand,
-				vhsTapeUserVariable:              vhsTestUserName(t, "case-insensitive"),
-				"AUTHD_TEST_TAPE_LOGIN_USERNAME": vhsTestUserName(t, "case-insensitive"),
-			},
+			username:     testUserName(t, "case-insensitive"),
+			expectedUser: testUserName(t, "case-insensitive"),
+			test:         nativePasswdSimpleChange,
+			after:        nativeReloginAfterPasswordChange,
 		},
 		"Change_passwd_after_MFA_auth": {
-			tape:         "passwd_mfa",
-			tapeSettings: []tapeSetting{{vhsHeight, 1300}},
-			tapeVariables: map[string]string{
-				vhsTapeUserVariable: examplebroker.UserIntegrationMfaPrefix + "native-passwd@example.com",
+			username:     testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "native-passwd"),
+			expectedUser: testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "native-passwd"),
+			testWithSignals: func(t *testing.T, c *ptytest.Console, signalFn func(username string)) {
+				t.Helper()
+				username := testUserNameFull(t, examplebroker.UserIntegrationMfaPrefix, "native-passwd")
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				c.SendLine(t, "1")
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				c.SendLine(t, "1")
+				c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+				signalFn(username)
+				c.SendLine(t, "")
+				c.WaitFor(t, regexp.QuoteMeta(`Unlock your phone +33... or accept request on web interface:`))
+				sendEchoedLine(t, c, "r")
+				c.WaitFor(t, `Choose your authentication flow:`)
+				c.SendLine(t, "1")
+				c.WaitFor(t, regexp.QuoteMeta(`Unlock your phone +33... or accept request on web interface:`))
+				signalFn(username)
+				c.SendLine(t, "")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForChangeAuthTokResult(t, c)
 			},
 		},
-
 		"Retry_if_new_password_is_rejected_by_broker": {
-			tape:         "passwd_rejected",
-			tapeSettings: []tapeSetting{{vhsHeight, 1000}},
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				nativeChangePassword(t, c, "wrongpass", "wrongpass")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
 		},
 		"Retry_if_new_password_is_same_of_previous": {
-			tape: "passwd_not_changed",
-		},
-		"Retry_if_password_confirmation_is_not_the_same": {
-			tape: "passwd_not_confirmed",
-		},
-		"Retry_if_new_password_does_not_match_quality_criteria": {
-			tape:         "passwd_bad_password",
-			tapeSettings: []tapeSetting{{vhsHeight, 800}},
-		},
-
-		"Prevent_change_password_if_auth_fails": {
-			tape:         "passwd_auth_fail",
-			tapeSettings: []tapeSetting{{vhsHeight, 700}},
-		},
-		"Prevent_change_password_if_user_does_not_exist": {
-			tape: "passwd_unexistent_user",
-			tapeVariables: map[string]string{
-				vhsTapeUserVariable: examplebroker.UserIntegrationUnexistent,
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "authd2404")
+				c.WaitFor(t, `Confirm Password:`)
+				c.SendLine(t, "authd2404")
+				nativeWaitForChangeAuthTokResult(t, c)
 			},
 		},
-		"Prevent_change_password_if_current_user_is_not_root_as_can_not_authenticate": {
-			tape: "passwd_not_root", currentUserNotRoot: true,
+		"Retry_if_password_confirmation_is_not_the_same": {
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				nativeChangePassword(t, c, "authd2404", "mismatch")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
 		},
-
+		"Retry_if_new_password_does_not_match_quality_criteria": {
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendLine(t, "goodpass")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "short")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "password")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "authd2404")
+				c.WaitFor(t, `Confirm Password:`)
+				c.SendLine(t, "mismatch")
+				c.WaitFor(t, `Enter your new password:`)
+				c.SendLine(t, "")
+				nativeChangePassword(t, c, "authd2404", "authd2404")
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
+		},
+		"Prevent_change_password_if_auth_fails": {
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				for i := 0; i < 5; i++ {
+					c.WaitFor(t, `Gimme your password:`)
+					c.SendLine(t, "wrongpass")
+				}
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
+		},
+		"Prevent_change_password_if_user_does_not_exist": {
+			username:     examplebroker.UserIntegrationUnexistent,
+			expectedUser: examplebroker.UserIntegrationUnexistent,
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
+		},
 		"Exit_authd_if_local_broker_is_selected": {
-			tape: "passwd_local_broker",
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				c.WaitFor(t, `Choose your provider:`)
+				sendEchoedLine(t, c, "1")
+				nativeWaitForChangeAuthTokResult(t, c)
+			},
 		},
-		// FIXME: While this works now, it requires proper handling via signal_fd
 		"Exit_authd_if_user_sigints": {
-			tape:            "passwd_sigint",
-			skipRunnerCheck: true,
+			skipRunnerCheck:  true,
+			expectedExitCode: 128 + int(syscall.SIGINT),
+			test: func(t *testing.T, c *ptytest.Console) {
+				t.Helper()
+				nativeSelectBroker(t, c)
+				c.WaitFor(t, `Gimme your password:`)
+				c.SendKey(t, ptytest.KeyCtrlC)
+			},
 		},
 	}
+
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			outDir := t.TempDir()
-			err := os.Symlink(filepath.Join(clientPath, "pam_authd"),
-				filepath.Join(outDir, "pam_authd"))
-			require.NoError(t, err, "Setup: symlinking the pam client")
+			socketPath, _ := sharedAuthd(t)
 
-			var socketPath string
-			if tc.currentUserNotRoot {
-				// For the not-root tests authd has to run in a more restricted way.
-				// In the other cases this is not needed, so we can just use a shared authd.
-				socketPath = runAuthd(t, testutils.WithGroupFile(filepath.Join(t.TempDir(), "group")))
-			} else {
-				socketPath, _ = sharedAuthd(t)
+			clientOptions := tc.clientOptions
+			username := tc.username
+			expectedUser := tc.expectedUser
+			if clientOptions.PamUser == "" && username == "" {
+				username = testUserName(t, "native-passwd")
 			}
-
-			if _, ok := tc.tapeVariables[vhsTapeUserVariable]; !ok &&
-				!tc.currentUserNotRoot && tc.clientOptions.PamUser == "" {
-				if tc.tapeVariables == nil {
-					tc.tapeVariables = make(map[string]string)
+			if expectedUser == "" {
+				switch {
+				case username != "":
+					expectedUser = username
+				case clientOptions.PamUser != "":
+					expectedUser = clientOptions.PamUser
 				}
-				tc.tapeVariables[vhsTapeUserVariable] = vhsTestUserName(t, "native-passwd")
 			}
 
-			td := newTapeData(tc.tape, outDir, tc.tapeSettings...)
-			td.Command = tapeCommand
-			td.Variables = tc.tapeVariables
-			td.Env[vhsTapeSocketVariable] = socketPath
-			td.Env[pam_test.RunnerEnvSupportsConversation] = "1"
-			td.AddClientOptions(t, tc.clientOptions)
-			td.RunVHS(t, vhsTestTypeNative, cliEnv)
-			got := td.SanitizedOutput(t)
-			golden.CheckOrUpdate(t, got)
+			ctx := &nativePtyTestContext{runner: nativePtySessionRunner{clientPath: clientPath, socketPath: socketPath, cliEnv: cliEnv}, baseSpec: nativePtySessionSpec{
+				action:        pam_test.RunnerActionPasswd,
+				clientOptions: clientOptions,
+				username:      username,
+			}}
+			c := ctx.runner.start(t, ctx.baseSpec)
+			if tc.testWithSignals != nil {
+				signalFn := func(_ string) {
+					testutils.CreateBrokerCompletionSignal(t, socketPath, expectedUser)
+				}
+				tc.testWithSignals(t, c, signalFn)
+			} else if tc.test != nil {
+				tc.test(t, c)
+			}
+			ctx.waitForExitAndCapture(t, c, tc.expectedExitCode)
+			if tc.after != nil {
+				tc.after(t, ctx)
+			}
 
+			got := ptySanitizeOutput(t, strings.Join(ctx.rawOutputs, "\n"))
+			golden.CheckOrUpdate(t, got)
 			if !tc.skipRunnerCheck {
-				requireRunnerResultForUser(t, authd.SessionMode_CHANGE_PASSWORD,
-					tc.clientOptions.PamUser, got)
+				requireRunnerResultForUser(t, authd.SessionMode_CHANGE_PASSWORD, expectedUser, got)
 			}
 		})
 	}
+}
+
+func nativeEnterUsername(t *testing.T, c *ptytest.Console, username string) {
+	t.Helper()
+	c.WaitFor(t, `Username: `)
+	c.SendLine(t, username)
+}
+
+func nativePasswdSimpleChange(t *testing.T, c *ptytest.Console) {
+	t.Helper()
+	nativeSelectBroker(t, c)
+	c.WaitFor(t, `Gimme your password:`)
+	c.SendLine(t, "goodpass")
+	nativeChangePassword(t, c, "authd2404", "authd2404")
+	nativeWaitForChangeAuthTokResult(t, c)
+}
+
+func nativeReloginAfterPasswordChange(t *testing.T, ctx *nativePtyTestContext) {
+	t.Helper()
+	ctx.run(t, nativePtySessionSpec{action: pam_test.RunnerActionLogin, username: ctx.baseSpec.username}, func(t *testing.T, c *ptytest.Console) {
+		t.Helper()
+		nativeWaitForLoginPasswordPrompt(t, c, `Gimme your password:`)
+		c.SendLine(t, "authd2404")
+		nativeWaitForResult(t, c)
+	})
+}
+
+// nativeSelectBroker waits for provider selection and selects ExampleBroker.
+func nativeSelectBroker(t *testing.T, c *ptytest.Console) {
+	t.Helper()
+	c.WaitFor(t, `(?s)== Provider selection ==.*2\. ExampleBroker.*Choose your provider`)
+	sendEchoedLine(t, c, "2")
+}
+
+// nativeSimpleAuth performs basic native authentication: select broker, enter password.
+func nativeSimpleAuth(t *testing.T, c *ptytest.Console) {
+	t.Helper()
+	nativeSelectBroker(t, c)
+	c.WaitFor(t, `Gimme your password:`)
+	c.SendLine(t, "goodpass")
+	nativeWaitForResult(t, c)
+}
+
+// nativeMfaAuth performs a full multi-factor authentication flow. signalFn is
+// called for the steps that wait for an out-of-band confirmation.
+func nativeMfaAuth(t *testing.T, c *ptytest.Console, signalFn func()) {
+	t.Helper()
+	// The broker selection is only shown the first time a user logs in. On
+	// later sessions authd auto-selects the broker used before.
+	nativeWaitForLoginPasswordPrompt(t, c, `Gimme your password:`)
+	c.SendLine(t, "r")
+	c.WaitFor(t, `Choose your authentication flow:`)
+	c.SendLine(t, "1")
+	c.WaitFor(t, `Gimme your password:`)
+	c.SendLine(t, "goodpass")
+	c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+	sendEchoedLine(t, c, "r")
+	c.WaitFor(t, `Choose your authentication flow:`)
+	c.SendLine(t, "1")
+	c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+	sendEchoedLine(t, c, "r")
+	c.WaitFor(t, `Choose your authentication flow:`)
+	c.SendLine(t, "2")
+	c.WaitFor(t, regexp.QuoteMeta(`Unlock your phone +33... or accept request on web interface:`))
+	signalFn()
+	c.SendLine(t, "")
+	c.WaitFor(t, regexp.QuoteMeta(`Plug your fido device and press with your thumb:`))
+	signalFn()
+	c.SendLine(t, "")
+	nativeWaitForResult(t, c)
+}
+
+// nativeSimpleAuthNonInteractive performs basic native authentication for
+// non-interactive sessions (e.g. TERM=dumb), where prompts lack the ": \n> "
+// interactive suffix so sendEchoedLine cannot be used.  In non-interactive
+// mode promptForInput uses format "%s", so the broker label "Gimme your
+// password" is sent verbatim (no colon appended by the formatter).
+func nativeSimpleAuthNonInteractive(t *testing.T, c *ptytest.Console) {
+	t.Helper()
+	c.WaitFor(t, `(?s)== Provider selection ==.*2\. ExampleBroker.*Choose your provider`)
+	c.SendLine(t, "2")
+	c.WaitFor(t, `Gimme your password`)
+	c.SendLine(t, "goodpass")
+	nativeWaitForResult(t, c)
+}
+
+func nativeQRCodeAuth(t *testing.T, c *ptytest.Console, method, username string, signalFn func(string)) {
+	t.Helper()
+	nativeSelectBroker(t, c)
+	c.WaitFor(t, `Gimme your password:`)
+	c.SendLine(t, "r")
+	c.WaitFor(t, `Choose your authentication flow:`)
+	sendEchoedLine(t, c, method)
+	c.WaitFor(t, `Choose action:`)
+	for i := 0; i < 4; i++ {
+		sendEchoedLine(t, c, "2")
+		c.WaitFor(t, `Choose action:`)
+	}
+	signalFn(username)
+	sendEchoedLine(t, c, "1")
+	nativeWaitForResult(t, c)
+}
+
+func nativeChangePassword(t *testing.T, c *ptytest.Console, newPassword string, confirm string) {
+	t.Helper()
+	c.WaitFor(t, `Enter your new password`)
+	c.SendLine(t, newPassword)
+	c.WaitFor(t, `Confirm Password:`)
+	c.SendLine(t, confirm)
+}
+
+// nativeWaitForLoginPasswordPrompt waits for the login password prompt.
+// Pass a colon-less pattern for the polkit service's blanked-out prompt
+// (see nativemodel.go's polkitServiceName handling).
+func nativeWaitForLoginPasswordPrompt(t *testing.T, c *ptytest.Console, passwordPrompt string) {
+	t.Helper()
+
+	matched := c.WaitFor(t, `Choose your provider:|`+passwordPrompt)
+	if strings.Contains(matched, `Choose your provider:`) {
+		sendEchoedLine(t, c, "2")
+		c.WaitFor(t, passwordPrompt)
+	}
+}
+
+// nativeWaitForResult waits for the PAM runner Authenticate result line.
+func nativeWaitForResult(t *testing.T, c *ptytest.Console) {
+	t.Helper()
+	waitForRunnerResult(t, c, pam_test.RunnerResultActionAuthenticate)
+}
+
+// nativeWaitForChangeAuthTokResult waits for the PAM runner ChangeAuthTok result.
+func nativeWaitForChangeAuthTokResult(t *testing.T, c *ptytest.Console) {
+	t.Helper()
+	waitForRunnerResult(t, c, pam_test.RunnerResultActionChangeAuthTok)
 }

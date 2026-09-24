@@ -24,13 +24,23 @@ Prerequisites:
 
   - YARF must be installed via the setup_yarf.sh script
 
+Optional environment variables:
+  AUTHD_E2E_TEST_RUNS_DIR
+                      Directory for test run artifacts (default: \${XDG_RUNTIME_DIR:-/tmp}/authd-e2e-test-runs)
+  AUTHD_DEB           Host path to the authd package for migration tests
+  APT_SOURCE          PPA or Ubuntu archive suite for all packages except authd
+  AUTHD_APT_SOURCE    PPA or Ubuntu archive suite for authd installation
+  BROKER_SNAP         Host path to the broker snap for migration tests
+
 Options:
   -u, --user <name>            Username for the tests (can also be set via E2E_USER environment variable)
   -p, --password <password>    Password for the tests (can also be set via E2E_PASSWORD environment variable)
   -s, --totp-secret <secret>   Secret to generate OTP codes for the user's MFA (can also be set via TOTP_SECRET environment variable)
   -b, --broker <broker>        Broker to test (can also be set via BROKER environment variable)
-  -r, --release <release>      Ubuntu release to test (e.g., 'questing', can also be set via RELEASE environment variable)
+  -r, --release <release>      Ubuntu release to test (e.g., 'resolute', can also be set via RELEASE environment variable)
   -o, --output-dir DIR         Directory to store test outputs (default: temporary directory)
+      --test-runs-dir DIR      Directory for test run artifacts (overrides AUTHD_E2E_TEST_RUNS_DIR)
+  -t, --test <name>            Run only the named test case (can be repeated)
   -h, --help                   Show this help message and exit
       --rerunfailed            Re-run only the tests that failed in the previous run
 EOF
@@ -38,11 +48,45 @@ EOF
 
 ROOT_DIR=$(dirname "$(readlink -f "$0")")
 TESTS_DIR="${ROOT_DIR}/tests"
-TEST_RUNS_DIR="${XDG_RUNTIME_DIR}/authd-e2e-test-runs"
+LISTENER_DIR="${ROOT_DIR}/listener"
+# shellcheck source=vm/lib/libprovision.sh
+source "${ROOT_DIR}/vm/lib/libprovision.sh"
+
+# Load broker-specific credentials from e2e-tests-<broker>.env before argument
+# parsing, so that explicit CLI flags take priority over values from the file.
+_scan_broker="${BROKER:-}"
+_scan_args=("$@")
+for ((i=0; i<${#_scan_args[@]}; i++)); do
+    if [[ "${_scan_args[$i]}" == "--broker" || "${_scan_args[$i]}" == "-b" ]]; then
+        _scan_broker="${_scan_args[$((i+1))]:-}"
+        break
+    fi
+done
+if [[ -n "${_scan_broker:-}" ]]; then
+    _env_file="${ROOT_DIR}/e2e-tests-${_scan_broker#authd-}.env"
+    if [[ ! -f "${_env_file}" ]]; then
+        # Fall back to the main worktree when running from a linked worktree.
+        # git rev-parse --git-common-dir returns an absolute path only for
+        # linked worktrees; in the main worktree it returns a relative ".git".
+        _git_common_dir=$(git -C "${ROOT_DIR}" rev-parse --git-common-dir 2>/dev/null || true)
+        if [[ "${_git_common_dir}" == /* ]]; then
+            _env_file="$(dirname "${_git_common_dir}")/e2e-tests/e2e-tests-${_scan_broker#authd-}.env"
+        fi
+    fi
+    if [[ -f "${_env_file}" ]]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "${_env_file}"
+        set +a
+    fi
+fi
+unset _scan_broker _scan_args _env_file _git_common_dir
+
+TEST_RUNS_DIR="${AUTHD_E2E_TEST_RUNS_DIR:-${XDG_RUNTIME_DIR:-/tmp}/authd-e2e-test-runs}"
 
 # Parse command line arguments
-TESTS_TO_RUN=""
-OUTPUT_DIR=""
+TESTS_TO_RUN=()
+TEST_CASES_TO_RUN=()
 while [[ $# -gt 0 ]]; do
     key="$1"
 
@@ -75,12 +119,34 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --test-runs-dir)
+            if [[ $# -lt 2 ]]; then
+                echo >&2 "Error: $1 requires an argument"
+                usage
+                exit 1
+            fi
+            TEST_RUNS_DIR="$2"
+            shift 2
+            ;;
+        --test|-t)
+            if [[ $# -lt 2 ]]; then
+                echo >&2 "Error: $1 requires an argument"
+                usage
+                exit 1
+            fi
+            TEST_CASES_TO_RUN+=("$2")
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
             ;;
         --)
             shift
+            for t in "$@"; do
+                TESTS_TO_RUN+=("${TESTS_DIR}/$(basename "${t}")")
+            done
+            shift "$#"
             break
             ;;
         -*)
@@ -89,7 +155,7 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            TESTS_TO_RUN="${TESTS_TO_RUN} ${TESTS_DIR}/$(basename "${1}")"
+            TESTS_TO_RUN+=("${TESTS_DIR}/$(basename "${1}")")
             shift
             ;;
     esac
@@ -101,11 +167,52 @@ if [ -z "${E2E_USER:-}" ] || [ -z "${E2E_PASSWORD:-}" ] || [ -z "${BROKER:-}" ] 
     exit 1
 fi
 
+requested_apt_source="${APT_SOURCE:-${AUTHD_DEFAULT_APT_SOURCE}}"
+requested_authd_apt_source="${AUTHD_APT_SOURCE:-}"
+if ! APT_SOURCE="$(normalize_apt_source "${requested_apt_source}")"; then
+    echo >&2 "Invalid APT source '${requested_apt_source}'."
+    exit 1
+fi
+
+AUTHD_APT_SOURCE=
+if [ -n "${requested_authd_apt_source}" ]; then
+    if ! AUTHD_APT_SOURCE="$(normalize_apt_source "${requested_authd_apt_source}")"; then
+        echo >&2 "Invalid authd APT source '${requested_authd_apt_source}'."
+        exit 1
+    fi
+fi
+unset requested_apt_source requested_authd_apt_source
+
+if [ -n "${AUTHD_APT_SOURCE:-}" ] && [ -n "${AUTHD_DEB:-}" ]; then
+    echo >&2 "AUTHD_APT_SOURCE cannot be used together with AUTHD_DEB."
+    exit 1
+fi
+
+if ! is_ppa_source "${APT_SOURCE}"; then
+    VM_RELEASE=$(resolve_devel_release "${RELEASE}")
+elif [ -n "${AUTHD_APT_SOURCE:-}" ] && ! is_ppa_source "${AUTHD_APT_SOURCE}"; then
+    VM_RELEASE=$(resolve_devel_release "${RELEASE}")
+fi
+
+if ! is_ppa_source "${APT_SOURCE}"; then
+    if [[ "${APT_SOURCE}" != "${VM_RELEASE}" && "${APT_SOURCE}" != "${VM_RELEASE}-"* ]]; then
+        echo >&2 "APT source suite '${APT_SOURCE}' does not match VM release '${VM_RELEASE}'."
+        exit 1
+    fi
+fi
+
+if [ -n "${AUTHD_APT_SOURCE:-}" ] && ! is_ppa_source "${AUTHD_APT_SOURCE}"; then
+    if [[ "${AUTHD_APT_SOURCE}" != "${VM_RELEASE}" && "${AUTHD_APT_SOURCE}" != "${VM_RELEASE}-"* ]]; then
+        echo >&2 "Authd APT source suite '${AUTHD_APT_SOURCE}' does not match VM release '${VM_RELEASE}'."
+        exit 1
+    fi
+fi
+
 VM_NAME=${VM_NAME:-"e2e-runner-${RELEASE}"}
 
-if [ -z "${TESTS_TO_RUN}" ]; then
+if [ ${#TESTS_TO_RUN[@]} -eq 0 ]; then
     echo "Running all tests in ${TESTS_DIR}"
-    TESTS_TO_RUN=$(find "${TESTS_DIR}" -type f -name "*.robot")
+    TESTS_TO_RUN=("${TESTS_DIR}")
 fi
 
 PREVIOUS_TEST_RUN_DIR=$(readlink -f "${TEST_RUNS_DIR}/${BROKER}-latest" || true)
@@ -115,14 +222,20 @@ if [ -n "${RERUNFAILED:-}" ] && [ -z "${PREVIOUS_TEST_RUN_DIR}" ]; then
 fi
 
 systemd_ver=$(systemctl --version | awk 'NR==1 {print $2}')
-if dpkg --compare-versions "$systemd_ver" "ge" "256"; then
+if dpkg --compare-versions "$systemd_ver" "ge" "256" && [ -z "${FORCE_JOURNAL_TCP:-}" ]; then
     SYSTEMD_SUPPORTS_VSOCK=1
 fi
 
 ROBOT_ARGS=()
+for test_case in "${TEST_CASES_TO_RUN[@]}"; do
+    ROBOT_ARGS+=(--test "$test_case")
+done
 if [ -n "${RERUNFAILED:-}" ]; then
     echo "Rerunning failed tests from previous run in ${PREVIOUS_TEST_RUN_DIR}"
     ROBOT_ARGS+=(--rerunfailed "${PREVIOUS_TEST_RUN_DIR}/output.xml")
+fi
+if [[ "${BROKER}" != "authd-msentraid" ]]; then
+    ROBOT_ARGS+=(--exclude requires:msentraid)
 fi
 
 # Launch the domain if it's not already running, so that we can get its VNC port
@@ -135,21 +248,26 @@ if ! virsh domstate "${VM_NAME}" | grep -q '^running'; then
 fi
 VNC_PORT=$(virsh vncdisplay "${VM_NAME}" | cut -d':' -f2)
 
-# Create a temporary test run directory
-mkdir -p "${TEST_RUNS_DIR}"
-TEST_RUN_DIR=$(mktemp -d --tmpdir="${TEST_RUNS_DIR}" "${BROKER}-XXXXXX")
-ln -sf --no-target-directory "${TEST_RUN_DIR}" "${TEST_RUNS_DIR}/${BROKER}-latest"
-cd "${TEST_RUN_DIR}"
-
 if [ -z "${OUTPUT_DIR:-}" ]; then
-    OUTPUT_DIR=output
-    echo "No output directory specified, using current test run directory."
+    # Create a temporary output directory
+    mkdir -p "${TEST_RUNS_DIR}"
+    OUTPUT_DIR=$(mktemp -d --tmpdir="${TEST_RUNS_DIR}" "${BROKER}-XXXXXX")
+else
+    mkdir -p "${OUTPUT_DIR}"
 fi
 
-mkdir -p "${OUTPUT_DIR}" resources
+# Create a symlink to the output directory for easier access and to keep the
+# latest test results available for rerunning failed tests.
+mkdir -p "${TEST_RUNS_DIR}"
+ln -sf --no-target-directory "${OUTPUT_DIR}" "${TEST_RUNS_DIR}/${BROKER}-latest"
+
+# Set up YARF environment if not already set up
+YARF_DIR="${ROOT_DIR}/.yarf"
+if ! [ -f "${YARF_DIR}/.venv/bin/activate" ]; then
+    "${ROOT_DIR}/setup-yarf.sh"
+fi
 
 # Activate YARF environment
-YARF_DIR="${ROOT_DIR}/.yarf"
 if [ ! -d "${YARF_DIR}" ]; then
     echo >&2  "YARF directory not found at ${YARF_DIR}. Please run setup_yarf.sh first."
     exit 1
@@ -157,39 +275,55 @@ fi
 # shellcheck disable=SC1091 # Avoid info message about not following sourced file
 source "${YARF_DIR}/.venv/bin/activate"
 
-# Create symlinks to the resources directory
-mkdir -p tests/resources
-for resource in "${ROOT_DIR}/resources/"*; do
-    ln -s "${resource}" "tests/resources/$(basename "${resource}")"
-done
-ln -sf --no-target-directory "${BROKER}" tests/resources/broker
-
-# Create symlinks to the test files
-for test_file in $TESTS_TO_RUN; do
-    ln -s "${test_file}" tests
-done
-
 # Make YARF not log videos, we log them ourselves in the test case error message.
 YARF_LOG_VIDEO=0
+
+# Make YARF log the image where it found a text match, for debugging
+YARF_LOG_LEVEL=DEBUG
 
 env \
     E2E_USER="$E2E_USER" \
     E2E_PASSWORD="$E2E_PASSWORD" \
+    E2E_PASSWORDLESS_USER="${E2E_PASSWORDLESS_USER:-}" \
+    E2E_PASSWORDLESS_PASSKEY_USER="${E2E_PASSWORDLESS_PASSKEY_USER:-}" \
+    E2E_PASSKEY_USER="${E2E_PASSKEY_USER:-}" \
     TOTP_SECRET="$TOTP_SECRET" \
     BROKER="$BROKER" \
     RELEASE="$RELEASE" \
+    VM_NAME="$VM_NAME" \
+    AUTHD_DEB="${AUTHD_DEB:-}" \
+    APT_SOURCE="${APT_SOURCE:-}" \
+    AUTHD_APT_SOURCE="${AUTHD_APT_SOURCE:-}" \
+    BROKER_SNAP="${BROKER_SNAP:-}" \
     VNC_PORT="$VNC_PORT" \
     SYSTEMD_SUPPORTS_VSOCK="${SYSTEMD_SUPPORTS_VSOCK:-}" \
     YARF_LOG_VIDEO="${YARF_LOG_VIDEO}" \
+    YARF_LOG_LEVEL="${YARF_LOG_LEVEL}" \
     robot \
         --consolecolors on \
         --loglevel DEBUG \
+        --pythonpath "${ROOT_DIR}" \
         --pythonpath "${YARF_DIR}/yarf/rf_libraries/libraries/vnc" \
+        --pythonpath "${YARF_DIR}/yarf/rf_libraries/resources" \
+        --pythonpath "${YARF_DIR}/yarf/rf_libraries/variables" \
         --outputdir "${OUTPUT_DIR}" \
+        --listener "${LISTENER_DIR}/Listener.py" \
+        --console quiet \
         "${ROBOT_ARGS[@]}" \
         "$@" \
-        tests \
-        | grep -v "<video controls style" \
+        "${TESTS_TO_RUN[@]}" \
         || test_result=$?
+
+if [ "${test_result:-0}" -eq 0 ]; then
+    vm_state="$(virsh domstate "${VM_NAME}")"
+    if [ "${vm_state}" = "shut off" ]; then
+        echo "E2E tests passed; ${VM_NAME} is already stopped"
+    else
+        echo "E2E tests passed; stopping ${VM_NAME}"
+        virsh destroy "${VM_NAME}"
+    fi
+else
+    echo "E2E tests failed; leaving ${VM_NAME} running for investigation" >&2
+fi
 
 exit "${test_result:-0}"

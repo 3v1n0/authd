@@ -1,0 +1,405 @@
+//go:build withmsentraid
+
+package fido
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/canonical/authd/log"
+	libfido2 "github.com/keys-pub/go-libfido2"
+)
+
+const (
+	// fidoErrUVBlocked is CTAP2's FIDO_ERR_UV_BLOCKED (0x3c): the
+	// authenticator's built-in user verification (e.g. fingerprint) is
+	// temporarily blocked, most commonly after too many unmatched touches on a
+	// biometric device. This vendored go-libfido2 predates CTAP2.1 and has no
+	// named error for it, so it surfaces only as the generic
+	// libfido2.Error{Code: 0x3c}.
+	fidoErrUVBlocked = 0x3c
+	// fidoErrUVInvalid is CTAP2's FIDO_ERR_UV_INVALID (0x3f): built-in user
+	// verification failed. Prompting for the PIN lets the same device satisfy
+	// user verification without unplugging it.
+	fidoErrUVInvalid = 0x3f
+	// fidoErrUserActionTimeout is CTAP2's FIDO_ERR_USER_ACTION_TIMEOUT (0x2f):
+	// the authenticator's own touch wait expired. go-libfido2's named
+	// ErrActionTimeout is the distinct FIDO_ERR_ACTION_TIMEOUT (0x3a), so the
+	// user-action variant surfaces only as the generic
+	// libfido2.Error{Code: 0x2f}.
+	fidoErrUserActionTimeout = 0x2f
+	// fidoErrPINBlocked is CTAP2's FIDO_ERR_PIN_BLOCKED (0x32): the PIN is
+	// hard-blocked after exhausting its retries and only a reset of the
+	// authenticator clears it. go-libfido2's named ErrPinAuthBlocked is the
+	// distinct FIDO_ERR_PIN_AUTH_BLOCKED (0x34), which a power cycle clears,
+	// so the hard block surfaces only as the generic
+	// libfido2.Error{Code: 0x32}.
+	fidoErrPINBlocked = 0x32
+)
+
+// relyingPartyID is the WebAuthn relying party ID that Entra ID registers
+// credentials under.
+const relyingPartyID = "login.microsoft.com"
+
+// cancelRetryInterval is how often Assert re-issues fido_dev_cancel while
+// waiting for a canceled ceremony to return. See the ctx.Done() branch in
+// Assert for why a single Cancel is not reliable.
+const cancelRetryInterval = 100 * time.Millisecond
+
+// cancelWaitTimeout bounds how long a canceled libfido2 operation may keep
+// the authentication request waiting. The worker retains the device until
+// libfido2 returns, so returning here does not let it be collected in use.
+const cancelWaitTimeout = time.Second
+
+// Authenticator performs WebAuthn Get ceremonies with the first connected
+// FIDO2 device via libfido2. The zero value is ready to use.
+type Authenticator struct{}
+
+// DevicePresent reports whether at least one FIDO device is connected. It is
+// used to gate the FIDO auth modes: a session that cannot reach a device
+// (e.g. SSH into a headless server) must fall back to another flow.
+func (Authenticator) DevicePresent() bool {
+	locations, err := libfido2.DeviceLocations()
+	if err != nil {
+		return false
+	}
+	return len(locations) > 0
+}
+
+// DeviceRequiresPIN reports whether the connected device needs a client PIN
+// for user verification. Devices with built-in user verification (e.g. a
+// fingerprint reader) or without a configured PIN do not.
+func (Authenticator) DeviceRequiresPIN() (bool, error) {
+	device, err := firstDevice()
+	if err != nil {
+		return false, err
+	}
+
+	info, err := device.Info()
+	if errors.Is(err, libfido2.ErrNotFIDO2) {
+		// U2F-only devices have no PIN concept.
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to query FIDO device info: %v", err)
+	}
+
+	var pinSet, builtinUV bool
+	for _, option := range info.Options {
+		switch option.Name {
+		case "clientPin":
+			pinSet = option.Value == libfido2.True
+		case "uv":
+			builtinUV = option.Value == libfido2.True
+		}
+	}
+	requiresPIN := pinSet && !builtinUV
+	// A wrong decision here is the usual cause of a failed ceremony, so record
+	// what the device actually reported.
+	log.Debugf(context.Background(), "FIDO device capabilities: clientPin=%v uv=%v -> requiresPIN=%v", pinSet, builtinUV, requiresPIN)
+	return requiresPIN, nil
+}
+
+type deviceInfoResult struct {
+	info *libfido2.DeviceInfo
+	err  error
+}
+
+// deviceInfoWithContext keeps the device alive until the blocking libfido2
+// query returns, while allowing the broker request to stop waiting when its
+// context is cancelled.
+func deviceInfoWithContext(ctx context.Context, device *libfido2.Device) (*libfido2.DeviceInfo, error) {
+	if ctx.Err() != nil {
+		return nil, ErrCanceled
+	}
+
+	resultCh := make(chan deviceInfoResult, 1)
+	go func() {
+		info, err := device.Info()
+		resultCh <- deviceInfoResult{info: info, err: err}
+	}()
+
+	select {
+	case result := <-resultCh:
+		if ctx.Err() != nil {
+			return nil, ErrCanceled
+		}
+		return result.info, result.err
+	case <-ctx.Done():
+		_ = device.Cancel()
+		return nil, ErrCanceled
+	}
+}
+
+// HoldsCredential checks whether the connected key has a credential from the
+// challenge's allow list without asking for a touch. It uses the FIDO
+// pre-flight operation described here:
+// https://fidoalliance.org/specs/fido-v2.3-ps-20260226/fido-client-to-authenticator-protocol-v2.3-ps-20260226.html#pre-flight
+// A "no credentials" result is inconclusive when the key may require a PIN
+// or biometric check, because protected credentials may be hidden. A timed
+// assertion is not a substitute: a key with a matching credential waits for
+// user presence.
+func (Authenticator) HoldsCredential(ctx context.Context, challenge string, allowList []string) (bool, error) {
+	if ctx.Err() != nil {
+		return false, ErrCanceled
+	}
+
+	device, err := firstDevice()
+	if err != nil {
+		return false, err
+	}
+
+	credentialIDs, err := decodeAllowList(allowList)
+	if err != nil {
+		return false, err
+	}
+
+	clientDataHash := sha256.Sum256(clientDataJSON(challenge))
+	_, err = assertionWithContext(ctx, device, relyingPartyID, clientDataHash[:], credentialIDs, "", &libfido2.AssertionOpts{UP: libfido2.False})
+	if errors.Is(err, ErrCanceled) {
+		return false, err
+	}
+
+	userVerificationPossible := false
+	if errors.Is(err, libfido2.ErrNoCredentials) {
+		info, infoErr := deviceInfoWithContext(ctx, device)
+		if errors.Is(infoErr, ErrCanceled) {
+			return false, infoErr
+		}
+		if infoErr == nil {
+			for _, option := range info.Options {
+				if (option.Name == "clientPin" || option.Name == "uv") && option.Value == libfido2.True {
+					userVerificationPossible = true
+					break
+				}
+			}
+		} else if !errors.Is(infoErr, libfido2.ErrNotFIDO2) {
+			return false, fmt.Errorf("could not determine whether the security key requires user verification: %w", infoErr)
+		}
+	}
+	if ctx.Err() != nil {
+		return false, ErrCanceled
+	}
+
+	holds, err := classifyCredentialCheck(err, userVerificationPossible)
+	if err != nil {
+		return false, err
+	}
+	log.Debugf(context.Background(), "Connected security key holds one of the %d allowed credential(s): %v", len(credentialIDs), holds)
+	return holds, nil
+}
+
+func classifyCredentialCheck(err error, userVerificationPossible bool) (bool, error) {
+	holds := err == nil || errors.Is(err, libfido2.ErrUserPresenceRequired) || errors.Is(err, libfido2.ErrUPRequired)
+	if holds {
+		return true, nil
+	}
+	if errors.Is(err, libfido2.ErrNoCredentials) {
+		if userVerificationPossible {
+			return false, ErrCredentialCheckIndeterminate
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("failed to check the security key for an allowed credential: %v", err)
+}
+
+// Assert performs the WebAuthn Get ceremony for the given MFA-flow challenge
+// and allow list, blocking until the user touches the device, the device
+// times out, or ctx is canceled. It returns the assertion JSON that
+// libhimmelblau's acquire_token_by_mfa_flow expects as auth_data.
+//
+// pin may be empty when the device does not require one (see
+// DeviceRequiresPIN). Failures that the broker can act on are reported as the
+// package's sentinel errors (ErrPINRequired, ErrPINInvalid, ...).
+func (Authenticator) Assert(ctx context.Context, challenge string, allowList []string, pin string) (string, error) {
+	// A ceremony canceled before it started must not touch the device at all.
+	if ctx.Err() != nil {
+		return "", ErrCanceled
+	}
+
+	device, err := firstDevice()
+	if err != nil {
+		return "", err
+	}
+
+	credentialIDs, err := decodeAllowList(allowList)
+	if err != nil {
+		return "", err
+	}
+
+	clientData := clientDataJSON(challenge)
+	clientDataHash := sha256.Sum256(clientData)
+
+	opts := &libfido2.AssertionOpts{UP: libfido2.True}
+	if pin == "" {
+		// Ask for built-in user verification (e.g. fingerprint) when no PIN
+		// is used; with a PIN, user verification is provided by the PIN
+		// protocol and requesting UV as well fails on PIN-only devices.
+		if builtinUV, err := hasBuiltinUV(device); err == nil && builtinUV {
+			opts.UV = libfido2.True
+		}
+	}
+
+	assertion, err := assertionWithContext(ctx, device, relyingPartyID, clientDataHash[:], credentialIDs, pin, opts)
+	if err != nil {
+		if errors.Is(err, ErrCanceled) {
+			return "", err
+		}
+		// The raw error carries the CTAP code that mapAssertionError collapses
+		// into a sentinel; log it with the verification we asked for.
+		log.Debugf(ctx, "FIDO assertion ceremony failed (pinProvided=%v, uvRequested=%v): %v", pin != "", opts.UV == libfido2.True, err)
+		return "", mapAssertionError(err)
+	}
+
+	authData, err := rawAuthData(assertion.AuthDataCBOR)
+	if err != nil {
+		return "", err
+	}
+
+	return buildAssertionJSON(
+		assertion.CredentialID,
+		clientData,
+		authData,
+		assertion.Sig,
+		assertion.User.ID,
+	)
+}
+
+type assertionResult struct {
+	assertion *libfido2.Assertion
+	err       error
+}
+
+func assertionWithContext(ctx context.Context, device *libfido2.Device, rpID string, clientDataHash []byte, credentialIDs [][]byte, pin string, opts *libfido2.AssertionOpts) (*libfido2.Assertion, error) {
+	if ctx.Err() != nil {
+		return nil, ErrCanceled
+	}
+
+	resultCh := make(chan assertionResult, 1)
+	go func() {
+		assertion, err := device.Assertion(rpID, clientDataHash, credentialIDs, pin, opts)
+		resultCh <- assertionResult{assertion, err}
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result.assertion, result.err
+	case <-ctx.Done():
+		// Interrupt the operation, then wait briefly for it to return: the Device
+		// must not be garbage collected while libfido2 still uses it.
+		var cancelErr error
+		retry := time.NewTicker(cancelRetryInterval)
+		defer retry.Stop()
+		deadline := time.NewTimer(cancelWaitTimeout)
+		defer deadline.Stop()
+		for {
+			if err := device.Cancel(); err != nil && cancelErr == nil {
+				cancelErr = err
+			}
+			select {
+			case <-resultCh:
+				if cancelErr != nil {
+					return nil, errors.Join(ErrCanceled, fmt.Errorf("failed to cancel FIDO assertion: %v", cancelErr))
+				}
+				return nil, ErrCanceled
+			case <-retry.C:
+			case <-deadline.C:
+				if cancelErr != nil {
+					return nil, errors.Join(ErrCanceled, fmt.Errorf("failed to cancel FIDO assertion: %v", cancelErr))
+				}
+				return nil, ErrCanceled
+			}
+		}
+	}
+}
+
+// firstDevice returns the first connected FIDO device. Sessions with several
+// connected devices are not supported: the ceremony runs on the first one.
+func firstDevice() (*libfido2.Device, error) {
+	locations, err := libfido2.DeviceLocations()
+	if err != nil {
+		return nil, fmt.Errorf("failed to enumerate FIDO devices: %v", err)
+	}
+	if len(locations) == 0 {
+		return nil, ErrNoDevice
+	}
+	// The ceremony always uses locations[0]; flag when several are connected so
+	// a wrong-device pick is visible.
+	if len(locations) > 1 {
+		log.Debugf(context.Background(), "%d FIDO devices connected; using the first (%q)", len(locations), locations[0].Path)
+	}
+	device, err := libfido2.NewDevice(locations[0].Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open FIDO device %q: %v", locations[0].Path, err)
+	}
+	return device, nil
+}
+
+// hasBuiltinUV reports whether the device performs user verification on its
+// own (e.g. a fingerprint reader).
+func hasBuiltinUV(device *libfido2.Device) (bool, error) {
+	info, err := device.Info()
+	if err != nil {
+		return false, err
+	}
+	for _, option := range info.Options {
+		if option.Name == "uv" {
+			return option.Value == libfido2.True, nil
+		}
+	}
+	return false, nil
+}
+
+// mapAssertionError translates libfido2 errors to the package's sentinel
+// errors where the broker can act on them, keeping the original error text
+// for the logs.
+func mapAssertionError(err error) error {
+	switch {
+	case errors.Is(err, libfido2.ErrPinRequired):
+		return ErrPINRequired
+	case errors.Is(err, libfido2.ErrPinNotSet):
+		// Prompting for a PIN cannot help: the key has none configured.
+		return fmt.Errorf("the security key requires a PIN but none is configured on it: %v", err)
+	case errors.Is(err, libfido2.ErrPinInvalid):
+		return ErrPINInvalid
+	case errors.Is(err, libfido2.ErrPinAuthBlocked):
+		return ErrPINBlocked
+	case errors.Is(err, libfido2.ErrPinPolicyViolation):
+		// CTAP2.1 returns this from the PIN token request when the
+		// authenticator has forcePINChange set, so retrying with any PIN
+		// loops forever: the user has to change the PIN on the key first.
+		// Unlike a rejected PIN it does not consume a PIN retry either, so
+		// nothing bounds a re-prompt.
+		return ErrPINChangeRequired
+	case errors.Is(err, libfido2.ErrActionTimeout):
+		return ErrTimeout
+	case errors.Is(err, libfido2.ErrKeepaliveCancel):
+		return ErrCanceled
+	case errors.Is(err, libfido2.ErrNoCredentials):
+		return ErrNoCredentials
+	default:
+		var ferr libfido2.Error
+		if errors.As(err, &ferr) {
+			switch ferr.Code {
+			case fidoErrUVBlocked, fidoErrUVInvalid:
+				// The device supports both a PIN and built-in UV, so Assert
+				// requested fingerprint verification (see the pin == "" branch
+				// there); with fingerprint verification failed or blocked, the
+				// PIN is the next recovery path. CTAP2 accepts it as an equally
+				// valid verification method regardless of what blocked UV.
+				return ErrPINRequired
+			case fidoErrUserActionTimeout:
+				// go-libfido2 passes no platform timeout to
+				// fido_dev_get_assert, so this is the only touch-timeout
+				// signal the broker's AuthRetry path can act on.
+				return ErrTimeout
+			case fidoErrPINBlocked:
+				return ErrPINResetRequired
+			}
+		}
+		return fmt.Errorf("FIDO assertion failed: %v", err)
+	}
+}

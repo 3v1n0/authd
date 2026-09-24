@@ -423,6 +423,174 @@ func TestSetGroupID(t *testing.T) {
 	}
 }
 
+func TestSetShell(t *testing.T) {
+	tests := map[string]struct {
+		sourceDB string
+
+		username           string
+		newShell           string
+		closeDB            bool
+		currentUserNotRoot bool
+
+		wantErr bool
+	}{
+		"Successfully_set_shell":                                  {username: "user1@example.com", newShell: "/bin/sh"},
+		"Successfully_set_shell_when_username_has_uppercase_char": {username: "USER1@example.com", newShell: "/bin/sh"},
+
+		"Error_when_not_root":                         {username: "user1@example.com", newShell: "/bin/sh", currentUserNotRoot: true, wantErr: true},
+		"Error_when_users_manager_fails_to_set_shell": {username: "doesnotexist", newShell: "/bin/sh", wantErr: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			client, m := newUserServiceClient(t, tc.sourceDB, tc.currentUserNotRoot)
+
+			if tc.closeDB {
+				// Close the database to trigger a database error
+				err := userstestutils.DBManager(m).Close()
+				require.NoError(t, err, "Setup: failed to close database")
+			}
+
+			resp, err := client.SetShell(context.Background(), &authd.SetShellRequest{Name: tc.username, Shell: tc.newShell})
+			if tc.wantErr {
+				require.Error(t, err, "SetShell should return an error, but did not")
+				return
+			}
+			require.NoError(t, err, "SetShell should not return an error, but did")
+
+			golden.CheckOrUpdateYAML(t, resp, golden.WithPath("response"))
+
+			dbContent, err := db.Z_ForTests_DumpNormalizedYAML(userstestutils.DBManager(m))
+			require.NoError(t, err, "Setup: failed to dump database for comparing")
+			golden.CheckOrUpdate(t, dbContent, golden.WithPath("database"))
+		})
+	}
+}
+
+func TestSetHomeDir(t *testing.T) {
+	tests := map[string]struct {
+		sourceDB string
+
+		username           string
+		newHome            string
+		currentUserNotRoot bool
+
+		wantErr bool
+	}{
+		"Successfully_set_home_dir":                                  {username: "user1@example.com", newHome: "/home/user1-new"},
+		"Successfully_set_home_dir_when_username_has_uppercase_char": {username: "USER1@example.com", newHome: "/home/user1-new"},
+
+		"Error_when_not_root":                            {username: "user1@example.com", newHome: "/home/user1-new", currentUserNotRoot: true, wantErr: true},
+		"Error_when_username_is_empty":                   {newHome: "/home/user1-new", wantErr: true},
+		"Error_when_users_manager_fails_to_set_home_dir": {username: "doesnotexist", newHome: "/home/user1-new", wantErr: true},
+		"Error_when_path_is_not_absolute":                {username: "user1@example.com", newHome: "relative/path", wantErr: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if !tc.wantErr {
+				userslocking.Z_ForTests_OverrideLockingWithCleanup(t)
+			}
+
+			client, m := newUserServiceClient(t, tc.sourceDB, tc.currentUserNotRoot)
+
+			resp, err := client.SetHomeDir(context.Background(), &authd.SetHomeDirRequest{Name: tc.username, Home: tc.newHome})
+			if tc.wantErr {
+				require.Error(t, err, "SetHomeDir should return an error, but did not")
+				return
+			}
+			require.NoError(t, err, "SetHomeDir should not return an error, but did")
+
+			golden.CheckOrUpdateYAML(t, resp, golden.WithPath("response"))
+
+			dbContent, err := db.Z_ForTests_DumpNormalizedYAML(userstestutils.DBManager(m))
+			require.NoError(t, err, "Setup: failed to dump database for comparing")
+			golden.CheckOrUpdate(t, dbContent, golden.WithPath("database"))
+		})
+	}
+}
+
+func TestDeleteUser(t *testing.T) {
+	tests := map[string]struct {
+		sourceDB           string
+		username           string
+		currentUserNotRoot bool
+
+		wantErr      bool
+		wantWarnings int
+	}{
+		"Successfully_delete_user":                {username: "user1@example.com"},
+		"Successfully_delete_user_with_uppercase": {username: "USER1@EXAMPLE.COM"},
+
+		"Error_when_username_is_empty":   {wantErr: true},
+		"Error_when_user_does_not_exist": {username: "doesnotexist@example.com", wantErr: true},
+		"Error_when_not_root":            {username: "user1@example.com", currentUserNotRoot: true, wantErr: true},
+
+		"Warning_when_broker_fails_to_delete": {username: "delete_error@example.com", wantWarnings: 1},
+		"Warning_when_broker_not_found":       {sourceDB: "default.db.yaml", username: "user1@example.com", wantWarnings: 1},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			if !tc.wantErr {
+				userslocking.Z_ForTests_OverrideLockingWithCleanup(t)
+			}
+
+			dbFile := tc.sourceDB
+			if dbFile == "" {
+				dbFile = "delete-user.db.yaml"
+			}
+
+			client, m := newUserServiceClient(t, dbFile, tc.currentUserNotRoot)
+
+			resp, err := client.DeleteUser(context.Background(), &authd.DeleteUserRequest{Name: tc.username})
+			if tc.wantErr {
+				require.Error(t, err, "DeleteUser should return an error, but did not")
+				return
+			}
+			require.NoError(t, err, "DeleteUser should not return an error, but did")
+			require.Len(t, resp.Warnings, tc.wantWarnings, "Unexpected number of warnings")
+			golden.CheckOrUpdateYAML(t, resp, golden.WithPath("response"))
+
+			dbContent, err := db.Z_ForTests_DumpNormalizedYAML(userstestutils.DBManager(m))
+			require.NoError(t, err, "Setup: failed to dump database for comparing")
+			golden.CheckOrUpdate(t, dbContent, golden.WithPath("database"))
+		})
+	}
+}
+
+func TestDeleteGroup(t *testing.T) {
+	tests := map[string]struct {
+		sourceDB string
+
+		groupname          string
+		currentUserNotRoot bool
+
+		wantErr bool
+	}{
+		"Successfully_delete_group":                {groupname: "commongroup"},
+		"Successfully_delete_group_with_uppercase": {groupname: "COMMONGROUP"},
+
+		"Error_when_groupname_is_empty":                         {wantErr: true},
+		"Error_when_group_does_not_exist":                       {groupname: "doesnotexist", wantErr: true},
+		"Error_when_not_root":                                   {groupname: "commongroup", currentUserNotRoot: true, wantErr: true},
+		"Error_when_group_is_primary_group_of_an_existing_user": {groupname: "group1", wantErr: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			client, m := newUserServiceClient(t, tc.sourceDB, tc.currentUserNotRoot)
+
+			_, err := client.DeleteGroup(context.Background(), &authd.DeleteGroupRequest{Name: tc.groupname})
+			if tc.wantErr {
+				require.Error(t, err, "DeleteGroup should return an error, but did not")
+				return
+			}
+			require.NoError(t, err, "DeleteGroup should not return an error, but did")
+
+			dbContent, err := db.Z_ForTests_DumpNormalizedYAML(userstestutils.DBManager(m))
+			require.NoError(t, err, "Setup: failed to dump database for comparing")
+			golden.CheckOrUpdate(t, dbContent)
+		})
+	}
+}
+
 // newUserServiceClient returns a new gRPC client for the CLI service.
 func newUserServiceClient(t *testing.T, dbFile string, currentUserNotRoot ...bool) (client authd.UserServiceClient, userManager *users.Manager) {
 	t.Helper()
@@ -452,7 +620,7 @@ func newUserServiceClient(t *testing.T, dbFile string, currentUserNotRoot ...boo
 	}
 	service := user.NewService(context.Background(), userManager, brokerManager, &permissionsManager)
 
-	grpcServer := grpc.NewServer(permissions.WithUnixPeerCreds(), grpc.ChainUnaryInterceptor(enableCheckGlobalAccess(service), errmessages.RedactErrorInterceptor))
+	grpcServer := grpc.NewServer(permissions.WithUnixPeerCreds(), grpc.ChainUnaryInterceptor(errmessages.RedactErrorInterceptor))
 	authd.RegisterUserServiceServer(grpcServer, service)
 	done := make(chan struct{})
 	go func() {
@@ -470,16 +638,6 @@ func newUserServiceClient(t *testing.T, dbFile string, currentUserNotRoot ...boo
 	t.Cleanup(func() { _ = conn.Close() }) // We don't care about the error on cleanup
 
 	return authd.NewUserServiceClient(conn), userManager
-}
-
-func enableCheckGlobalAccess(s user.Service) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		if err := s.CheckGlobalAccess(ctx, info.FullMethod); err != nil {
-			return nil, err
-		}
-
-		return handler(ctx, req)
-	}
 }
 
 // newUserManagerForTests returns a user manager object cleaned up with the test ends.

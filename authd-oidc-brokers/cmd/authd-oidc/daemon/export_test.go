@@ -70,16 +70,14 @@ func GenerateBrokerConfig(t *testing.T, p, providerURL string) {
 	require.NoError(t, err, "Setup: could not create parent broker configuration directory for tests")
 
 	brokerCfg := fmt.Sprintf(`
-	[authd]
-	name = %[1]s
-	brand_icon = broker_icon.png
-	dbus_name = com.ubuntu.authd.%[1]s
-	dbus_object = /com/ubuntu/authd/%[1]s
+[oidc]
+issuer = %s
+client_id = client_id
 
-	[oidc]
-	issuer = %[2]s
-	client_id = client_id
-	`, strings.ReplaceAll(t.Name(), "/", "_"), providerURL)
+[flows]
+# These tests don't exercise the entra_auth flow.
+entra_auth = false
+`, providerURL)
 	err = os.WriteFile(p, []byte(brokerCfg), 0600)
 	require.NoError(t, err, "Setup: could not create broker configuration for tests")
 }

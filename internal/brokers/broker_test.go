@@ -213,6 +213,8 @@ func TestIsAuthenticated(t *testing.T) {
 		cancelFirstCall bool
 	}{
 		"Successfully_authenticate":                                        {sessionID: "success"},
+		"Successfully_authenticate_with_granted_message":                   {sessionID: "ia_granted_with_data"},
+		"Ignores_non_string_message_in_granted_response":                   {sessionID: "ia_granted_with_non_string_message"},
 		"Successfully_authenticate_after_cancelling_first_call":            {sessionID: "ia_second_call", secondCall: true},
 		"Denies_authentication_when_broker_times_out":                      {sessionID: "ia_timeout"},
 		"Adds_default_groups_even_if_broker_did_not_set_them":              {sessionID: "ia_info_empty_groups"},
@@ -223,20 +225,20 @@ func TestIsAuthenticated(t *testing.T) {
 		"No_error_when_broker_returns_userinfo_with_mismatching_username":  {sessionID: "ia_info_mismatching_user_name"},
 
 		// broker errors
-		"Error_when_authenticating":                                           {sessionID: "ia_error"},
-		"Error_on_empty_data_even_if_granted":                                 {sessionID: "ia_empty_data"},
-		"Error_when_broker_returns_invalid_data":                              {sessionID: "ia_invalid_data"},
-		"Error_when_broker_returns_invalid_access":                            {sessionID: "ia_invalid_access"},
-		"Error_when_broker_returns_invalid_userinfo":                          {sessionID: "ia_invalid_userinfo"},
-		"Error_when_broker_returns_userinfo_with_empty_username":              {sessionID: "ia_info_empty_user_name"},
-		"Error_when_broker_returns_userinfo_with_empty_group_name":            {sessionID: "ia_info_empty_group_name"},
-		"Error_when_broker_returns_userinfo_with_invalid_homedir":             {sessionID: "ia_info_invalid_home"},
-		"Error_when_broker_returns_userinfo_with_invalid_shell":               {sessionID: "ia_info_invalid_shell"},
-		"Error_when_broker_returns_invalid_data_on_auth.Next":                 {sessionID: "ia_next_with_invalid_data"},
-		"Error_when_broker_returns_data_on_auth.Cancelled":                    {sessionID: "ia_cancelled_with_data"},
-		"Error_when_broker_returns_no_data_on_auth.Denied":                    {sessionID: "ia_denied_without_data"},
-		"Error_when_broker_returns_no_data_on_auth.Retry":                     {sessionID: "ia_retry_without_data"},
-		"Error_when_calling_IsAuthenticated_a_second_time_without_cancelling": {sessionID: "ia_second_call", secondCall: true, cancelFirstCall: true},
+		"Error_when_authenticating":                                      {sessionID: "ia_error"},
+		"Error_on_empty_data_even_if_granted":                            {sessionID: "ia_empty_data"},
+		"Error_when_broker_returns_invalid_data":                         {sessionID: "ia_invalid_data"},
+		"Error_when_broker_returns_invalid_access":                       {sessionID: "ia_invalid_access"},
+		"Error_when_broker_returns_invalid_userinfo":                     {sessionID: "ia_invalid_userinfo"},
+		"Error_when_broker_returns_userinfo_with_empty_username":         {sessionID: "ia_info_empty_user_name"},
+		"Error_when_broker_returns_userinfo_with_empty_group_name":       {sessionID: "ia_info_empty_group_name"},
+		"Error_when_broker_returns_userinfo_with_invalid_homedir":        {sessionID: "ia_info_invalid_home"},
+		"Error_when_broker_returns_userinfo_with_invalid_shell":          {sessionID: "ia_info_invalid_shell"},
+		"Error_when_broker_returns_invalid_data_on_auth.Next":            {sessionID: "ia_next_with_invalid_data"},
+		"Error_when_broker_returns_data_on_auth.Cancelled":               {sessionID: "ia_cancelled_with_data"},
+		"Error_when_broker_returns_no_data_on_auth.Denied":               {sessionID: "ia_denied_without_data"},
+		"Error_when_broker_returns_no_data_on_auth.Retry":                {sessionID: "ia_retry_without_data"},
+		"Successfully_authenticate_after_second_call_without_cancelling": {sessionID: "ia_second_call", secondCall: true, cancelFirstCall: true},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -342,6 +344,33 @@ func TestUserPreCheck(t *testing.T) {
 			require.NoError(t, err, "UserPreCheck should not return an error, but did")
 
 			golden.CheckOrUpdate(t, got)
+		})
+	}
+}
+
+func TestDeleteUser(t *testing.T) {
+	t.Parallel()
+
+	b := newBrokerForTests(t, "", "")
+
+	tests := map[string]struct {
+		username string
+
+		wantErr bool
+	}{
+		"Successfully_delete_user":        {username: "user1@example.com"},
+		"Error_when_broker_returns_error": {username: "delete_error@example.com", wantErr: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := b.DeleteUser(context.Background(), tc.username, "")
+			if tc.wantErr {
+				require.Error(t, err, "DeleteUser should return an error, but did not")
+				return
+			}
+			require.NoError(t, err, "DeleteUser should not return an error, but did")
 		})
 	}
 }

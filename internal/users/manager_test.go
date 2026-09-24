@@ -285,6 +285,259 @@ func TestUpdateUser(t *testing.T) {
 	}
 }
 
+func TestUpdateUserProviderIDHandling(t *testing.T) {
+	// This test and its subtests are intentionally not parallel: some subtests use SetupGroupMock,
+	// which mutates the process-global localentries options. Running concurrently with other tests
+	// that read those options (e.g. via UpdateUser) would race on them.
+
+	newUser := func(name, providerID string, groups ...types.GroupInfo) types.UserInfo {
+		return types.UserInfo{
+			Name:       name,
+			Gecos:      "gecos for " + name,
+			Dir:        "/home/" + name,
+			Shell:      "/bin/bash",
+			BrokerID:   "broker-id",
+			ProviderID: providerID,
+			Groups:     groups,
+		}
+	}
+
+	t.Run("Persist_providerid_on_first_post_migration_login", func(t *testing.T) {
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		err = m.UpdateUser(newUser("user1@example.com", "providerid-user1"))
+		require.NoError(t, err, "UpdateUser should not return an error, but did")
+
+		got, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "UserByName should not return an error, but did")
+		require.Equal(t, "providerid-user1", got.ProviderID, "provider ID should be persisted")
+	})
+
+	t.Run("Resolve_existing_user_by_providerid_and_rename", func(t *testing.T) {
+		destGroupFile := localgroupstestutils.SetupGroupMock(t,
+			filepath.Join("testdata", "groups", "single_localgroup_user1.group"))
+
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group_with_providerid_and_local_group.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		oldUser, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "UserByName should not return an error, but did")
+
+		err = m.UpdateUser(newUser("newuser1@example.com", "providerid-user1", types.GroupInfo{Name: "localgroup1", UGID: ""}))
+		require.NoError(t, err, "UpdateUser should not return an error, but did")
+
+		_, err = m.UserByName("user1@example.com")
+		require.Error(t, err, "old username should no longer exist")
+
+		renamed, err := userstestutils.DBManager(m).UserByName("newuser1@example.com")
+		require.NoError(t, err, "new username should exist")
+		require.Equal(t, oldUser.UID, renamed.UID, "UID should be preserved when renaming by provider ID")
+		require.Equal(t, "providerid-user1", renamed.ProviderID, "provider ID should be preserved when renaming by provider ID")
+
+		groupContent, err := os.ReadFile(destGroupFile)
+		require.NoError(t, err, "could not read mocked group file")
+		require.Equal(t, "localgroup1:x:41:newuser1@example.com\n", string(groupContent),
+			"local group membership should be rewritten to the renamed user")
+	})
+
+	t.Run("Rename_onto_an_existing_different_username_fails_gracefully", func(t *testing.T) {
+		// An IdP-side email change can land on a username that already belongs to a *different* user.
+		// The provider-ID match authorises the rename and bypasses the "UID already in use" guard, so
+		// without an explicit collision check the UPDATE hits the raw UNIQUE(name) constraint and
+		// surfaces an opaque SQLite error. The rename must instead fail with a clear message and leave
+		// both existing users intact.
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "two_users_with_providerid_and_local_group.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		// user1 (matched by providerid-user1) "renames" to newuser1@example.com, which is a different
+		// existing user (uid 2222, providerid-newuser1).
+		err = m.UpdateUser(newUser("newuser1@example.com", "providerid-user1"))
+		require.Error(t, err, "renaming onto an existing different username must fail")
+		require.Contains(t, err.Error(), "already in use by a different user",
+			"the failure must be a clear message")
+		require.NotContains(t, err.Error(), "UNIQUE constraint failed",
+			"the raw SQLite constraint error must not leak to the caller")
+
+		// Both original users must survive intact (no partial corruption from the failed rename).
+		user1, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "the original user1 must still exist")
+		require.Equal(t, "providerid-user1", user1.ProviderID, "user1 keeps its provider ID")
+		require.Equal(t, uint32(1111), user1.UID, "user1 keeps its UID")
+
+		newuser1, err := userstestutils.DBManager(m).UserByName("newuser1@example.com")
+		require.NoError(t, err, "the colliding newuser1 must still exist")
+		require.Equal(t, uint32(2222), newuser1.UID, "newuser1 keeps its UID")
+	})
+
+	t.Run("Preserve_locked_state_across_providerid_rename", func(t *testing.T) {
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group_with_providerid.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		// An admin disables the account.
+		err = m.LockUser("user1@example.com")
+		require.NoError(t, err, "Setup: LockUser should not return an error")
+
+		// The user's email changes at the IdP and they log in under the new name. The provider ID still
+		// matches, so authd renames the existing (locked) row instead of creating a new user.
+		err = m.UpdateUser(newUser("newuser1@example.com", "providerid-user1"))
+		require.NoError(t, err, "UpdateUser should not return an error, but did")
+
+		// The lock must survive the rename: a disabled account must not be silently re-enabled by an
+		// IdP-side username change.
+		renamed, err := userstestutils.DBManager(m).UserByName("newuser1@example.com")
+		require.NoError(t, err, "new username should exist")
+		require.True(t, renamed.Locked, "locked state must be preserved across a provider-ID rename")
+
+		stillLocked, err := m.IsUserLocked("newuser1@example.com")
+		require.NoError(t, err, "IsUserLocked should not return an error")
+		require.True(t, stillLocked, "renamed user must remain locked")
+	})
+
+	t.Run("Keep_old_username_in_local_groups_when_rename_fails", func(t *testing.T) {
+		destGroupFile := localgroupstestutils.SetupGroupMock(t,
+			filepath.Join("testdata", "groups", "single_localgroup_user1.group"))
+
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "two_users_with_providerid_and_local_group.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		// Renaming user1@example.com (matched by providerid-user1) to newuser1@example.com must fail,
+		// because newuser1@example.com already exists as a different user. The DB update fails and
+		// is rolled back, so the post-update cleanup must not strip the still-existing old user from
+		// its local groups.
+		err = m.UpdateUser(newUser("newuser1@example.com", "providerid-user1", types.GroupInfo{Name: "localgroup1", UGID: ""}))
+		require.Error(t, err, "UpdateUser should return an error when the rename collides with an existing user")
+
+		stillThere, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "old username should still exist after the failed rename")
+		require.Equal(t, "providerid-user1", stillThere.ProviderID, "old user should keep its provider ID")
+
+		// The group file must not have been mutated at all: no membership was rewritten or removed,
+		// so the old user remains in localgroup1 exactly as before.
+		require.NoFileExists(t, destGroupFile,
+			"local groups must not be modified when the rename fails")
+	})
+
+	t.Run("Provider_ID_match_is_scoped_by_broker", func(t *testing.T) {
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group_with_providerid.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir, users.WithIDGenerator(&users.IDGeneratorMock{
+			UIDsToGenerate: []uint32{2222},
+			GIDsToGenerate: []uint32{22222},
+		}))
+
+		userFromOtherBroker := newUser("newuser1@example.com", "providerid-user1")
+		userFromOtherBroker.BrokerID = "other-broker-id"
+		err = m.UpdateUser(userFromOtherBroker)
+		require.NoError(t, err, "UpdateUser should not return an error, but did")
+
+		oldUser, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "old username should still exist")
+		require.Equal(t, "broker-id", oldUser.BrokerID, "old user should keep its broker ID")
+
+		newUser, err := userstestutils.DBManager(m).UserByName("newuser1@example.com")
+		require.NoError(t, err, "new username should exist")
+		require.Equal(t, "other-broker-id", newUser.BrokerID, "new user should use its broker ID")
+		require.Equal(t, "providerid-user1", newUser.ProviderID, "provider ID should be allowed under another broker")
+	})
+
+	t.Run("Preserve_providerid_when_broker_does_not_return_it", func(t *testing.T) {
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group_with_providerid.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		err = m.UpdateUser(newUser("user1@example.com", ""))
+		require.NoError(t, err, "UpdateUser should not return an error, but did")
+
+		got, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "UserByName should not return an error, but did")
+		require.Equal(t, "providerid-user1", got.ProviderID, "provider ID should be preserved when broker does not return it")
+	})
+
+	t.Run("Reject_login_with_a_different_broker", func(t *testing.T) {
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group_with_providerid.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		userFromOtherBroker := newUser("user1@example.com", "providerid-user1")
+		userFromOtherBroker.BrokerID = "other-broker-id"
+		err = m.UpdateUser(userFromOtherBroker)
+		require.Error(t, err, "UpdateUser should reject a login with a different broker")
+
+		got, err := userstestutils.DBManager(m).UserByName("user1@example.com")
+		require.NoError(t, err, "UserByName should not return an error, but did")
+		require.Equal(t, "broker-id", got.BrokerID, "user should remain bound to its original broker")
+	})
+
+	t.Run("Rename_user_whose_private_group_has_ugid_equal_to_name", func(t *testing.T) {
+		// When authd creates a user it prepends a private group {Name: username, UGID: username}.
+		// On an IdP-side email rename the new private group arrives with {Name: newname, UGID: newname},
+		// but the existing DB row has {UGID: oldname} under the same GID.  Without the fix in
+		// handleGroupsUpdate this triggers a spurious "GID already in use" error because the UGID
+		// change looks like a hijack.
+		dbDir := t.TempDir()
+		err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_with_private_group_ugid_equals_name.db.yaml"), dbDir)
+		require.NoError(t, err, "Setup: could not create database from testdata")
+
+		m := newManagerForTests(t, dbDir)
+
+		err = m.UpdateUser(newUser("newuser1@example.com", "providerid-user1"))
+		require.NoError(t, err, "UpdateUser should succeed when renaming a user whose private group has UGID == Name")
+
+		_, err = m.UserByName("user1@example.com")
+		require.Error(t, err, "old username should no longer exist after rename")
+
+		_, err = m.UserByName("newuser1@example.com")
+		require.NoError(t, err, "new username should exist after rename")
+	})
+
+	t.Run("Reject_new_user_without_provider_ID", func(t *testing.T) {
+		dbDir := t.TempDir()
+		m := newManagerForTests(t, dbDir)
+
+		err := m.UpdateUser(newUser("brandnew@example.com", ""))
+		require.Error(t, err, "UpdateUser should reject a new broker user without a provider ID")
+
+		_, err = m.UserByName("brandnew@example.com")
+		require.Error(t, err, "user without a provider ID should not have been created")
+	})
+
+	t.Run("Reject_provider_ID_without_broker_ID", func(t *testing.T) {
+		dbDir := t.TempDir()
+		m := newManagerForTests(t, dbDir)
+
+		u := newUser("brandnew@example.com", "providerid-brandnew")
+		u.BrokerID = ""
+		err := m.UpdateUser(u)
+		require.Error(t, err, "UpdateUser should reject a provider ID that is not scoped by a broker ID")
+		require.Contains(t, err.Error(), "not scoped by a broker ID")
+
+		_, err = m.UserByName("brandnew@example.com")
+		require.Error(t, err, "user with unscoped provider ID should not have been created")
+	})
+}
+
 func TestRegisterUserPreauth(t *testing.T) {
 	t.Parallel()
 
@@ -796,6 +1049,161 @@ func TestUpdateBrokerForUser(t *testing.T) {
 	}
 }
 
+func TestDeleteUser(t *testing.T) {
+	tests := map[string]struct {
+		username string
+		dbFile   string
+
+		localGroupsFile string
+		removeHome      bool
+
+		wantErr     bool
+		wantErrType error
+	}{
+		"Successfully_delete_user":                                   {},
+		"Successfully_delete_user_removes_them_from_local_groups":    {localGroupsFile: "users_in_groups.group"},
+		"Successfully_delete_user_keeps_other_users_in_shared_group": {username: "user2@example.com"},
+		"Successfully_delete_user_keeps_primary_group_if_other_users_still_use_it": {
+			username: "user1@example.com",
+			dbFile:   "multiple_users_shared_primary_group_with_tmp_home",
+		},
+		"Successfully_delete_user_and_remove_home": {removeHome: true},
+
+		"Error_if_user_does_not_exist": {username: "doesnotexist@example.com", wantErrType: db.NoDataFoundError{}},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			groupFile := tc.localGroupsFile
+			if tc.localGroupsFile == "" {
+				groupFile = "empty.group"
+			}
+			destGroupFile := localgroupstestutils.SetupGroupMock(t, filepath.Join("testdata", "groups", groupFile))
+
+			if tc.username == "" {
+				tc.username = "user1@example.com"
+			}
+
+			dbDir := t.TempDir()
+			dbFile := tc.dbFile
+			if dbFile == "" {
+				dbFile = "multiple_users_and_groups_with_tmp_home"
+			}
+			err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", dbFile+".db.yaml"), dbDir)
+			require.NoError(t, err, "Setup: could not create database from testdata")
+			m := newManagerForTests(t, dbDir)
+
+			var userHome string
+			if tc.username != "doesnotexist@example.com" {
+				user, err := m.UserByName(tc.username)
+				require.NoError(t, err, "Setup: could not look up user")
+				userHome = user.Dir
+				if userHome != "" {
+					err = os.MkdirAll(userHome, 0o700)
+					require.NoError(t, err, "Setup: could not create home directory for %s", tc.username)
+				}
+			}
+			// We expect db file to have user home directories under
+			// /tmp/authd-delete-user-test to keep the cleanup logic simple
+			t.Cleanup(func() { _ = os.RemoveAll("/tmp/authd-delete-user-test/") })
+
+			err = m.DeleteUser(tc.username, tc.removeHome)
+			log.Debugf(context.Background(), "DeleteUser error: %v", err)
+
+			requireErrorAssertions(t, err, tc.wantErrType, tc.wantErr)
+			if tc.wantErrType != nil || tc.wantErr {
+				return
+			}
+
+			if tc.removeHome {
+				require.NoDirExists(t, userHome, "Home directory should have been removed")
+			} else {
+				require.DirExists(t, userHome, "Home directory should still exist")
+			}
+
+			got, err := db.Z_ForTests_DumpNormalizedYAML(userstestutils.DBManager(m))
+			require.NoError(t, err, "Created database should be valid yaml content")
+
+			golden.CheckOrUpdate(t, got)
+
+			localgroupstestutils.RequireGroupFile(t, destGroupFile, golden.Path(t))
+		})
+	}
+}
+
+func TestDeleteGroup(t *testing.T) {
+	tests := map[string]struct {
+		groupname string
+		dbFile    string
+
+		wantErr     bool
+		wantErrType error
+	}{
+		"Successfully_delete_group_keeps_its_members_in_the_db":       {groupname: "nonprimarygroup", dbFile: "multiple_users_and_groups_with_non_primary_group"},
+		"Successfully_delete_shared_group_leaves_other_groups_intact": {groupname: "commongroup", dbFile: "multiple_users_and_groups"},
+
+		"Error_if_group_does_not_exist":                       {groupname: "doesnotexist", dbFile: "multiple_users_and_groups", wantErrType: db.NoDataFoundError{}},
+		"Error_if_group_is_primary_group_of_an_existing_user": {groupname: "group1", dbFile: "multiple_users_and_groups", wantErr: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			// We don't care about the output of gpasswd in this test, but we still need to mock it.
+			_ = localgroupstestutils.SetupGroupMock(t, filepath.Join("testdata", "groups", "empty.group"))
+
+			dbDir := t.TempDir()
+			err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", tc.dbFile+".db.yaml"), dbDir)
+			require.NoError(t, err, "Setup: could not create database from testdata")
+			m := newManagerForTests(t, dbDir)
+
+			err = m.DeleteGroup(tc.groupname)
+			log.Debugf(context.Background(), "DeleteGroup error: %v", err)
+
+			requireErrorAssertions(t, err, tc.wantErrType, tc.wantErr)
+			if tc.wantErrType != nil || tc.wantErr {
+				return
+			}
+
+			got, err := db.Z_ForTests_DumpNormalizedYAML(userstestutils.DBManager(m))
+			require.NoError(t, err, "Created database should be valid yaml content")
+
+			golden.CheckOrUpdate(t, got)
+		})
+	}
+}
+
+func TestUsersWithPrimaryGroup(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		gid uint32
+
+		wantErr bool
+	}{
+		"Returns_users_for_which_the_group_is_primary":             {gid: 11111},
+		"Returns_empty_slice_when_no_user_has_it_as_primary":       {gid: 88888},
+		"Returns_empty_slice_for_shared_group_that_is_not_primary": {gid: 99999},
+		"Returns_multiple_users_when_group_is_primary_for_several": {gid: 55555},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dbDir := t.TempDir()
+			err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "group_primary_check.db.yaml"), dbDir)
+			require.NoError(t, err, "Setup: could not create database from testdata")
+			m := newManagerForTests(t, dbDir)
+
+			got, err := m.UsersWithPrimaryGroup(tc.gid)
+
+			requireErrorAssertions(t, err, nil, tc.wantErr)
+			if tc.wantErr {
+				return
+			}
+
+			golden.CheckOrUpdateYAML(t, got)
+		})
+	}
+}
+
 //nolint:dupl // This is not a duplicate test
 func TestLockUser(t *testing.T) {
 	tests := map[string]struct {
@@ -1246,6 +1654,41 @@ func TestCompareNewUserInfoWithDB(t *testing.T) {
 	}
 }
 
+func TestDiffNewUserInfoWithDBNormalizesMatchingGroupsWhenGroupCountsDiffer(t *testing.T) {
+	t.Parallel()
+
+	userPrivateGroupGID := uint32(11111)
+	existingGroupGID := uint32(22222)
+
+	dbUserInfo := types.UserInfo{
+		Name:  "user1@example.com",
+		UID:   1111,
+		Gecos: "User1 gecos",
+		Dir:   "/home/user1@example.com",
+		Shell: "/bin/bash",
+		Groups: []types.GroupInfo{
+			{Name: "user1@example.com", UGID: "user1@example.com", GID: &userPrivateGroupGID},
+			{Name: "group1@example.com", UGID: "12345678", GID: &existingGroupGID},
+		},
+	}
+
+	newUserInfo := types.UserInfo{
+		Name:  "user1@example.com",
+		Gecos: "User1 gecos",
+		Dir:   "/home/user1@example.com",
+		Shell: "/bin/bash",
+		Groups: []types.GroupInfo{
+			{Name: "user1@example.com", UGID: "user1@example.com"},
+			{Name: "group1@example.com", UGID: "12345678"},
+			{Name: "group2@example.com", UGID: "87654321"},
+		},
+	}
+
+	got := users.DiffNewUserInfoWithUserInfoFromDB(newUserInfo, dbUserInfo)
+
+	require.Equal(t, []string{`group "group2@example.com" added`}, got)
+}
+
 func TestRegisterUserPreAuthWhenLocked(t *testing.T) {
 	// This cannot be parallel
 
@@ -1341,6 +1784,295 @@ func TestUpdateUserAfterUnlock(t *testing.T) {
 
 	err = m.UpdateUser(types.UserInfo{UID: 1234, Name: "some-user-test"})
 	require.NoError(t, err, "UpdateUser should not fail")
+}
+
+func TestSetShell(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		nonExistentUser bool
+		emptyUsername   bool
+		emptyShell      bool
+		shell           string
+
+		wantWarnings int
+		wantErr      bool
+	}{
+		"Successfully_set_shell": {},
+
+		"Warning_if_shell_is_not_in_etc_shells": {
+			shell:        "/bin/ls",
+			wantWarnings: 1,
+		},
+		"Warning_if_shell_does_not_exist": {
+			shell:        "/doesnotexist",
+			wantWarnings: 1,
+		},
+		"Warning_if_shell_is_directory": {
+			shell:        "/etc",
+			wantWarnings: 1,
+		},
+		"Warning_if_shell_is_not_executable": {
+			shell:        "/etc/passwd",
+			wantWarnings: 1,
+		},
+
+		// checkValidPasswdField error cases
+		"Error_if_shell_is_empty": {
+			emptyShell: true,
+			wantErr:    true,
+		},
+		"Error_if_shell_contains_invalid_utf8": {
+			shell:   "/bin/\xff\xfeinvalid",
+			wantErr: true,
+		},
+		"Error_if_shell_contains_colon": {
+			shell:   "/bin/sh:bash",
+			wantErr: true,
+		},
+		"Error_if_shell_contains_control_characters": {
+			shell:   "/bin/sh\x00",
+			wantErr: true,
+		},
+		"Error_if_shell_contains_control_character_tab": {
+			shell:   "/bin/sh\t",
+			wantErr: true,
+		},
+		"Error_if_shell_contains_control_character_newline": {
+			shell:   "/bin/sh\n",
+			wantErr: true,
+		},
+		"Error_if_shell_contains_control_character_del": {
+			shell:   "/bin/sh\x7f",
+			wantErr: true,
+		},
+
+		// checkValidShellPath error cases
+		"Error_if_shell_is_not_absolute_path": {
+			shell:   "bin/sh",
+			wantErr: true,
+		},
+		"Error_if_shell_path_is_not_normalized": {
+			shell:   "/bin/../bin/sh",
+			wantErr: true,
+		},
+		"Error_if_shell_path_is_not_normalized_with_dot": {
+			shell:   "/bin/./sh",
+			wantErr: true,
+		},
+		"Error_if_shell_path_is_too_long": {
+			shell:   "/" + strings.Repeat("a", 4096),
+			wantErr: true,
+		},
+
+		// other error cases
+		"Error_if_user_does_not_exist": {
+			nonExistentUser: true,
+			wantErr:         true,
+		},
+		"Error_if_username_is_empty": {
+			emptyUsername: true,
+			wantErr:       true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			dbDir := t.TempDir()
+			err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group.db.yaml"), dbDir)
+			require.NoError(t, err, "Setup: could not create database from testdata")
+
+			m := newManagerForTests(t, dbDir)
+
+			username := "user1@example.com"
+			if tc.nonExistentUser {
+				username = "nonexistent"
+			} else if tc.emptyUsername {
+				username = ""
+			}
+
+			shell := "/bin/sh"
+			if tc.emptyShell {
+				shell = ""
+			} else if tc.shell != "" {
+				shell = tc.shell
+			}
+
+			warnings, err := m.SetShell(username, shell)
+			requireErrorAssertions(t, err, nil, tc.wantErr)
+
+			require.Len(t, warnings, tc.wantWarnings, "Number of warnings mismatch")
+
+			if tc.wantErr {
+				return
+			}
+
+			yamlData, err := db.Z_ForTests_DumpNormalizedYAML(m.DB())
+			require.NoError(t, err)
+			golden.CheckOrUpdate(t, yamlData, golden.WithPath("db"))
+
+			golden.CheckOrUpdateYAML(t, warnings, golden.WithPath("warnings"))
+		})
+	}
+}
+
+func TestSetHomeDir(t *testing.T) {
+	// These tests acquire the user-management write lock and move directories on
+	// disk, so they must not run in parallel: the test lock override returns an
+	// error immediately when the lock is already held.
+	tests := map[string]struct {
+		emptyUsername     bool
+		nonExistentUser   bool
+		relativeNewHome   bool
+		createOldHome     bool
+		precreateNewHome  bool
+		sameAsCurrentHome bool
+		busyUser          bool
+		newHomeNotAccess  bool
+		oldHomeNotAccess  bool
+		renameFails       bool
+		dbReadOnly        bool
+
+		wantErr      bool
+		wantChanged  bool
+		wantMoved    bool
+		wantWarnings int
+	}{
+		"Successfully_move_existing_home_dir":  {createOldHome: true, wantChanged: true, wantMoved: true},
+		"Update_db_only_when_old_home_missing": {wantChanged: true, wantWarnings: 1},
+		"No-op_when_user_already_has_home_dir": {sameAsCurrentHome: true, wantWarnings: 1},
+
+		"Error_when_destination_already_exists":   {createOldHome: true, precreateNewHome: true, wantErr: true},
+		"Error_when_path_is_not_absolute":         {relativeNewHome: true, wantErr: true},
+		"Error_when_username_is_empty":            {emptyUsername: true, wantErr: true},
+		"Error_when_user_does_not_exist":          {nonExistentUser: true, wantErr: true},
+		"Error_when_user_is_busy":                 {busyUser: true, createOldHome: true, wantErr: true},
+		"Error_when_new_home_path_not_accessible": {newHomeNotAccess: true, createOldHome: true, wantErr: true},
+		"Error_when_current_home_not_accessible":  {oldHomeNotAccess: true, wantErr: true},
+		"Error_when_rename_fails":                 {renameFails: true, createOldHome: true, wantErr: true},
+		"Error_and_rollback_when_db_update_fails": {dbReadOnly: true, createOldHome: true, wantErr: true},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			dbDir := t.TempDir()
+			err := db.Z_ForTests_CreateDBFromYAML(filepath.Join("testdata", "db", "one_user_and_group.db.yaml"), dbDir)
+			require.NoError(t, err, "Setup: could not create database from testdata")
+
+			m := newManagerForTests(t, dbDir)
+
+			username := "user1@example.com"
+			if tc.nonExistentUser {
+				username = "nonexistent@example.com"
+			} else if tc.emptyUsername {
+				username = ""
+			}
+
+			baseDir := t.TempDir()
+			oldHome := filepath.Join(baseDir, "old")
+			newHome := filepath.Join(baseDir, "new")
+			if tc.relativeNewHome {
+				newHome = "relative/new"
+			}
+			if tc.sameAsCurrentHome {
+				newHome = oldHome
+			}
+
+			// For the "new home not accessible" test, create a parent directory
+			// with no permissions so os.Lstat on the new home fails with EACCES.
+			if tc.newHomeNotAccess {
+				restrictedDir := filepath.Join(baseDir, "restricted")
+				require.NoError(t, os.MkdirAll(restrictedDir, 0o000), "Setup: could not create restricted directory")
+				newHome = filepath.Join(restrictedDir, "new")
+				t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o700) }) //nolint:gosec // test-only cleanup
+			}
+
+			// For the "old home not accessible" test, point the user at a path
+			// inside a restricted directory so os.Lstat fails with EACCES.
+			if tc.oldHomeNotAccess {
+				restrictedDir := filepath.Join(baseDir, "restricted")
+				require.NoError(t, os.MkdirAll(restrictedDir, 0o000), "Setup: could not create restricted directory")
+				oldHome = filepath.Join(restrictedDir, "old")
+				t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o700) }) //nolint:gosec // test-only cleanup
+			}
+
+			// For the "rename fails" test, make the parent of the new home
+			// read-only so os.Rename cannot create the new entry.
+			if tc.renameFails {
+				restrictedDir := filepath.Join(baseDir, "restricted")
+				require.NoError(t, os.MkdirAll(restrictedDir, 0o500), "Setup: could not create restricted directory")
+				newHome = filepath.Join(restrictedDir, "new")
+				t.Cleanup(func() { _ = os.Chmod(restrictedDir, 0o700) }) //nolint:gosec // test-only cleanup
+			}
+
+			// Point the user at our controlled old home directory.
+			if !tc.emptyUsername && !tc.nonExistentUser {
+				err = m.DB().SetHomeDir(username, oldHome)
+				require.NoError(t, err, "Setup: could not set initial home directory")
+			}
+
+			// For the busy-user test, set the user's UID to the current process
+			// UID so proc.CheckUserBusy finds an active process.
+			if tc.busyUser {
+				err = m.DB().SetUserID(username, uint32(os.Getuid())) //nolint:gosec // G115 - UID is always a valid uint32 in tests
+				require.NoError(t, err, "Setup: could not set user UID to current process UID")
+			}
+
+			if tc.createOldHome {
+				require.NoError(t, os.MkdirAll(oldHome, 0o700), "Setup: could not create old home directory")
+				require.NoError(t, os.WriteFile(filepath.Join(oldHome, "marker"), []byte("data"), 0o600), "Setup: could not create marker file")
+			}
+			if tc.precreateNewHome {
+				require.NoError(t, os.MkdirAll(newHome, 0o700), "Setup: could not pre-create new home directory")
+			}
+
+			// For the DB-read-only test, make the database directory read-only
+			// after setup so that SQLite cannot create the rollback journal
+			// file and the UPDATE in db.SetHomeDir fails.  The SELECT
+			// (UserByName) still succeeds because it is served from the
+			// already-open connection's page cache and needs no journal.
+			if tc.dbReadOnly {
+				require.NoError(t, os.Chmod(dbDir, 0o500), "Setup: could not make database directory read-only") //nolint:gosec // test-only permission change
+				t.Cleanup(func() { _ = os.Chmod(dbDir, 0o700) })                                                 //nolint:gosec // test-only cleanup
+			}
+
+			resp, err := m.SetHomeDir(username, newHome)
+			if tc.wantErr {
+				require.Error(t, err, "SetHomeDir should return an error")
+				// On error, the database record must remain unchanged.
+				if !tc.emptyUsername && !tc.nonExistentUser && !tc.dbReadOnly {
+					u, lookupErr := m.UserByName(username)
+					require.NoError(t, lookupErr, "User should still exist")
+					require.Equal(t, oldHome, u.Dir, "Home directory in the database should be unchanged on error")
+				}
+				// For the dbReadOnly case, the directory was moved (rename succeeded)
+				// but the DB update failed, so the rollback should have moved it back.
+				if tc.dbReadOnly {
+					require.DirExists(t, oldHome, "Old home directory should have been rolled back")
+				}
+				return
+			}
+			require.NoError(t, err, "SetHomeDir should not return an error")
+			require.Equal(t, tc.wantChanged, resp.HomeDirChanged, "Unexpected HomeDirChanged value")
+			require.Equal(t, tc.wantMoved, resp.HomeDirMoved, "Unexpected HomeDirMoved value")
+			require.Len(t, resp.Warnings, tc.wantWarnings, "Unexpected number of warnings")
+
+			// On success, the database record is always updated to the new path.
+			u, err := m.UserByName(username)
+			require.NoError(t, err, "User should exist")
+			require.Equal(t, newHome, u.Dir, "Home directory in the database should be updated")
+
+			if tc.wantMoved {
+				require.NoDirExists(t, oldHome, "Old home directory should have been moved")
+				require.FileExists(t, filepath.Join(newHome, "marker"), "Marker file should exist at the new location")
+			} else {
+				// The old home was missing, so the new directory must not be created.
+				require.NoDirExists(t, newHome, "New home directory should not be created when the old one is missing")
+			}
+		})
+	}
 }
 
 func requireErrorAssertions(t *testing.T, gotErr, wantErrType error, wantErr bool) {

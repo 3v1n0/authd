@@ -20,13 +20,12 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	PAM_AvailableBrokers_FullMethodName         = "/authd.PAM/AvailableBrokers"
-	PAM_GetPreviousBroker_FullMethodName        = "/authd.PAM/GetPreviousBroker"
+	PAM_GetBroker_FullMethodName                = "/authd.PAM/GetBroker"
 	PAM_SelectBroker_FullMethodName             = "/authd.PAM/SelectBroker"
 	PAM_GetAuthenticationModes_FullMethodName   = "/authd.PAM/GetAuthenticationModes"
 	PAM_SelectAuthenticationMode_FullMethodName = "/authd.PAM/SelectAuthenticationMode"
 	PAM_IsAuthenticated_FullMethodName          = "/authd.PAM/IsAuthenticated"
 	PAM_EndSession_FullMethodName               = "/authd.PAM/EndSession"
-	PAM_SetDefaultBrokerForUser_FullMethodName  = "/authd.PAM/SetDefaultBrokerForUser"
 )
 
 // PAMClient is the client API for PAM service.
@@ -34,13 +33,12 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type PAMClient interface {
 	AvailableBrokers(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*ABResponse, error)
-	GetPreviousBroker(ctx context.Context, in *GPBRequest, opts ...grpc.CallOption) (*GPBResponse, error)
+	GetBroker(ctx context.Context, in *GBRequest, opts ...grpc.CallOption) (*GBResponse, error)
 	SelectBroker(ctx context.Context, in *SBRequest, opts ...grpc.CallOption) (*SBResponse, error)
 	GetAuthenticationModes(ctx context.Context, in *GAMRequest, opts ...grpc.CallOption) (*GAMResponse, error)
 	SelectAuthenticationMode(ctx context.Context, in *SAMRequest, opts ...grpc.CallOption) (*SAMResponse, error)
 	IsAuthenticated(ctx context.Context, in *IARequest, opts ...grpc.CallOption) (*IAResponse, error)
 	EndSession(ctx context.Context, in *ESRequest, opts ...grpc.CallOption) (*Empty, error)
-	SetDefaultBrokerForUser(ctx context.Context, in *SDBFURequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type pAMClient struct {
@@ -61,10 +59,10 @@ func (c *pAMClient) AvailableBrokers(ctx context.Context, in *Empty, opts ...grp
 	return out, nil
 }
 
-func (c *pAMClient) GetPreviousBroker(ctx context.Context, in *GPBRequest, opts ...grpc.CallOption) (*GPBResponse, error) {
+func (c *pAMClient) GetBroker(ctx context.Context, in *GBRequest, opts ...grpc.CallOption) (*GBResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GPBResponse)
-	err := c.cc.Invoke(ctx, PAM_GetPreviousBroker_FullMethodName, in, out, cOpts...)
+	out := new(GBResponse)
+	err := c.cc.Invoke(ctx, PAM_GetBroker_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -121,28 +119,17 @@ func (c *pAMClient) EndSession(ctx context.Context, in *ESRequest, opts ...grpc.
 	return out, nil
 }
 
-func (c *pAMClient) SetDefaultBrokerForUser(ctx context.Context, in *SDBFURequest, opts ...grpc.CallOption) (*Empty, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, PAM_SetDefaultBrokerForUser_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // PAMServer is the server API for PAM service.
 // All implementations must embed UnimplementedPAMServer
 // for forward compatibility.
 type PAMServer interface {
 	AvailableBrokers(context.Context, *Empty) (*ABResponse, error)
-	GetPreviousBroker(context.Context, *GPBRequest) (*GPBResponse, error)
+	GetBroker(context.Context, *GBRequest) (*GBResponse, error)
 	SelectBroker(context.Context, *SBRequest) (*SBResponse, error)
 	GetAuthenticationModes(context.Context, *GAMRequest) (*GAMResponse, error)
 	SelectAuthenticationMode(context.Context, *SAMRequest) (*SAMResponse, error)
 	IsAuthenticated(context.Context, *IARequest) (*IAResponse, error)
 	EndSession(context.Context, *ESRequest) (*Empty, error)
-	SetDefaultBrokerForUser(context.Context, *SDBFURequest) (*Empty, error)
 	mustEmbedUnimplementedPAMServer()
 }
 
@@ -156,8 +143,8 @@ type UnimplementedPAMServer struct{}
 func (UnimplementedPAMServer) AvailableBrokers(context.Context, *Empty) (*ABResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AvailableBrokers not implemented")
 }
-func (UnimplementedPAMServer) GetPreviousBroker(context.Context, *GPBRequest) (*GPBResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetPreviousBroker not implemented")
+func (UnimplementedPAMServer) GetBroker(context.Context, *GBRequest) (*GBResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBroker not implemented")
 }
 func (UnimplementedPAMServer) SelectBroker(context.Context, *SBRequest) (*SBResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SelectBroker not implemented")
@@ -173,9 +160,6 @@ func (UnimplementedPAMServer) IsAuthenticated(context.Context, *IARequest) (*IAR
 }
 func (UnimplementedPAMServer) EndSession(context.Context, *ESRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EndSession not implemented")
-}
-func (UnimplementedPAMServer) SetDefaultBrokerForUser(context.Context, *SDBFURequest) (*Empty, error) {
-	return nil, status.Error(codes.Unimplemented, "method SetDefaultBrokerForUser not implemented")
 }
 func (UnimplementedPAMServer) mustEmbedUnimplementedPAMServer() {}
 func (UnimplementedPAMServer) testEmbeddedByValue()             {}
@@ -216,20 +200,20 @@ func _PAM_AvailableBrokers_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PAM_GetPreviousBroker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GPBRequest)
+func _PAM_GetBroker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GBRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(PAMServer).GetPreviousBroker(ctx, in)
+		return srv.(PAMServer).GetBroker(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: PAM_GetPreviousBroker_FullMethodName,
+		FullMethod: PAM_GetBroker_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PAMServer).GetPreviousBroker(ctx, req.(*GPBRequest))
+		return srv.(PAMServer).GetBroker(ctx, req.(*GBRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -324,24 +308,6 @@ func _PAM_EndSession_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _PAM_SetDefaultBrokerForUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SDBFURequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PAMServer).SetDefaultBrokerForUser(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PAM_SetDefaultBrokerForUser_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PAMServer).SetDefaultBrokerForUser(ctx, req.(*SDBFURequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // PAM_ServiceDesc is the grpc.ServiceDesc for PAM service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -354,8 +320,8 @@ var PAM_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _PAM_AvailableBrokers_Handler,
 		},
 		{
-			MethodName: "GetPreviousBroker",
-			Handler:    _PAM_GetPreviousBroker_Handler,
+			MethodName: "GetBroker",
+			Handler:    _PAM_GetBroker_Handler,
 		},
 		{
 			MethodName: "SelectBroker",
@@ -377,10 +343,6 @@ var PAM_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "EndSession",
 			Handler:    _PAM_EndSession_Handler,
 		},
-		{
-			MethodName: "SetDefaultBrokerForUser",
-			Handler:    _PAM_SetDefaultBrokerForUser_Handler,
-		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "authd.proto",
@@ -394,6 +356,10 @@ const (
 	UserService_UnlockUser_FullMethodName     = "/authd.UserService/UnlockUser"
 	UserService_SetUserID_FullMethodName      = "/authd.UserService/SetUserID"
 	UserService_SetGroupID_FullMethodName     = "/authd.UserService/SetGroupID"
+	UserService_SetShell_FullMethodName       = "/authd.UserService/SetShell"
+	UserService_SetHomeDir_FullMethodName     = "/authd.UserService/SetHomeDir"
+	UserService_DeleteUser_FullMethodName     = "/authd.UserService/DeleteUser"
+	UserService_DeleteGroup_FullMethodName    = "/authd.UserService/DeleteGroup"
 	UserService_GetGroupByName_FullMethodName = "/authd.UserService/GetGroupByName"
 	UserService_GetGroupByID_FullMethodName   = "/authd.UserService/GetGroupByID"
 	UserService_ListGroups_FullMethodName     = "/authd.UserService/ListGroups"
@@ -410,6 +376,10 @@ type UserServiceClient interface {
 	UnlockUser(ctx context.Context, in *UnlockUserRequest, opts ...grpc.CallOption) (*Empty, error)
 	SetUserID(ctx context.Context, in *SetUserIDRequest, opts ...grpc.CallOption) (*SetUserIDResponse, error)
 	SetGroupID(ctx context.Context, in *SetGroupIDRequest, opts ...grpc.CallOption) (*SetGroupIDResponse, error)
+	SetShell(ctx context.Context, in *SetShellRequest, opts ...grpc.CallOption) (*SetShellResponse, error)
+	SetHomeDir(ctx context.Context, in *SetHomeDirRequest, opts ...grpc.CallOption) (*SetHomeDirResponse, error)
+	DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...grpc.CallOption) (*DeleteUserResponse, error)
+	DeleteGroup(ctx context.Context, in *DeleteGroupRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetGroupByName(ctx context.Context, in *GetGroupByNameRequest, opts ...grpc.CallOption) (*Group, error)
 	GetGroupByID(ctx context.Context, in *GetGroupByIDRequest, opts ...grpc.CallOption) (*Group, error)
 	ListGroups(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Groups, error)
@@ -493,6 +463,46 @@ func (c *userServiceClient) SetGroupID(ctx context.Context, in *SetGroupIDReques
 	return out, nil
 }
 
+func (c *userServiceClient) SetShell(ctx context.Context, in *SetShellRequest, opts ...grpc.CallOption) (*SetShellResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetShellResponse)
+	err := c.cc.Invoke(ctx, UserService_SetShell_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) SetHomeDir(ctx context.Context, in *SetHomeDirRequest, opts ...grpc.CallOption) (*SetHomeDirResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetHomeDirResponse)
+	err := c.cc.Invoke(ctx, UserService_SetHomeDir_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...grpc.CallOption) (*DeleteUserResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteUserResponse)
+	err := c.cc.Invoke(ctx, UserService_DeleteUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *userServiceClient) DeleteGroup(ctx context.Context, in *DeleteGroupRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, UserService_DeleteGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *userServiceClient) GetGroupByName(ctx context.Context, in *GetGroupByNameRequest, opts ...grpc.CallOption) (*Group, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Group)
@@ -534,6 +544,10 @@ type UserServiceServer interface {
 	UnlockUser(context.Context, *UnlockUserRequest) (*Empty, error)
 	SetUserID(context.Context, *SetUserIDRequest) (*SetUserIDResponse, error)
 	SetGroupID(context.Context, *SetGroupIDRequest) (*SetGroupIDResponse, error)
+	SetShell(context.Context, *SetShellRequest) (*SetShellResponse, error)
+	SetHomeDir(context.Context, *SetHomeDirRequest) (*SetHomeDirResponse, error)
+	DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserResponse, error)
+	DeleteGroup(context.Context, *DeleteGroupRequest) (*Empty, error)
 	GetGroupByName(context.Context, *GetGroupByNameRequest) (*Group, error)
 	GetGroupByID(context.Context, *GetGroupByIDRequest) (*Group, error)
 	ListGroups(context.Context, *Empty) (*Groups, error)
@@ -567,6 +581,18 @@ func (UnimplementedUserServiceServer) SetUserID(context.Context, *SetUserIDReque
 }
 func (UnimplementedUserServiceServer) SetGroupID(context.Context, *SetGroupIDRequest) (*SetGroupIDResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetGroupID not implemented")
+}
+func (UnimplementedUserServiceServer) SetShell(context.Context, *SetShellRequest) (*SetShellResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetShell not implemented")
+}
+func (UnimplementedUserServiceServer) SetHomeDir(context.Context, *SetHomeDirRequest) (*SetHomeDirResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetHomeDir not implemented")
+}
+func (UnimplementedUserServiceServer) DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteUser not implemented")
+}
+func (UnimplementedUserServiceServer) DeleteGroup(context.Context, *DeleteGroupRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteGroup not implemented")
 }
 func (UnimplementedUserServiceServer) GetGroupByName(context.Context, *GetGroupByNameRequest) (*Group, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetGroupByName not implemented")
@@ -724,6 +750,78 @@ func _UserService_SetGroupID_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserService_SetShell_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetShellRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).SetShell(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_SetShell_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).SetShell(ctx, req.(*SetShellRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_SetHomeDir_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetHomeDirRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).SetHomeDir(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_SetHomeDir_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).SetHomeDir(ctx, req.(*SetHomeDirRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_DeleteUser_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteUserRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).DeleteUser(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_DeleteUser_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).DeleteUser(ctx, req.(*DeleteUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UserService_DeleteGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserServiceServer).DeleteGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserService_DeleteGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserServiceServer).DeleteGroup(ctx, req.(*DeleteGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _UserService_GetGroupByName_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetGroupByNameRequest)
 	if err := dec(in); err != nil {
@@ -812,6 +910,22 @@ var UserService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetGroupID",
 			Handler:    _UserService_SetGroupID_Handler,
+		},
+		{
+			MethodName: "SetShell",
+			Handler:    _UserService_SetShell_Handler,
+		},
+		{
+			MethodName: "SetHomeDir",
+			Handler:    _UserService_SetHomeDir_Handler,
+		},
+		{
+			MethodName: "DeleteUser",
+			Handler:    _UserService_DeleteUser_Handler,
+		},
+		{
+			MethodName: "DeleteGroup",
+			Handler:    _UserService_DeleteGroup_Handler,
 		},
 		{
 			MethodName: "GetGroupByName",

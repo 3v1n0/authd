@@ -9,7 +9,7 @@ authd.PAM:
         - name: GetAuthenticationModes
           isclientstream: false
           isserverstream: false
-        - name: GetPreviousBroker
+        - name: GetBroker
           isclientstream: false
           isserverstream: false
         - name: IsAuthenticated
@@ -21,12 +21,15 @@ authd.PAM:
         - name: SelectBroker
           isclientstream: false
           isserverstream: false
-        - name: SetDefaultBrokerForUser
-          isclientstream: false
-          isserverstream: false
     metadata: authd.proto
 authd.UserService:
     methods:
+        - name: DeleteGroup
+          isclientstream: false
+          isserverstream: false
+        - name: DeleteUser
+          isclientstream: false
+          isserverstream: false
         - name: GetGroupByID
           isclientstream: false
           isserverstream: false
@@ -49,6 +52,12 @@ authd.UserService:
           isclientstream: false
           isserverstream: false
         - name: SetGroupID
+          isclientstream: false
+          isserverstream: false
+        - name: SetHomeDir
+          isclientstream: false
+          isserverstream: false
+        - name: SetShell
           isclientstream: false
           isserverstream: false
         - name: SetUserID

@@ -270,6 +270,123 @@ func (s Service) SetGroupID(ctx context.Context, req *authd.SetGroupIDRequest) (
 	}, nil
 }
 
+// SetShell sets the shell of a user.
+func (s Service) SetShell(ctx context.Context, req *authd.SetShellRequest) (*authd.SetShellResponse, error) {
+	// authd uses lowercase group names.
+	name := strings.ToLower(req.GetName())
+
+	if err := s.permissionManager.CheckRequestIsFromRoot(ctx); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	warnings, err := s.userManager.SetShell(name, req.GetShell())
+	if err != nil {
+		log.Errorf(ctx, "SetShell: %v", err)
+		return nil, grpcError(err)
+	}
+
+	return &authd.SetShellResponse{
+		Warnings: warnings,
+	}, nil
+}
+
+// SetHomeDir sets the home directory of a user.
+func (s Service) SetHomeDir(ctx context.Context, req *authd.SetHomeDirRequest) (*authd.SetHomeDirResponse, error) {
+	if err := s.permissionManager.CheckRequestIsFromRoot(ctx); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	// authd uses lowercase usernames.
+	name := strings.ToLower(req.GetName())
+
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "no user name provided")
+	}
+
+	resp, err := s.userManager.SetHomeDir(name, req.GetHome())
+	if err != nil {
+		log.Errorf(ctx, "SetHomeDir: %v", err)
+		return nil, grpcError(err)
+	}
+
+	return &authd.SetHomeDirResponse{
+		HomeDirChanged: resp.HomeDirChanged,
+		HomeDirMoved:   resp.HomeDirMoved,
+		Warnings:       resp.Warnings,
+	}, nil
+}
+
+// DeleteUser removes the user with the given name from the authd database.
+func (s Service) DeleteUser(ctx context.Context, req *authd.DeleteUserRequest) (*authd.DeleteUserResponse, error) {
+	if err := s.permissionManager.CheckRequestIsFromRoot(ctx); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	// authd uses lowercase usernames.
+	name := strings.ToLower(req.GetName())
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "no user name provided")
+	}
+
+	// Look up which broker owns this user and the user's stable provider ID before removing them
+	// from the DB, so we can attempt broker-side cleanup afterwards and pass the provider ID for
+	// provider-ID keyed cache directory cleanup (API v3). A failure here is non-fatal for the
+	// deletion itself.
+	var warnings []string
+	var brokerCleanupFailedOrSkipped bool
+	brokerID, providerID, err := s.userManager.BrokerAndProviderIDForUser(name)
+	if err != nil {
+		brokerCleanupFailedOrSkipped = true
+		log.Errorf(context.Background(), "failed to look up broker and provider ID for user %q: %v", name, err)
+	}
+
+	if err := s.userManager.DeleteUser(name, req.GetRemoveHome()); err != nil {
+		log.Errorf(ctx, "DeleteUser: %v", err)
+		return nil, grpcError(err)
+	}
+
+	// Notify the broker so it can clean up any broker side data (tokens, cached
+	// passwords, etc.) stored for this user. Failures here are non-fatal. The
+	// user has already been removed from the authd DB, so we return a warning and
+	// still return success. The local broker has no remote data, so skip it.
+	if brokerID != "" && brokerID != brokers.LocalBrokerName {
+		broker, err := s.brokerManager.BrokerFromID(brokerID)
+		if err != nil {
+			brokerCleanupFailedOrSkipped = true
+			log.Errorf(context.Background(), "failed to get broker %q for user %q: %v", brokerID, name, err)
+		} else if err := broker.DeleteUser(ctx, name, providerID); err != nil {
+			brokerCleanupFailedOrSkipped = true
+			log.Errorf(context.Background(), "failed to delete user %q from broker %q: %v", name, brokerID, err)
+		}
+	}
+
+	if brokerCleanupFailedOrSkipped {
+		warnings = append(warnings, fmt.Sprintf("Failed to remove locally cached authentication data for user %q from the broker; residual data may remain on disk. Check the system logs for details.", name))
+	}
+
+	return &authd.DeleteUserResponse{Warnings: warnings}, nil
+}
+
+// DeleteGroup removes the group with the given name from the authd database.
+func (s Service) DeleteGroup(ctx context.Context, req *authd.DeleteGroupRequest) (*authd.Empty, error) {
+	if err := s.permissionManager.CheckRequestIsFromRoot(ctx); err != nil {
+		return nil, status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	// authd uses lowercase group names.
+	name := strings.ToLower(req.GetName())
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "no group name provided")
+	}
+
+	if err := s.userManager.DeleteGroup(name); err != nil {
+		log.Errorf(ctx, "DeleteGroup: %v", err)
+		return nil, grpcError(err)
+	}
+
+	return &authd.Empty{}, nil
+}
+
 // userToProtobuf converts a types.UserEntry to authd.User.
 func userToProtobuf(u types.UserEntry) *authd.User {
 	return &authd.User{
@@ -344,11 +461,16 @@ func (s Service) userPreCheck(ctx context.Context, username string) (types.UserE
 	return u, nil
 }
 
-// grpcError converts a data not found to proper GRPC status code.
-// The NSS module uses this status code to determine the NSS status it should return.
+// grpcError converts well-known user manager errors to their proper gRPC status codes.
+// The NSS module uses these status codes to determine the NSS status it should return.
 func grpcError(err error) error {
 	if errors.Is(err, users.NoDataFoundError{}) {
 		return status.Error(codes.NotFound, err.Error())
+	}
+
+	var primaryErr users.GroupIsPrimaryError
+	if errors.As(err, &primaryErr) {
+		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 
 	return err

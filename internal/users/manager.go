@@ -10,6 +10,7 @@ import (
 	"os/user"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -149,36 +150,87 @@ func (m *Manager) UpdateUser(u types.UserInfo) (err error) {
 	if u.Name == "" {
 		return errors.New("empty username")
 	}
+	if u.ProviderID != "" && u.BrokerID == "" {
+		return fmt.Errorf("provider ID for user %q is not scoped by a broker ID", u.Name)
+	}
+
+	// Try to resolve the user's stable identity via broker-scoped provider ID (sub/oid). If found under
+	// a different name, this is an email change at the IdP: use the old DB name as
+	// the lookup key for the "existing user" checks, then let the update rename it.
+	lookupName := u.Name
+	if u.BrokerID != "" && u.ProviderID != "" {
+		providerIDMatch, providerIDErr := m.db.UserByProviderID(u.BrokerID, u.ProviderID)
+		if providerIDErr != nil && !errors.Is(providerIDErr, db.NoDataFoundError{}) {
+			return fmt.Errorf("failed to look up user by provider ID: %w", providerIDErr)
+		}
+		if providerIDErr == nil && providerIDMatch.Name != u.Name {
+			log.Noticef(context.TODO(), "User identified by broker ID %q and provider ID %q: username changed from %q to %q",
+				u.BrokerID, u.ProviderID, providerIDMatch.Name, u.Name)
+			lookupName = providerIDMatch.Name
+		}
+	}
 
 	// Prepend the user private group
 	u.Groups = append([]types.GroupInfo{{Name: u.Name, UGID: u.Name}}, u.Groups...)
 	userPrivateGroup := &u.Groups[0]
 
 	var oldUserInfo *types.UserInfo
-	checkEqualUserExists := func() (exists bool, err error) {
+	var pendingDiffs []string
+	checkUserNeedsUpdate := func() (needsUpdate bool, err error) {
 		// Check if the user already exists in the database.
-		oldUserInfo, err = m.getOldUserInfoFromDB(u.Name)
+		oldUserInfo, err = m.getOldUserInfoFromDB(lookupName)
 		if err != nil {
 			return false, err
 		}
 		if oldUserInfo == nil {
+			// A brand new user authenticated by a broker must come with a stable provider
+			// identifier so we can reliably re-identify them across username changes at the IdP.
+			if u.BrokerID != "" && u.ProviderID == "" {
+				return false, fmt.Errorf("broker %q did not provide a provider ID for new user %q; the broker may need to be updated to a version that identifies users by a stable provider ID", u.BrokerID, u.Name)
+			}
+			return true, nil
+		}
+		if oldUserInfo.BrokerID != "" && u.BrokerID != "" && oldUserInfo.BrokerID != u.BrokerID {
+			// The broker ID scopes the stored provider ID and must not change once set: a user
+			// is bound to the broker they first authenticated with.
+			return false, fmt.Errorf("user %q is already bound to broker %q and cannot authenticate with broker %q",
+				u.Name, oldUserInfo.BrokerID, u.BrokerID)
+		}
+		if oldUserInfo.BrokerID != "" {
+			// The broker ID scopes the stored provider ID and should not change after it is set.
+			u.BrokerID = oldUserInfo.BrokerID
+		}
+		if oldUserInfo.BrokerID == "" && u.BrokerID != "" {
+			// First login after migration: persist broker ID in DB.
+			return true, nil
+		}
+		if oldUserInfo.ProviderID != "" && u.ProviderID == "" {
+			// Preserve already-recorded stable identity when brokers don't provide it (v2).
+			u.ProviderID = oldUserInfo.ProviderID
+		}
+		if oldUserInfo.ProviderID == "" && u.ProviderID != "" {
+			// First login after migration: persist provider ID in DB.
+			return true, nil
+		}
+		if lookupName != u.Name {
+			// Username changed (provider-ID matched rename): always trigger an update.
+			return true, nil
+		}
+		pendingDiffs = diffNormalizedUserInfo(u, *oldUserInfo)
+		if len(pendingDiffs) == 0 {
+			log.Debugf(context.TODO(), "User %q in database is up to date with current user info", u.Name)
 			return false, nil
 		}
-		if !compareNewUserInfoWithUserInfoFromDB(u, *oldUserInfo) {
-			log.Debugf(context.TODO(), "User %q is already in our database", u.Name)
-			return false, nil
-		}
-
-		log.Debugf(context.TODO(), "User %q in database already matches current", u.Name)
+		log.Debugf(context.TODO(), "User %q exists in database but needs update", u.Name)
 		return true, nil
 	}
 
 	// Do a first check before locking, so that if the user is already there and
 	// matches the DB entry, we can avoid any kind of locking (and so being
 	// blocked by other pre-auth users that may try to login meanwhile).
-	exists, err := checkEqualUserExists()
-	if exists || err != nil {
-		// The user already exists, so no update needed, or an error occurred.
+	needsUpdate, err := checkUserNeedsUpdate()
+	if !needsUpdate || err != nil {
+		// The user is up to date, or an error occurred.
 		return err
 	}
 
@@ -188,11 +240,15 @@ func (m *Manager) UpdateUser(u types.UserInfo) (err error) {
 	// Now that we're locked, check again if meanwhile some other request
 	// created the same user, if not we can do all the kinds of locking since
 	// we're sure that the user needs to be added or updated in the database.
-	if exists, err := checkEqualUserExists(); exists || err != nil {
+	if needsUpdate, err := checkUserNeedsUpdate(); !needsUpdate || err != nil {
 		return err
 	}
 
-	log.Debugf(context.TODO(), "User %q needs update", u.Name)
+	if oldUserInfo == nil {
+		log.Debugf(context.TODO(), "User %q needs update: new user", u.Name)
+	} else {
+		log.Debugf(context.TODO(), "User %q needs update: %s", u.Name, strings.Join(pendingDiffs, ", "))
+	}
 
 	lockedEntries, unlockEntries, err := localentries.WithUserDBLock()
 	if err != nil {
@@ -315,7 +371,8 @@ func (m *Manager) UpdateUser(u types.UserInfo) (err error) {
 		}
 	}
 
-	userRow := db.NewUserRow(u.Name, u.UID, *userPrivateGroup.GID, u.Gecos, u.Dir, u.Shell)
+	userRow := db.NewUserRow(u.Name, u.UID, *userPrivateGroup.GID, u.Gecos, u.Dir, u.Shell, u.BrokerID, u.ProviderID)
+
 	if err = m.db.UpdateUserEntry(userRow, groupRows, localGroups); err != nil {
 		return err
 	}
@@ -323,6 +380,15 @@ func (m *Manager) UpdateUser(u types.UserInfo) (err error) {
 	// Update local groups.
 	if err := localentries.UpdateGroups(lockedEntries, u.Name, localGroups, oldLocalGroups); err != nil {
 		return err
+	}
+
+	// If the username changed (provider-ID matched rename), remove the old username from its local
+	// groups. This runs only after the database update has succeeded, so a failed rename (e.g. the
+	// new name collides with another user) cannot strip the still-existing old user from its groups.
+	if oldUserInfo != nil && lookupName != u.Name && len(oldLocalGroups) > 0 {
+		if err := localentries.UpdateGroups(lockedEntries, lookupName, nil, oldLocalGroups); err != nil {
+			return fmt.Errorf("failed to remove old username %q from local groups: %w", lookupName, err)
+		}
 	}
 
 	if err = checkHomeDirOwner(userRow.Dir, userRow.UID, userRow.GID); err != nil {
@@ -345,18 +411,18 @@ func (m *Manager) getOldUserInfoFromDB(name string) (oldUserInfo *types.UserInfo
 	return userInfoFromUserAndGroupRows(oldUser, oldGroups, oldLocalGroups), nil
 }
 
-func compareNewUserInfoWithUserInfoFromDB(newUserInfo, dbUserInfo types.UserInfo) bool {
-	if len(dbUserInfo.Groups) != len(newUserInfo.Groups) {
-		return false
-	}
-
-	// The new user UID may be set or un set, but despite that we're going to use
-	// the one we saved, so compare against it.
+// diffNormalizedUserInfo normalizes newUserInfo for comparison against dbUserInfo
+// (overriding UID and group GIDs to match existing DB values, since those are
+// assigned by authd and not by the broker) and returns the diff between the two.
+// An empty slice means the users are equal.
+func diffNormalizedUserInfo(newUserInfo, dbUserInfo types.UserInfo) []string {
+	// The new user UID may be set or unset, but we're going to use the one we
+	// saved, so normalize it before comparing.
 	newUserInfo.UID = dbUserInfo.UID
 
-	// We then need to normalize the new user groups in order to be able to
-	// compare the two users, in fact we may receive from the broker user entries
-	// with unset or different GIDs, so let's
+	// Normalize group GIDs: the broker may send different or absent GIDs, so
+	// match each new group to its existing DB counterpart (by UGID, falling
+	// back to name for legacy records where UGID was not stored).
 	for idx, g := range newUserInfo.Groups {
 		oldGroupIdx := slices.IndexFunc(dbUserInfo.Groups, func(dg types.GroupInfo) bool {
 			if dg.UGID == "" {
@@ -372,7 +438,7 @@ func compareNewUserInfoWithUserInfoFromDB(newUserInfo, dbUserInfo types.UserInfo
 		newUserInfo.Groups[idx].GID = dbUserInfo.Groups[oldGroupIdx].GID
 	}
 
-	return dbUserInfo.Equals(newUserInfo)
+	return dbUserInfo.Diff(newUserInfo)
 }
 
 // SetUserIDResp is the response type of SetUserID.
@@ -444,7 +510,7 @@ func (m *Manager) SetUserID(name string, uid uint32) (resp *SetUserIDResp, err e
 	// Check if the home directory is currently owned by the user.
 	homeUID, _, err := getHomeDirOwner(oldUser.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		warning := fmt.Sprintf("Could not get owner of home directory '%s'.", oldUser.Dir)
+		warning := fmt.Sprintf("Warning: Could not get owner of home directory '%s', not updating ownership.", oldUser.Dir)
 		log.Warningf(context.Background(), "%s: %v", warning, err)
 		resp.Warnings = append(resp.Warnings, warning)
 		return resp, nil
@@ -456,7 +522,7 @@ func (m *Manager) SetUserID(name string, uid uint32) (resp *SetUserIDResp, err e
 	}
 
 	if homeUID != oldUser.UID {
-		warning := fmt.Sprintf("Not updating ownership of home directory '%s' because it is not owned by UID %d (current owner: %d).", oldUser.Dir, oldUser.UID, homeUID)
+		warning := fmt.Sprintf("Warning: Not updating ownership of home directory '%s' because it is not owned by UID %d (current owner: %d).", oldUser.Dir, oldUser.UID, homeUID)
 		log.Warning(context.Background(), warning)
 		resp.Warnings = append(resp.Warnings, warning)
 		return resp, nil
@@ -554,18 +620,18 @@ func (m *Manager) updateUserHomeDirOwnership(userRow db.UserRow, oldGID uint32, 
 	// Check if the home directory is currently owned by the group
 	_, homeGID, err := getHomeDirOwner(userRow.Dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		warning := fmt.Sprintf("Could not get owner of home directory '%s' for user '%s'.", userRow.Dir, userRow.Name)
+		warning := fmt.Sprintf("Warning: Could not get owner of home directory '%s', not updating ownership.", userRow.Dir)
 		log.Warningf(context.Background(), "%s: %v", warning, err)
 		return false, warning, nil
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		// The home directory does not exist, so we don't need to change the owner.
-		log.Debugf(context.Background(), "Home directory %q for user %q does not exist, skipping ownership change", userRow.Dir, userRow.Name)
+		log.Debugf(context.Background(), "Not updating ownership of home directory %q for user %q because it does not exist", userRow.Dir, userRow.Name)
 		return false, "", nil
 	}
 
 	if homeGID != oldGID {
-		warning := fmt.Sprintf("Not updating ownership of home directory '%s' because it is not owned by GID %d (current owner: %d).", userRow.Dir, oldGID, homeGID)
+		warning := fmt.Sprintf("Warning: Not updating ownership of home directory '%s' because it is not owned by GID %d (current owner: %d).", userRow.Dir, oldGID, homeGID)
 		log.Warning(context.Background(), warning)
 		return false, warning, nil
 	}
@@ -670,6 +736,132 @@ func checkHomeDirOwner(home string, uid, gid uint32) error {
 	return nil
 }
 
+// SetShell sets the shell for the given user.
+func (m *Manager) SetShell(username, shell string) (warnings []string, err error) {
+	if username == "" {
+		return nil, errors.New("empty username")
+	}
+
+	m.userManagementMu.Lock()
+	defer m.userManagementMu.Unlock()
+
+	// Check if the user exists
+	_, err = m.db.UserByName(username)
+	if err != nil {
+		return nil, err
+	}
+
+	err = checkValidPasswdPath(shell)
+	if err != nil {
+		return nil, fmt.Errorf("invalid shell: %w", err)
+	}
+
+	err = checkValidShell(shell)
+	if err != nil {
+		// We allow root to set an invalid shell but print a warning
+		warnings = append(warnings, fmt.Sprintf("Warning: %s", err.Error()))
+	}
+
+	if err = m.db.SetShell(username, shell); err != nil {
+		return warnings, err
+	}
+
+	return warnings, nil
+}
+
+// SetHomeDirResp is the response type of SetHomeDir.
+type SetHomeDirResp struct {
+	HomeDirChanged bool
+	HomeDirMoved   bool
+	Warnings       []string
+}
+
+// SetHomeDir updates the home directory of the user with the given name to the
+// specified path. If the user's current home directory exists, its contents are
+// moved to the new location; the move is performed with rename(2), so the new
+// path must reside on the same filesystem as the current one.
+func (m *Manager) SetHomeDir(name, home string) (resp *SetHomeDirResp, err error) {
+	log.Debugf(context.TODO(), "Updating home directory for user %q to %q", name, home)
+	resp = &SetHomeDirResp{}
+
+	if name == "" {
+		return nil, errors.New("empty username")
+	}
+
+	if err = checkValidPasswdPath(home); err != nil {
+		return nil, fmt.Errorf("invalid homedir: %w", err)
+	}
+
+	m.userManagementMu.Lock()
+	defer m.userManagementMu.Unlock()
+
+	// Check if the user exists.
+	oldUser, err := m.db.UserByName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if the user already has the given home directory.
+	if oldUser.Dir == home {
+		warning := fmt.Sprintf("User '%s' already has home directory '%s'.", name, home)
+		log.Info(context.Background(), warning)
+		resp.Warnings = append(resp.Warnings, warning)
+		return resp, nil
+	}
+
+	// Check if the user has active processes.
+	if err = proc.CheckUserBusy(name, oldUser.UID); err != nil {
+		return nil, err
+	}
+
+	// Refuse to overwrite an existing path at the destination.
+	if _, err = os.Lstat(home); err == nil {
+		return nil, fmt.Errorf("new home directory '%s' already exists", home)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("could not check new home directory '%s': %w", home, err)
+	}
+
+	// If the current home directory does not exist, only update the database
+	// record without creating the new directory (this mirrors `usermod -m`).
+	if _, err = os.Lstat(oldUser.Dir); errors.Is(err, os.ErrNotExist) {
+		log.Debugf(context.Background(), "Home directory %q for user %q does not exist, only updating the database record", oldUser.Dir, name)
+		if err = m.db.SetHomeDir(name, home); err != nil {
+			return nil, err
+		}
+		resp.HomeDirChanged = true
+		warning := fmt.Sprintf("Warning: Current home directory '%s' does not exist, not creating the new one.", oldUser.Dir)
+		log.Warning(context.Background(), warning)
+		resp.Warnings = append(resp.Warnings, warning)
+		return resp, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("could not check current home directory '%s': %w", oldUser.Dir, err)
+	}
+
+	// Move the home directory to the new location. Do this before updating the
+	// database so that a failure leaves the user record untouched.
+	log.Debugf(context.Background(), "Moving home directory of user %q from %q to %q", name, oldUser.Dir, home)
+	if err = fileutils.Lrename(oldUser.Dir, home); err != nil {
+		if errors.Is(err, syscall.EXDEV) {
+			return nil, fmt.Errorf("cannot move home directory across filesystems (EXDEV); move %q manually (e.g. via a temporary path), then re-run this command to update the database to %q (which must not already exist)", oldUser.Dir, home)
+		}
+		return nil, fmt.Errorf("failed to move home directory from '%s' to '%s': %w", oldUser.Dir, home, err)
+	}
+
+	if err = m.db.SetHomeDir(name, home); err != nil {
+		// Best-effort rollback of the move to keep the database and the
+		// filesystem consistent.
+		log.Warningf(context.Background(), "Could not update record for user %q in the database. Rolling back the home directory to its original location %q.", name, oldUser.Dir)
+		if rerr := fileutils.Lrename(home, oldUser.Dir); rerr != nil {
+			log.Warningf(context.Background(), "Failed to move home directory back to %q: %v. Try moving it manually.", oldUser.Dir, rerr)
+		}
+		return nil, err
+	}
+	resp.HomeDirChanged = true
+	resp.HomeDirMoved = true
+
+	return resp, nil
+}
+
 // BrokerForUser returns the broker ID for the given user.
 func (m *Manager) BrokerForUser(username string) (string, error) {
 	u, err := m.db.UserByName(username)
@@ -678,6 +870,18 @@ func (m *Manager) BrokerForUser(username string) (string, error) {
 	}
 
 	return u.BrokerID, nil
+}
+
+// BrokerAndProviderIDForUser returns the broker ID and the stable provider identifier recorded
+// for the user in a single database lookup. Both values are empty if not recorded (pre-migration
+// user, v2 broker, or local user).
+func (m *Manager) BrokerAndProviderIDForUser(username string) (brokerID, providerID string, err error) {
+	u, err := m.db.UserByName(username)
+	if err != nil {
+		return "", "", err
+	}
+
+	return u.BrokerID, u.ProviderID, nil
 }
 
 // UpdateBrokerForUser updates the broker ID for the given user.
@@ -707,9 +911,107 @@ func (m *Manager) UnlockUser(username string) error {
 	return nil
 }
 
+// DeleteUser removes the user with the given name from the database.
+// If removeHome is true, the user's home directory is also removed.
+func (m *Manager) DeleteUser(username string, removeHome bool) (err error) {
+	m.userManagementMu.Lock()
+	defer m.userManagementMu.Unlock()
+
+	userRow, err := m.db.UserByName(username)
+	if err != nil {
+		return err
+	}
+
+	lockedEntries, unlockEntries, err := localentries.WithUserDBLock()
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, unlockEntries()) }()
+
+	// Remove the user from any local groups they are a member of.
+	_, _, localGroups, err := m.db.UserWithGroups(username)
+	if err != nil {
+		return err
+	}
+	if err := localentries.UpdateGroups(lockedEntries, username, nil, localGroups); err != nil {
+		return err
+	}
+
+	if err := m.db.DeleteUser(userRow.UID); err != nil {
+		return err
+	}
+
+	// Delete the user's primary group only if no remaining user has it as primary.
+	primaryUserNames, err := m.usersWithPrimaryGroup(userRow.GID)
+	if err != nil {
+		return fmt.Errorf("failed to check for users with primary group for user %q: %w", username, err)
+	}
+	if len(primaryUserNames) == 0 {
+		if err := m.db.DeleteGroup(userRow.GID); err != nil {
+			return fmt.Errorf("failed to delete primary group for user %q: %w", username, err)
+		}
+	}
+
+	if removeHome && userRow.Dir != "" {
+		if err := os.RemoveAll(userRow.Dir); err != nil {
+			return fmt.Errorf("failed to remove home directory %q for user %q: %w", userRow.Dir, username, err)
+		}
+	}
+
+	return nil
+}
+
+// usersWithPrimaryGroup returns the names of users for which the given GID is
+// their primary group. It returns an empty slice when no such users exist.
+func (m *Manager) usersWithPrimaryGroup(gid uint32) ([]string, error) {
+	primaryUsers, err := m.db.UsersWithPrimaryGroup(gid)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(primaryUsers))
+	for _, u := range primaryUsers {
+		names = append(names, u.Name)
+	}
+	return names, nil
+}
+
+// DeleteGroup removes the group with the given name from the database.
+func (m *Manager) DeleteGroup(groupname string) error {
+	m.userManagementMu.Lock()
+	defer m.userManagementMu.Unlock()
+
+	groupRow, err := m.db.GroupByName(groupname)
+	if err != nil {
+		return err
+	}
+
+	primaryUserNames, err := m.usersWithPrimaryGroup(groupRow.GID)
+	if err != nil {
+		return fmt.Errorf("failed to check for users with primary group %q: %w", groupname, err)
+	}
+	if len(primaryUserNames) > 0 {
+		return GroupIsPrimaryError{GroupName: groupname, Users: primaryUserNames}
+	}
+
+	return m.db.DeleteGroup(groupRow.GID)
+}
+
 // IsUserLocked returns true if the user with the given user name is locked, false otherwise.
 func (m *Manager) IsUserLocked(username string) (bool, error) {
 	u, err := m.db.UserByName(username)
+	if err != nil {
+		return false, err
+	}
+
+	return u.Locked, nil
+}
+
+// IsUserLockedByProviderID returns true if the user identified by the given broker-scoped provider ID
+// is locked. It resolves the user by their stable identity rather than their name, so a lock set before
+// an IdP-side username change is still honored. Returns a NoDataFoundError if no user matches.
+func (m *Manager) IsUserLockedByProviderID(brokerID, providerID string) (bool, error) {
+	u, err := m.db.UserByProviderID(brokerID, providerID)
 	if err != nil {
 		return false, err
 	}

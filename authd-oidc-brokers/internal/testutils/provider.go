@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -13,25 +14,31 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/canonical/authd/authd-oidc-brokers/internal/consts"
+	"github.com/canonical/authd/authd-oidc-brokers/internal/providers"
+	providerErrors "github.com/canonical/authd/authd-oidc-brokers/internal/providers/errors"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/genericprovider"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/providers/info"
+	"github.com/canonical/authd/authd-oidc-brokers/internal/token"
+	"github.com/canonical/authd/log"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/ubuntu/authd/log"
 	"golang.org/x/oauth2"
 )
 
 const (
-	// ExpiredRefreshToken is used to test the expired refresh token error.
+	// ExpiredRefreshToken is used to test the expired refresh token error (simulates Keycloak "Session not active").
 	ExpiredRefreshToken = "expired-refresh-token"
-	// IsForDeviceRegistrationClaim is the claim used to indicate to the mock provider if the token is for device registration.
-	IsForDeviceRegistrationClaim = "is_for_device_registration"
+	// InactiveExpiredRefreshToken is used to test the expired refresh token due to inactivity error (simulates Keycloak "Token is not active").
+	InactiveExpiredRefreshToken = "inactive-expired-refresh-token"
+	// StaleRefreshToken is used to test the expired refresh token due to a not-before policy (simulates Keycloak "Stale token").
+	StaleRefreshToken = "stale-refresh-token"
 )
 
 // MockKey is the RSA key used to sign the JWTs for the mock provider.
@@ -109,6 +116,7 @@ func StartMockProviderServer(address string, tokenHandlerOpts *TokenHandlerOptio
 			"/device_auth":                      DefaultDeviceAuthHandler(),
 			"/token":                            TokenHandler(server.URL, tokenHandlerOpts),
 			"/keys":                             DefaultJWKHandler(),
+			"/userinfo":                         UserInfoHandler(map[string]interface{}{"must-have-claim": "present"}),
 		},
 	}
 	for _, arg := range args {
@@ -136,12 +144,30 @@ func DefaultOpenIDHandler(serverURL string) EndpointHandler {
 			"device_authorization_endpoint": "%[1]s/device_auth",
 			"token_endpoint": "%[1]s/token",
 			"jwks_uri": "%[1]s/keys",
+			"userinfo_endpoint": "%[1]s/userinfo",
 			"id_token_signing_alg_values_supported": ["RS256"]
 		}`, serverURL)
 
 		w.Header().Add("Content-Type", "application/json")
 		_, err := w.Write([]byte(wellKnown))
 		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+}
+
+// UserInfoHandler returns a handler that returns a userinfo response with the provided claims.
+// It is meant to be registered at the /userinfo endpoint when testing thin-ID-token flows.
+func UserInfoHandler(claims map[string]interface{}) EndpointHandler {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		data, err := json.Marshal(claims)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Add("Content-Type", "application/json")
+		if _, err := w.Write(data); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}
@@ -191,6 +217,9 @@ type TokenHandlerOptions struct {
 	// will be added to the token, and then that element will be removed from
 	// the list.
 	IDTokenClaims []map[string]interface{}
+	// DeleteClaims lists claim keys to remove from the ID token before signing.
+	// This is useful to simulate thin ID tokens that are missing certain claims.
+	DeleteClaims []string
 }
 
 var idTokenClaimsMutex sync.Mutex
@@ -212,16 +241,25 @@ func TokenHandler(serverURL string, opts *TokenHandlerOptions) EndpointHandler {
 		log.Debugf(context.Background(), "/token endpoint request:\n%s", s)
 
 		// Handle expired refresh token
-		//nolint:gosec // G120 - test-only mock handler; request bodies are controlled by tests.
 		refreshToken := r.FormValue("refresh_token")
 		if refreshToken == ExpiredRefreshToken {
 			w.Header().Add("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			// This is an msentraid specific error code and description.
-			_, _ = w.Write([]byte(`{"error": "invalid_grant", "error_description": "AADSTS50173: The refresh token has expired."}`))
+			_, _ = w.Write([]byte(`{"error": "invalid_grant", "error_description": "Session not active"}`))
 			return
 		}
-
+		if refreshToken == InactiveExpiredRefreshToken {
+			w.Header().Add("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error": "invalid_grant", "error_description": "Token is not active"}`))
+			return
+		}
+		if refreshToken == StaleRefreshToken {
+			w.Header().Add("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error": "invalid_grant", "error_description": "Stale token"}`))
+			return
+		}
 		// Mimics user going through auth process
 		time.Sleep(2 * time.Second)
 
@@ -234,6 +272,7 @@ func TokenHandler(serverURL string, opts *TokenHandlerOptions) EndpointHandler {
 			"preferred_username": "test-user-preferred-username@email.com",
 			"email":              "test-user@email.com",
 			"email_verified":     true,
+			"must-have-claim":    "present",
 		}
 
 		idTokenClaimsMutex.Lock()
@@ -245,6 +284,11 @@ func TokenHandler(serverURL string, opts *TokenHandlerOptions) EndpointHandler {
 			opts.IDTokenClaims = opts.IDTokenClaims[1:]
 		}
 		idTokenClaimsMutex.Unlock()
+
+		// Delete any claims that should be absent (simulates thin ID tokens).
+		for _, key := range opts.DeleteClaims {
+			delete(claims, key)
+		}
 
 		idToken := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
@@ -351,13 +395,13 @@ func ExpiryDeviceAuthHandler() EndpointHandler {
 // MockProvider is a mock that implements the Provider interface.
 type MockProvider struct {
 	genericprovider.GenericProvider
-	Scopes                             []string
-	Options                            []oauth2.AuthCodeOption
-	GetGroupsFunc                      func() ([]info.Group, error)
-	FirstCallDelay                     int
-	SecondCallDelay                    int
-	GetGroupsFails                     bool
-	ProviderSupportsDeviceRegistration bool
+	Scopes                        []string
+	Options                       []oauth2.AuthCodeOption
+	GetGroupsFunc                 func() ([]info.Group, error)
+	FirstCallDelay                int
+	SecondCallDelay               int
+	GetGroupsFails                bool
+	RequireNameClaimOnInitialAuth bool
 
 	numCalls     int
 	numCallsLock sync.Mutex
@@ -384,16 +428,18 @@ func (p *MockProvider) NormalizeUsername(username string) string {
 	return strings.ToLower(username)
 }
 
-// GetMetadata is a no-op when no specific provider is in use.
-func (p *MockProvider) GetMetadata(provider *oidc.Provider) (map[string]interface{}, error) {
-	return nil, nil
-}
-
-// GetUserInfo returns the user info parsed from the ID token.
-func (p *MockProvider) GetUserInfo(idToken info.Claimer) (info.User, error) {
+// GetUserInfo returns the user info parsed from the provided Claimer.
+func (p *MockProvider) GetUserInfo(idToken info.Claimer, isRefresh bool) (info.User, error) {
 	userClaims, err := p.userClaims(idToken)
 	if err != nil {
 		return info.User{}, err
+	}
+
+	if userClaims.MustHave == "" {
+		return info.User{}, providerErrors.NewMissingClaimError("must-have-claim")
+	}
+	if p.RequireNameClaimOnInitialAuth && !isRefresh && userClaims.Gecos == "" {
+		return info.User{}, providerErrors.NewMissingClaimError("name")
 	}
 
 	p.numCallsLock.Lock()
@@ -419,7 +465,7 @@ func (p *MockProvider) GetUserInfo(idToken info.Claimer) (info.User, error) {
 }
 
 // GetGroups returns the groups the user is a member of.
-func (p *MockProvider) GetGroups(ctx context.Context, clientID string, issuerURL string, token *oauth2.Token, providerMetadata map[string]interface{}, deviceRegistrationData []byte) ([]info.Group, error) {
+func (p *MockProvider) GetGroups(ctx context.Context, clientID string, issuerURL string, token *oauth2.Token, providerMetadata map[string]interface{}, deviceRegistrationData []byte, needsAccessTokenForGraphAPI bool) ([]info.Group, error) {
 	if p.GetGroupsFails {
 		return nil, errors.New("error requested in the mock")
 	}
@@ -440,31 +486,107 @@ func (p *MockProvider) GetGroups(ctx context.Context, clientID string, issuerURL
 	return userGroups, nil
 }
 
-// IsTokenForDeviceRegistration checks if the token is for device registration.
-func (p *MockProvider) IsTokenForDeviceRegistration(token *oauth2.Token) (bool, error) {
-	if token == nil {
-		return false, errors.New("token is nil")
-	}
-
-	isForDeviceRegistration, ok := token.Extra(IsForDeviceRegistrationClaim).(bool)
-	if !ok {
-		return false, fmt.Errorf("token does not contain %q claim", IsForDeviceRegistrationClaim)
-	}
-
-	return isForDeviceRegistration, nil
+// MockDeviceRegistererProvider wraps MockProvider and adds DeviceRegisterer support.
+// Use this when tests need the provider to implement the DeviceRegisterer interface.
+type MockDeviceRegistererProvider struct {
+	*MockProvider
 }
 
-// SupportsDeviceRegistration checks if the provider supports device registration.
-func (p *MockProvider) SupportsDeviceRegistration() bool {
-	return p.ProviderSupportsDeviceRegistration
+// IsTokenForDeviceRegistration reports whether the cached token carries
+// device-registration data.
+func (p *MockDeviceRegistererProvider) IsTokenForDeviceRegistration(authInfo *token.AuthCachedInfo) bool {
+	return authInfo != nil && len(authInfo.DeviceRegistrationData) > 0
+}
+
+// MaybeRegisterDevice is a no-op for the mock device registrar.
+func (p *MockDeviceRegistererProvider) MaybeRegisterDevice(_ context.Context, _ *oauth2.Token, _, _ string, _ []byte) ([]byte, func(), error) {
+	return nil, func() {}, nil
+}
+
+// MockMetadataProvider wraps MockProvider and adds MetadataProvider support.
+// Use this when tests need the provider to implement the MetadataProvider interface.
+type MockMetadataProvider struct {
+	*MockProvider
+	GetMetadataErr error
+}
+
+// GetMetadata returns a fixed metadata map, or the configured error.
+func (p *MockMetadataProvider) GetMetadata(_ *oidc.Provider) (map[string]interface{}, error) {
+	if p.GetMetadataErr != nil {
+		return nil, p.GetMetadataErr
+	}
+	return map[string]interface{}{"test-metadata": "test-value"}, nil
+}
+
+// GetExtraFields returns a fixed extra-fields map for the given token.
+func (p *MockMetadataProvider) GetExtraFields(_ *oauth2.Token) map[string]interface{} {
+	return map[string]interface{}{"test-extra-field": "test-value"}
+}
+
+// MockUserDisabledCheckerProvider wraps MockProvider and adds UserDisabledChecker support.
+// Use this when tests need the provider to implement the UserDisabledChecker interface.
+type MockUserDisabledCheckerProvider struct {
+	*MockProvider
+	// UserDisabledErrorCode is the OAuth2 error code that signals a disabled user.
+	UserDisabledErrorCode string
+}
+
+// IsUserDisabledError returns true when the retrieve error code matches UserDisabledErrorCode.
+func (p *MockUserDisabledCheckerProvider) IsUserDisabledError(err *oauth2.RetrieveError) bool {
+	return err.ErrorCode == p.UserDisabledErrorCode
+}
+
+// ProviderCapabilities enumerates the optional provider interfaces to expose.
+type ProviderCapabilities struct {
+	GroupFetcher        providers.GroupFetcher
+	DeviceRegisterer    providers.DeviceRegisterer
+	MetadataProvider    providers.MetadataProvider
+	UserDisabledChecker providers.UserDisabledChecker
+}
+
+// ComposeProvider returns a provider exposing only the requested optional interfaces.
+func ComposeProvider(provider providers.Provider, capabilities ProviderCapabilities) providers.Provider {
+	caps := make(map[reflect.Type]any)
+	if capabilities.GroupFetcher != nil {
+		caps[reflect.TypeOf((*providers.GroupFetcher)(nil)).Elem()] = capabilities.GroupFetcher
+	}
+	if capabilities.DeviceRegisterer != nil {
+		caps[reflect.TypeOf((*providers.DeviceRegisterer)(nil)).Elem()] = capabilities.DeviceRegisterer
+	}
+	if capabilities.MetadataProvider != nil {
+		caps[reflect.TypeOf((*providers.MetadataProvider)(nil)).Elem()] = capabilities.MetadataProvider
+	}
+	if capabilities.UserDisabledChecker != nil {
+		caps[reflect.TypeOf((*providers.UserDisabledChecker)(nil)).Elem()] = capabilities.UserDisabledChecker
+	}
+	return &composedProvider{provider, caps}
+}
+
+type composedProvider struct {
+	providers.Provider
+	caps map[reflect.Type]any
+}
+
+func (c *composedProvider) ProviderAs(target any) bool {
+	tv := reflect.ValueOf(target)
+	if tv.Kind() != reflect.Pointer || tv.IsNil() {
+		return false
+	}
+	elem := tv.Elem()
+	if capability, ok := c.caps[elem.Type()]; ok {
+		elem.Set(reflect.ValueOf(capability))
+		return true
+	}
+	return false
 }
 
 type claims struct {
-	Email string `json:"email"`
-	Sub   string `json:"sub"`
-	Home  string `json:"home"`
-	Shell string `json:"shell"`
-	Gecos string `json:"gecos"`
+	Email    string `json:"email"`
+	Sub      string `json:"sub"`
+	Home     string `json:"home"`
+	Shell    string `json:"shell"`
+	Gecos    string `json:"name"`
+	MustHave string `json:"must-have-claim"`
 }
 
 // userClaims returns the user claims parsed from the ID token.
@@ -474,4 +596,13 @@ func (p *MockProvider) userClaims(idToken info.Claimer) (claims, error) {
 		return claims{}, fmt.Errorf("failed to get ID token claims: %v", err)
 	}
 	return userClaims, nil
+}
+
+// ErrorResponseHandler returns a handler that responds with the given HTTP status code and JSON body.
+func ErrorResponseHandler(statusCode int, body string) EndpointHandler {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
+		w.WriteHeader(statusCode)
+		_, _ = w.Write([]byte(body))
+	}
 }

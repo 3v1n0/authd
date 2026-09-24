@@ -34,10 +34,10 @@ func TestNewManager(t *testing.T) {
 		"Creates_only_correct_brokers_when_config_dir_has_valid_and_invalid_brokers": {brokerConfigDir: "mixed_brokers"},
 		"Creates_only_local_broker_when_config_dir_has_only_invalid_ones":            {brokerConfigDir: "invalid_brokers"},
 		"Creates_only_local_broker_when_config_dir_does_not_exist":                   {brokerConfigDir: "does/not/exist"},
-		"Creates_manager_even_if_broker_is_not_exported_on_dbus":                     {brokerConfigDir: "not_on_bus"},
 
 		"Ignores_broker_configuration_file_not_ending_with_.conf": {brokerConfigDir: "some_ignored_brokers"},
 		"Ignores_any_unknown_sections_and_fields":                 {brokerConfigDir: "extra_fields"},
+		"Keeps_brokers_not_yet_available_on_dbus":                 {brokerConfigDir: "not_on_bus"},
 
 		"Error_when_can't_connect_to_system_bus": {brokerConfigDir: "valid_brokers", noBus: true, wantErr: true},
 		"Error_when_broker_config_dir_is_a_file": {brokerConfigDir: "file_config_dir", wantErr: true},
@@ -90,7 +90,7 @@ func TestSetDefaultBrokerForUser(t *testing.T) {
 				want.ID = "does not exist"
 			}
 
-			err = m.SetDefaultBrokerForUser(want.ID, "user@example.com")
+			err = m.SetBroker(want.ID, "user@example.com")
 			if tc.wantErr {
 				require.Error(t, err, "SetDefaultBrokerForUser should return an error, but did not")
 				return
@@ -109,7 +109,7 @@ func TestBrokerForUser(t *testing.T) {
 	m, err := brokers.NewManager(context.Background(), filepath.Join(brokerConfFixtures, "valid_brokers"), nil)
 	require.NoError(t, err, "Setup: could not create manager")
 
-	err = m.SetDefaultBrokerForUser(brokers.LocalBrokerName, "user@example.com")
+	err = m.SetBroker(brokers.LocalBrokerName, "user@example.com")
 	require.NoError(t, err, "Setup: could not set default broker")
 
 	// Broker for user should return the assigned broker
@@ -177,7 +177,6 @@ func TestNewSession(t *testing.T) {
 		sessionMode string
 
 		configuredBrokers []string
-		unavailableBroker bool
 
 		wantErr bool
 	}{
@@ -185,10 +184,9 @@ func TestNewSession(t *testing.T) {
 		"Successfully_start_a_new_passwd_session":                  {username: "success", sessionMode: auth.SessionModeChangePassword},
 		"Successfully_start_a_new_session_with_the_correct_broker": {username: "success", configuredBrokers: []string{t.Name() + "_Broker1.conf", t.Name() + "_Broker2.conf"}},
 
-		"Error_when_broker_does_not_exist":           {brokerID: "does_not_exist", wantErr: true},
-		"Error_when_broker_does_not_provide_an_ID":   {username: "ns_no_id", wantErr: true},
-		"Error_when_starting_a_new_session":          {username: "ns_error", wantErr: true},
-		"Error_when_broker_is_not_available_on_dbus": {unavailableBroker: true, wantErr: true},
+		"Error_when_broker_does_not_exist":         {brokerID: "does_not_exist", wantErr: true},
+		"Error_when_broker_does_not_provide_an_ID": {username: "ns_no_id", wantErr: true},
+		"Error_when_starting_a_new_session":        {username: "ns_error", wantErr: true},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -204,16 +202,6 @@ func TestNewSession(t *testing.T) {
 				for _, name := range tc.configuredBrokers[1:] {
 					newBrokerForTests(t, brokersConfPath, name)
 				}
-			}
-
-			if tc.unavailableBroker {
-				// We need to manually configure the broker without exporting it on the bus.
-				content, err := os.ReadFile(filepath.Join(brokerConfFixtures, "not_on_bus", "not_on_bus.conf"))
-				require.NoError(t, err, "Setup: could not read broker configuration file")
-				err = os.WriteFile(filepath.Join(brokersConfPath, "not_on_bus.conf"), content, 0600)
-				require.NoError(t, err, "Setup: could not write broker configuration file")
-				wantBroker = brokers.Broker{Name: "OfflineBroker"}
-				tc.configuredBrokers = nil
 			}
 
 			m, err := brokers.NewManager(context.Background(), brokersConfPath, tc.configuredBrokers)
@@ -237,7 +225,7 @@ func TestNewSession(t *testing.T) {
 				tc.sessionMode = "auth"
 			}
 
-			gotID, gotEKey, err := m.NewSession(tc.brokerID, tc.username, "some_lang", tc.sessionMode)
+			gotID, gotEKey, err := m.NewSession(tc.brokerID, tc.username, "some_lang", tc.sessionMode, "", "sshd")
 			if tc.wantErr {
 				require.Error(t, err, "NewSession should return an error, but did not")
 				return
@@ -251,6 +239,7 @@ func TestNewSession(t *testing.T) {
 			gotBroker, err := m.BrokerFromSessionID(gotID)
 			require.NoError(t, err, "NewSession should have assigned a broker for the session, but did not")
 			require.Equal(t, wantBroker.ID, gotBroker.ID, "BrokerFromSessionID should have assigned the expected broker for the session, but did not")
+			require.Equal(t, "sshd", m.ServiceNameFromSessionID(gotID), "NewSession should remember the PAM service name for the session")
 		})
 	}
 }
@@ -334,13 +323,13 @@ func TestStartAndEndSession(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		id, key, err := m.NewSession(b1.ID, "user1@example.com", "some_lang", "auth")
+		id, key, err := m.NewSession(b1.ID, "user1@example.com", "some_lang", "auth", "", "sshd")
 		firstID, firstKey, firstErr = &id, &key, &err
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		id, key, err := m.NewSession(b2.ID, "user2", "some_lang", "auth")
+		id, key, err := m.NewSession(b2.ID, "user2", "some_lang", "auth", "", "gdm-authd")
 		secondID, secondKey, secondErr = &id, &key, &err
 	}()
 	wg.Wait()
@@ -397,6 +386,23 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	defer cleanup()
+
+	tmpDir, err := os.MkdirTemp("", "authd-test-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not create temporary directory for tests: %v\n", err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Export mock brokers matching the names used in testdata config fixtures.
+	for _, name := range []string{"Broker", "Broker2"} {
+		_, cleanup, err := testutils.StartBusBrokerMock(tmpDir, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		defer cleanup()
+	}
 
 	m.Run()
 }

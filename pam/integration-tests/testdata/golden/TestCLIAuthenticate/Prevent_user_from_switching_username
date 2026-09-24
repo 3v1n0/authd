@@ -1,23 +1,14 @@
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your provider
+  Select your provider:
 
 > 1. local
   2. ExampleBroker
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your provider
-
-> 1. local
-  2. ExampleBroker
-────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 >
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your authentication method
+  Select the authentication flow:
 
 > 1. Password authentication
   2. Send URL to user-integration-pam-preset@example.com
@@ -29,30 +20,23 @@ Gimme your password:
 
   Press escape key to go back to choose the provider
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
-  Select your provider
+  Select your provider:
 
   1. local
 > 2. ExampleBroker
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 >
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
 Gimme your password:
 > ********
 
-  Press escape key to go back to select the authentication method
+  Press escape key to go back to select the authentication flow
 ────────────────────────────────────────────────────────────────────────────────
-> ./pam_authd login socket=${AUTHD_TEST_TAPE_SOCKET}
+  PAM_AUTHTOK: "goodpass"
 PAM Authenticate()
   User: "user-integration-pam-preset@example.com"
   Result: success
-PAM AcctMgmt()
-  User: "user-integration-pam-preset@example.com"
-  Result: success
->
 ────────────────────────────────────────────────────────────────────────────────

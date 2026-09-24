@@ -1,17 +1,16 @@
 *** Settings ***
-Resource        ./resources/authd/utils.resource
-Resource        ./resources/authd/authd.resource
+Resource        resources/utils.resource
+Resource        resources/authd.resource
 
-Resource        ./resources/broker/broker.resource
+Resource        resources/broker.resource
 
 # Test Tags       robot:exit-on-failure
 
-Test Setup    utils.Test Setup
+Test Setup    utils.Test Setup    snapshot=%{BROKER}-installed
 Test Teardown   utils.Test Teardown
 
 
 *** Variables ***
-${snapshot}    %{BROKER}-installed
 ${username}    %{E2E_USER}
 
 
@@ -19,11 +18,16 @@ ${username}    %{E2E_USER}
 Test that disabling broker prevents remote logins
     [Documentation]    This test verifies that when the broker is disabled, remote users cannot log in, while local users can still access the system.
 
-    # Log in with local user
-    Log In
-
     # Disable broker
     Disable Broker And Purge Config
+
+    # Check that remote user is redirected to local broker when trying to log in through GDM
+    Start Log In With Remote User Through GDM    ${username}
+    Check That User Is Redirected To Local Broker
+    Escape Back to GDM Login Screen
+
+    # Check that local user can still log in
+    Log In
 
     # Ensure local sudo user can still log in
     Open Terminal
@@ -31,8 +35,6 @@ Test that disabling broker prevents remote logins
     Close Terminal In Sudo Mode
 
     # Check that remote user cannot log in
-    Open Terminal In Sudo Mode
+    Open Terminal
     Try Log In With Remote User    ${username}
     Check That User Is Redirected To Local Broker
-    Cancel Operation
-    Close Terminal In Sudo Mode

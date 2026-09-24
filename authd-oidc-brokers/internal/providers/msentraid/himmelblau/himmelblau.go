@@ -5,13 +5,18 @@ package himmelblau
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/ubuntu/authd/log"
+	"github.com/canonical/authd/log"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
 
@@ -21,16 +26,31 @@ var (
 	//nolint:errname // This is not a sentinel error.
 	tpmInitErr error
 
-	brokerClientApp         *brokerClientApplication
-	brokerClientAppInitOnce sync.Once
-	//nolint:errname // This is not a sentinel error.
-	brokerClientAppInitErr error
+	brokerClientApps   = make(map[brokerClientAppCacheKey]*brokerClientAppEntry)
+	brokerClientAppsMu sync.Mutex
 
 	authorityBaseURL   = "https://login.microsoftonline.com"
 	authorityBaseURLMu sync.RWMutex
 
 	deviceRegistrationMu sync.RWMutex
 )
+
+type brokerClientAppCacheKey struct {
+	authority        string
+	clientID         string
+	transportKeyHash string
+	certKeyHash      string
+}
+
+// brokerClientAppEntry is a cache slot for a broker client app. The once gate
+// ensures initBroker runs only once per key while letting unrelated keys
+// initialize concurrently (the global mutex is held only for map access, not
+// across the cgo call, which performs TPM and network work).
+type brokerClientAppEntry struct {
+	once sync.Once
+	app  *brokerClientApplication
+	err  error
+}
 
 func ensureTPMInitialized() error {
 	tpmInitOnce.Do(func() {
@@ -58,52 +78,99 @@ func ensureTPMInitialized() error {
 	return tpmInitErr
 }
 
-func ensureBrokerClientAppInitialized(tenantID string, data *DeviceRegistrationData) error {
+func brokerClientAppFor(clientID, tenantID string, data *DeviceRegistrationData) (*brokerClientApplication, error) {
 	if err := ensureTPMInitialized(); err != nil {
-		return err
+		return nil, err
 	}
 
-	brokerClientAppInitOnce.Do(func() {
-		authorityBaseURLMu.RLock()
-		authority, err := url.JoinPath(authorityBaseURL, tenantID)
-		authorityBaseURLMu.RUnlock()
-		if err != nil {
-			brokerClientAppInitErr = fmt.Errorf("failed to construct authority URL: %v", err)
-			return
-		}
-		var transportKey []byte
-		var certKey []byte
-		if data != nil {
-			transportKey = data.TransportKey
-			certKey = data.CertKey
-		}
+	authorityBaseURLMu.RLock()
+	authority, err := url.JoinPath(authorityBaseURL, tenantID)
+	authorityBaseURLMu.RUnlock()
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct authority URL: %v", err)
+	}
 
-		brokerClientApp, brokerClientAppInitErr = initBroker(authority, "", transportKey, certKey)
-		if brokerClientAppInitErr != nil {
-			return
-		}
+	var transportKey []byte
+	var certKey []byte
+	if data != nil {
+		transportKey = data.TransportKey
+		certKey = data.CertKey
+	}
+
+	key := brokerClientAppCacheKey{
+		authority:        authority,
+		clientID:         clientID,
+		transportKeyHash: hashCacheKeyBytes(transportKey),
+		certKeyHash:      hashCacheKeyBytes(certKey),
+	}
+
+	brokerClientAppsMu.Lock()
+	entry := brokerClientApps[key]
+	if entry == nil {
+		entry = &brokerClientAppEntry{}
+		brokerClientApps[key] = entry
+	}
+	brokerClientAppsMu.Unlock()
+
+	entry.once.Do(func() {
+		entry.app, entry.err = initBroker(authority, clientID, transportKey, certKey)
 	})
+	if entry.err != nil {
+		// Do not cache failures: drop the entry so a later call can retry.
+		brokerClientAppsMu.Lock()
+		if brokerClientApps[key] == entry {
+			delete(brokerClientApps, key)
+		}
+		brokerClientAppsMu.Unlock()
+		return nil, entry.err
+	}
 
-	return brokerClientAppInitErr
+	return entry.app, nil
 }
 
-// DeviceRegistrationData contains the data returned by RegisterDevice
-// which is needed to acquire an access token later.
-type DeviceRegistrationData struct {
-	DeviceID      string `json:"device_id"`
-	CertKey       []byte `json:"cert_key"`
-	TransportKey  []byte `json:"transport_key"`
-	AuthValue     string `json:"auth_value"`
-	TPMMachineKey []byte `json:"tpm_machine_key"`
+func hashCacheKeyBytes(value []byte) string {
+	if len(value) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(value)
+	return hex.EncodeToString(sum[:])
 }
 
-// IsValid checks whether all fields of the DeviceRegistrationData are set.
-func (d *DeviceRegistrationData) IsValid() bool {
-	return d.DeviceID != "" &&
-		d.CertKey != nil &&
-		d.TransportKey != nil &&
-		d.AuthValue != "" &&
-		d.TPMMachineKey != nil
+func tokenExtrasFromAccessToken(ctx context.Context, accessToken string) map[string]any {
+	parsedToken, _, err := new(jwt.Parser).ParseUnverified(accessToken, jwt.MapClaims{})
+	if err != nil {
+		log.Debugf(ctx, "Could not parse access token claims: %v", err)
+		return nil
+	}
+
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		log.Debug(ctx, "Could not cast access token claims to jwt.MapClaims")
+		return nil
+	}
+
+	extras := map[string]any{}
+	if preferredUsername, ok := claims["preferred_username"].(string); ok && preferredUsername != "" {
+		extras["preferred_username"] = preferredUsername
+	} else if upn, ok := claims["upn"].(string); ok && upn != "" {
+		extras["preferred_username"] = upn
+	}
+	if sub, ok := claims["sub"].(string); ok && sub != "" {
+		extras["sub"] = sub
+	}
+	if name, ok := claims["name"].(string); ok && name != "" {
+		extras["name"] = name
+	}
+	if scp, ok := claims["scp"].(string); ok && scp != "" {
+		extras["scp"] = scp
+		extras["scope"] = scp
+	}
+
+	if len(extras) == 0 {
+		return nil
+	}
+
+	return extras
 }
 
 // RegisterDevice registers the device with Microsoft Entra ID and returns the
@@ -139,7 +206,8 @@ func RegisterDevice(
 		}
 	}()
 
-	if err := ensureBrokerClientAppInitialized(tenantID, nil); err != nil {
+	brokerClientApp, err := brokerClientAppFor("", tenantID, nil)
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize broker client application: %v", err)
 	}
 
@@ -221,7 +289,14 @@ func AcquireAccessTokenForGraphAPI(
 	token *oauth2.Token,
 	data DeviceRegistrationData,
 ) (string, error) {
-	if err := ensureBrokerClientAppInitialized(tenantID, &data); err != nil {
+	// Pass an empty client ID to broker_init: there it only sets the *default*
+	// on_behalf_of client ID, which we always override per-call below in
+	// acquireTokenByRefreshToken. Passing the real client ID here would have no
+	// effect on the resulting token and would only force a redundant broker_init
+	// for a separate cache key (device registration initializes the broker app
+	// with an empty client ID).
+	brokerClientApp, err := brokerClientAppFor("", tenantID, &data)
+	if err != nil {
 		return "", fmt.Errorf("failed to initialize broker client application: %v", err)
 	}
 
@@ -242,10 +317,11 @@ func AcquireAccessTokenForGraphAPI(
 		token.RefreshToken,
 		[]string{"GroupMember.Read.All"},
 		"",
-		// We could use `nil` here instead of the client ID if we also use `nil` as the client ID
-		// in the `broker_init` call, which means that the user doesn't even have to register
-		// an OIDC app in Entra. However, that has the effect that we can't fetch the groups
-		// of the user.
+		// Acquire the token on behalf of the user's OIDC app. This is what makes
+		// the user's groups resolvable; without a client ID here (and without an
+		// OIDC app registered in Entra) the group claims are unavailable. It is
+		// passed per-call rather than via broker_init because the per-call value
+		// takes precedence over the broker app's default on_behalf_of client ID.
 		clientID,
 		tpm,
 		machineKey,
@@ -262,4 +338,157 @@ func AcquireAccessTokenForGraphAPI(
 	log.Info(ctx, "Acquired access token")
 
 	return accessToken, nil
+}
+
+// InitiateMFAFlow starts the password/passwordless + MFA flow for a user.
+// It submits the user's credentials to Entra ID and returns an MFAFlowState
+// that can be used to complete the MFA challenge.
+// When withDeviceScope is true, the MFA flow requests scopes required for device
+// enrollment. When false, it uses standard scopes without enrollment resources.
+// authOpts toggles optional flow behaviors. AuthOptionFido advertises FIDO
+// capability to Entra ID; AuthOptionPasswordlessSecurityKey explicitly selects
+// the local security-key transport for a passwordless request.
+//
+// An empty password selects passwordless authentication: libhimmelblau then
+// negotiates a passwordless method from the user's credential type. The caller
+// can explicitly enable the local security-key transport when needed. This is
+// independent of withDeviceScope: the device certificate and transport key
+// device enrollment produces are generated locally via the TPM, not derived
+// from the password, so passwordless device enrollment is supported by this
+// function the same way passwordless MFA is (callers may still choose not to
+// combine the two, e.g. to avoid Conditional Access checks on the enrollment
+// resource before a password is submitted).
+func InitiateMFAFlow(ctx context.Context, clientID, tenantID string, data *DeviceRegistrationData, username, password string, withDeviceScope bool, authOpts ...AuthOption) (*MFAFlowState, *MFAChallengeInfo, error) {
+	brokerClientApp, err := brokerClientAppFor(clientID, tenantID, data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize broker client application: %v", err)
+	}
+
+	log.Debugf(ctx, "Initiating MFA flow for user %q (withDeviceScope=%v)", username, withDeviceScope)
+	// Always request NoDAGFallback: the broker surfaces MFA challenges through
+	// dedicated auth modes and never wants the silent DAG fallback.
+	opts := append([]AuthOption{AuthOptionNoDAGFallback}, authOpts...)
+	// An empty password means there is no secret to validate, so this is a
+	// passwordless login. The caller selects any local FIDO transport
+	// explicitly; advertising FIDO capability alone must not select a physical
+	// key before Remote NGC has been tried.
+	if password == "" {
+		opts = append(opts, AuthOptionPasswordless)
+	}
+
+	initiate := func() (*MFAFlowState, error) {
+		if withDeviceScope {
+			return initiateMFAFlowForEnrollment(brokerClientApp, username, password, opts)
+		}
+		return initiateMFAFlow(brokerClientApp, username, password, opts)
+	}
+
+	// Use one- and two-second exponential backoff with bounded jitter so
+	// tenant-wide throttling does not synchronize retries.
+	const retryJitterRange = 500 * time.Millisecond
+	delays := []time.Duration{
+		time.Second + rand.N(retryJitterRange),   //nolint:gosec // retry jitter is not security-sensitive
+		2*time.Second + rand.N(retryJitterRange), //nolint:gosec // retry jitter is not security-sensitive
+	}
+	flow, err := retryTransientInitiate(ctx, delays, initiate)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	challengeInfo, err := mfaChallengeInfoFromFlow(flow)
+	if err != nil {
+		FreeMFAFlowState(flow)
+		return nil, nil, err
+	}
+
+	return flow, challengeInfo, nil
+}
+
+// mfaChallengeInfoFromFlow reads the challenge metadata from the native flow
+// state. On error the caller still owns the flow and must release it.
+func mfaChallengeInfoFromFlow(flow *MFAFlowState) (*MFAChallengeInfo, error) {
+	msg, err := mfaFlowMessage(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	method, err := mfaFlowMethod(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	fidoChallenge, err := mfaFlowFidoChallenge(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	fidoAllowList, err := mfaFlowFidoAllowList(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	hasPassword, err := mfaFlowHasPassword(flow)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MFAChallengeInfo{
+		Message:           msg,
+		Method:            method,
+		PollingIntervalMs: mfaFlowPollingInterval(flow),
+		MaxPollAttempts:   mfaFlowMaxPollAttempts(flow),
+
+		FidoChallenge: fidoChallenge,
+		FidoAllowList: fidoAllowList,
+		HasPassword:   hasPassword,
+	}, nil
+}
+
+// AcquireTokenByMFAFlow completes the MFA challenge (poll or code submission).
+// For poll-based MFA, pass empty authData and increment pollAttempt.
+// For code-based MFA, pass the code as authData with pollAttempt=0.
+// Returns an OAuth token containing the access and refresh tokens from the MFA result.
+func AcquireTokenByMFAFlow(ctx context.Context, clientID, tenantID string, data *DeviceRegistrationData, username string, flow *MFAFlowState, authData string, pollAttempt int) (*oauth2.Token, error) {
+	brokerClientApp, err := brokerClientAppFor(clientID, tenantID, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize broker client application: %v", err)
+	}
+
+	log.Debugf(ctx, "Acquiring token by MFA flow for user %q (poll_attempt=%d)", username, pollAttempt)
+	userToken, cleanup, err := acquireTokenByMFAFlow(brokerClientApp, username, flow, authData, pollAttempt)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	refreshToken, err := refreshTokenFromUserToken(userToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract refresh token from MFA result: %v", err)
+	}
+
+	accessToken, err := accessTokenFromUserToken(userToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract access token from MFA result: %v", err)
+	}
+
+	// The access token from the native MFA flow is issued for the Entra native API
+	// and cannot be used with the standard OIDC UserInfo endpoint (different
+	// audience). Recover non-authoritative token extras from the access token only;
+	// broker identity binding parses the same access token after verifying it.
+	extras := map[string]interface{}{}
+	if accessExtras := tokenExtrasFromAccessToken(ctx, accessToken); len(accessExtras) > 0 {
+		for k, v := range accessExtras {
+			extras[k] = v
+		}
+	}
+
+	t := &oauth2.Token{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    "Bearer",
+	}
+	if len(extras) > 0 {
+		return t.WithExtra(extras), nil
+	}
+	return t, nil
 }

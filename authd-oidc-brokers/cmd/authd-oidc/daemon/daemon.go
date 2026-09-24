@@ -12,9 +12,9 @@ import (
 	"github.com/canonical/authd/authd-oidc-brokers/internal/consts"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/daemon"
 	"github.com/canonical/authd/authd-oidc-brokers/internal/dbusservice"
+	log "github.com/canonical/authd/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	log "github.com/ubuntu/authd/log"
 )
 
 // App encapsulate commands and options of the daemon, which can be controlled by env variables and config files.
@@ -128,27 +128,47 @@ func (a *App) serve(config daemonConfig) error {
 	}
 	defer closeFunc()
 
-	// When the data directory is SNAP_DATA, it has permission 0755, else we want to create it with 0700.
-	if err := ensureDirWithPerms(config.Paths.DataDir, 0700, os.Geteuid()); err != nil {
-		if err := ensureDirWithPerms(config.Paths.DataDir, 0755, os.Geteuid()); err != nil {
-			return fmt.Errorf("error initializing data directory %q: %v", config.Paths.DataDir, err)
-		}
+	if err := ensureDirWithOwner(config.Paths.DataDir, 0700, os.Geteuid()); err != nil {
+		return fmt.Errorf("error initializing data directory %q: %v", config.Paths.DataDir, err)
 	}
 
 	brokerConfigDir := broker.GetDropInDir(config.Paths.BrokerConf)
-	if err := ensureDirWithPerms(brokerConfigDir, 0700, os.Geteuid()); err != nil {
+	if err := ensureDirWithOwner(brokerConfigDir, 0755, os.Geteuid()); err != nil {
 		return fmt.Errorf("error initializing broker configuration directory %q: %v", brokerConfigDir, err)
 	}
 
-	b, err := broker.New(broker.Config{
-		ConfigFile: config.Paths.BrokerConf,
-		DataDir:    config.Paths.DataDir,
-	})
-	if err != nil {
+	// Ensure that the broker configuration files have secure permissions
+	if err := checkFilePerms(config.Paths.BrokerConf, 0600); err != nil && !os.IsNotExist(err) {
+		// The error returned by checkFilePerms already contains the file path,
+		// so we don't need to wrap it with more context here.
 		return err
 	}
 
-	s, err := dbusservice.New(ctx, b)
+	// Iterate over the drop-in directory and check permissions of each
+	// configuration file. We ignore subdirectories because we don't load
+	// them, so they don't represent a security risk.
+	entries, err := os.ReadDir(brokerConfigDir)
+	if err != nil {
+		return fmt.Errorf("error reading broker configuration directory %q: %v", brokerConfigDir, err)
+	}
+	for _, entry := range entries {
+		path := filepath.Join(brokerConfigDir, entry.Name())
+
+		if entry.IsDir() {
+			continue
+		}
+
+		if err := checkFilePerms(path, 0600); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	brokerConfig := broker.Config{
+		ConfigFile: config.Paths.BrokerConf,
+		DataDir:    config.Paths.DataDir,
+	}
+
+	s, err := dbusservice.New(ctx, brokerConfig)
 	if err != nil {
 		return err
 	}

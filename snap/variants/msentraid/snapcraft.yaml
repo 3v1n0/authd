@@ -17,11 +17,9 @@ description: |
     Explore the official documentation for installation and configuration steps, or visit the GitHub repository to
     contribute or provide feedback.
 icon: snap/variants/msentraid/icon.svg
-website:
-  - https://github.com/ubuntu/authd-oidc-brokers
-  - https://github.com/ubuntu/authd
-issues: https://github.com/ubuntu/authd/issues
-source-code: https://github.com/ubuntu/authd-oidc-brokers/tree/msentraid
+website: https://ubuntu.com/docs/authd
+issues: https://github.com/canonical/authd/issues
+source-code: https://github.com/canonical/authd/tree/main/authd-oidc-brokers
 adopt-info: version
 grade: stable
 base: core24
@@ -36,7 +34,16 @@ apps:
       - dbus-authd
     plugs:
       - network
-    restart-condition: always
+      # Access to FIDO2/U2F security keys for the local WebAuthn MFA step.
+      # Not auto-connected by default: run
+      #   snap connect authd-msentraid:u2f-devices
+      # to enable it. Without the connection no key is reachable, so a FIDO
+      # login waits briefly for one and then falls back to the device code flow.
+      # Even with the plug connected, snapd's u2f-devices interface only grants
+      # access to keys whose USB vendor/product IDs are on snapd's built-in
+      # list, so uncommon keys stay unreachable.
+      - u2f-devices
+    restart-condition: never
     activates-on: [dbus-authd]
     environment:
       SYSLOG_IDENTIFIER: authd-msentraid
@@ -51,43 +58,61 @@ parts:
   libhimmelblau:
     source: ./authd-oidc-brokers/third_party/libhimmelblau
     plugin: rust
+    # Force the rust plugin onto its rustup code path.
+    rust-channel: stable
     build-packages:
+      - curl
       - libssl-dev
+    build-environment:
+      # Keep the compiled target/ outside the part's build tree so it survives
+      # snapcraft re-pulling the part. The home directory persists across builds
+      # in the same instance, so this avoids rebuilding libhimmelblau from
+      # scratch. (Only CARGO_TARGET_DIR is moved: CARGO_HOME stays at its
+      # default /root/.cargo, which already persists across builds).
+      - CARGO_TARGET_DIR: ${HOME}/.cache/authd-oidc-brokers/cargo-target
     override-pull: |
       snapcraftctl pull
       cp "$SNAPCRAFT_PROJECT_DIR/authd-oidc-brokers/rust-toolchain.toml" "$SNAPCRAFT_PART_SRC/"
     override-build: |
-      cargo install cargo-c
-      cargo cbuild --release --lib --features=broker,changepassword,on_behalf_of
+      # Install cargo-c's prebuilt static binary so its build-time Rust MSRV
+      # does not constrain the Rust toolchain used for libhimmelblau.
+      "$SNAPCRAFT_PROJECT_DIR/authd-oidc-brokers/tools/install-cargo-c"
+      cargo cbuild --release --lib --features=broker,changepassword,on_behalf_of,set_timeout
       echo "Installing libhimmelblau.so and himmelblau.h"
       TARGET_TRIPLE=$(rustc -vV | awk '/host:/ {print $2}')
-      install -D target/${TARGET_TRIPLE}/release/libhimmelblau.so ${CRAFT_PART_INSTALL}/lib/libhimmelblau.so.0
+      install -D ${CARGO_TARGET_DIR}/${TARGET_TRIPLE}/release/libhimmelblau.so ${CRAFT_PART_INSTALL}/lib/libhimmelblau.so.0
       ln -s libhimmelblau.so.0 ${CRAFT_PART_INSTALL}/lib/libhimmelblau.so
-      install -D target/${TARGET_TRIPLE}/release/himmelblau.h ${CRAFT_PART_INSTALL}/include/himmelblau.h
+      install -D ${CARGO_TARGET_DIR}/${TARGET_TRIPLE}/release/himmelblau.h ${CRAFT_PART_INSTALL}/include/himmelblau.h
     prime:
       - -include/**
-      - -lib/**.so
+      - -lib/**/*.so
   broker:
     source: authd-oidc-brokers
     source-type: local
     plugin: nil
     build-snaps:
       - go
+    build-packages:
+      - retry
+      # Headers for the cgo bindings to libfido2 (internal/fido).
+      - libfido2-dev
+    stage-packages:
+      # Runtime library for the FIDO2 WebAuthn assertions; core24 does not
+      # provide it.
+      - libfido2-1
     after:
       - libhimmelblau
       - version
     build-environment:
-      - GOFLAGS: "-tags=release"
       # Add libhimmelblau to the CFLAGS and LDFLAGS so that it can be found by the Go linker.
       - CGO_CFLAGS: -I${CRAFT_STAGE}/include
       - CGO_LDFLAGS: -L${CRAFT_STAGE}/lib -lhimmelblau
       - GOBIN: ${CRAFT_PART_INSTALL}/bin
     override-build: |
-      go mod download all
+      retry -t 3 -d 10 -- go mod download all
       go mod vendor
       VERSION=$(craftctl get version)
-      export GOFLAGS="-ldflags=-X=github.com/ubuntu/authd-oidc-brokers/internal/consts.Version=${VERSION}"
-      go build -tags=withmsentraid -o ${GOBIN}/authd-msentraid ./cmd/authd-oidc
+      go build -tags=withmsentraid,release -ldflags "-X=github.com/canonical/authd/authd-oidc-brokers/internal/consts.Version=${VERSION}" -o ${GOBIN}/authd-msentraid ./cmd/authd-oidc
   config:
     source: authd-oidc-brokers/conf/
     source-type: local
@@ -105,10 +130,12 @@ parts:
     plugin: nil
     build-snaps:
       - go
+    build-packages:
+      - retry
     build-environment:
       - GOBIN: ${CRAFT_PART_INSTALL}/bin
     override-build: |
-      go mod download all
+      retry -t 3 -d 10 -- go mod download all
       go mod vendor
       go build -o ${GOBIN}/semver semver/semver.go
   # Build the snap version from the git repository and current tree state.

@@ -2,7 +2,6 @@ package adapter
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -25,7 +24,7 @@ type gdmModel struct {
 	waitingAuth bool
 
 	// Given the bubbletea async nature we may end up receiving and forwarding
-	// events after we've got a PamReturnStatus and even after the PAM module
+	// events after we've got a PamReturnValue and even after the PAM module
 	// has returned to libpam caller (since go goroutines can still be alive).
 	// However, after the quit point we should really not interact anymore with
 	// GDM or we'll make it crash (as it doesn't expect any conversation
@@ -34,6 +33,14 @@ type gdmModel struct {
 	// further conversation with GDM should happen.
 	conversationsStopped  bool
 	stoppingConversations bool
+
+	// pendingEchoAuthModeID is the auth mode we last told GDM to select and
+	// whose echo we still expect back. GDM echoes our selection in its next
+	// poll; acting on that echo would issue a second SelectAuthenticationMode
+	// RPC (and, for device auth, mint a second device code that orphans the
+	// in-flight poll). It is consumed (cleared) by the first matching echo, so
+	// a later genuine re-selection of the same mode is still honored.
+	pendingEchoAuthModeID string
 }
 
 type gdmPollResponse struct {
@@ -41,8 +48,6 @@ type gdmPollResponse struct {
 }
 
 type gdmPollDone struct{}
-
-type gdmIsAuthenticatedResultReceived isAuthenticatedResultReceived
 
 type gdmStopConversations struct{}
 
@@ -111,7 +116,7 @@ func (m gdmModel) pollGdm() tea.Cmd {
 	}
 }
 
-func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) tea.Cmd {
+func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) (gdmModel, tea.Cmd) {
 	if log.IsLevelEnabled(log.DebugLevel) {
 		for _, result := range gdmPollResults {
 			log.Debugf(context.TODO(), "GDM poll response: %v", result.SafeString())
@@ -127,7 +132,7 @@ func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) tea.Cmd {
 
 		case *gdm.EventData_BrokerSelected:
 			if res.BrokerSelected == nil {
-				return sendEvent(pamError{status: pam.ErrSystem,
+				return m, sendEvent(pamError{status: pam.ErrSystem,
 					msg: "missing broker selected",
 				})
 			}
@@ -137,11 +142,24 @@ func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) tea.Cmd {
 
 		case *gdm.EventData_AuthModeSelected:
 			if res.AuthModeSelected == nil {
-				return sendEvent(pamError{
+				return m, sendEvent(pamError{
 					status: pam.ErrSystem, msg: "missing auth mode id",
 				})
 			}
-			commands = append(commands, selectAuthMode(res.AuthModeSelected.AuthModeId))
+			// GDM echoes back the auth mode we just told it to select. Ignore
+			// that one echo to avoid issuing a duplicate SelectAuthenticationMode
+			// RPC (which, for device auth, mints a second device code and
+			// orphans the in-flight poll). This is a one-shot per selection:
+			// a later genuine re-selection of the same mode (the user picking
+			// it again) is honored because the pending echo has been consumed.
+			if res.AuthModeSelected.AuthModeId == m.pendingEchoAuthModeID {
+				log.Debugf(context.TODO(),
+					"Ignoring GDM auth mode selection echo for %q",
+					res.AuthModeSelected.AuthModeId)
+				m.pendingEchoAuthModeID = ""
+				break
+			}
+			commands = append(commands, selectGdmAuthMode(res.AuthModeSelected.AuthModeId))
 
 		case *gdm.EventData_IsAuthenticatedRequested:
 			if !m.waitingAuth {
@@ -150,7 +168,7 @@ func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) tea.Cmd {
 			}
 			m.waitingAuth = false
 			if res.IsAuthenticatedRequested == nil || res.IsAuthenticatedRequested.AuthenticationData == nil {
-				return sendEvent(pamError{
+				return m, sendEvent(pamError{
 					status: pam.ErrSystem, msg: "missing auth requested",
 				})
 			}
@@ -173,7 +191,7 @@ func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) tea.Cmd {
 
 		case *gdm.EventData_StageChanged:
 			if res.StageChanged == nil {
-				return sendEvent(pamError{
+				return m, sendEvent(pamError{
 					status: pam.ErrSystem, msg: "missing stage changed",
 				})
 			}
@@ -183,7 +201,7 @@ func (m gdmModel) handlePollResponse(gdmPollResults []*gdm.EventData) tea.Cmd {
 	}
 
 	commands = append(commands, sendEvent(gdmPollDone{}))
-	return tea.Sequence(commands...)
+	return m, tea.Sequence(commands...)
 }
 
 func (m gdmModel) emitEvent(event gdm.Event) tea.Cmd {
@@ -211,7 +229,9 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case gdmPollResponse:
-		return m, m.handlePollResponse(msg.pollResponse)
+		var cmd tea.Cmd
+		m, cmd = m.handlePollResponse(msg.pollResponse)
+		return m, cmd
 
 	case gdmPollDone:
 		return m, tea.Sequence(
@@ -219,6 +239,11 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 			m.pollGdm())
 
 	case StageChanged:
+		// Entering auth mode selection permits a genuine re-selection, so an
+		// echo pending from the previous selection is no longer relevant.
+		if msg.Stage == proto.Stage_authModeSelection {
+			m.pendingEchoAuthModeID = ""
+		}
 		return m, m.changeStage(msg.Stage)
 
 	case userSelected:
@@ -229,6 +254,11 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 	case brokersListReceived:
 		return m, m.emitEvent(&gdm.EventData_BrokersReceived{
 			BrokersReceived: &gdm.Events_BrokersReceived{BrokersInfos: msg.brokers},
+		})
+
+	case brokerBoundToUser:
+		return m, m.emitEvent(&gdm.EventData_BrokerSelected{
+			BrokerSelected: &gdm.Events_BrokerSelected{BrokerId: msg.brokerID},
 		})
 
 	case brokerSelected:
@@ -242,6 +272,13 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		})
 
 	case AuthModeSelected:
+		if !msg.fromGDM {
+			// Only selections sent to GDM are echoed in a later poll. A
+			// selection received from GDM is already that echo (or a genuine
+			// user re-selection), so recording it would suppress the next
+			// selection of the same mode.
+			m.pendingEchoAuthModeID = msg.ID
+		}
 		return m, m.emitEvent(&gdm.EventData_AuthModeSelected{
 			AuthModeSelected: &gdm.Events_AuthModeSelected{AuthModeId: msg.ID},
 		})
@@ -261,39 +298,45 @@ func (m gdmModel) Update(msg tea.Msg) (gdmModel, tea.Cmd) {
 		m.waitingAuth = false
 
 	case isAuthenticatedResultReceived:
-		return m, sendEvent(gdmIsAuthenticatedResultReceived(msg))
-
-	case gdmIsAuthenticatedResultReceived:
 		access := msg.access
-		authMsg, err := dataToMsg(msg.msg)
+		authMsg, err := grantedTolerantMsg(access, msg.msg)
 		if err != nil {
 			return m, sendEvent(pamError{status: pam.ErrSystem, msg: err.Error()})
+		}
+
+		event := &gdm.EventData_AuthEvent{
+			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
+				Access: access,
+				Msg:    authMsg,
+			}},
 		}
 
 		switch access {
 		case auth.Granted:
 		case auth.Denied:
+		case auth.DeniedMaxTries:
+			// GNOME Shell does not handle denied-max-tries. Send the supported
+			// denied result so it completes the authentication.
+			event.AuthEvent.Response.Access = auth.Denied
+			if event.AuthEvent.Response.Msg == "" {
+				event.AuthEvent.Response.Msg = "Maximum number of tries exceeded"
+			}
+			return m, sendEvent(m.emitEventSync(event))
 		case auth.Cancelled:
 		case auth.Retry:
 		case auth.Next:
 		default:
 			errMsg := fmt.Sprintf("Access %q is not valid", access)
-			accessJSON, _ := json.Marshal(errMsg)
-			return m, tea.Sequence(
-				sendEvent(gdmIsAuthenticatedResultReceived{
-					access: auth.Denied,
-					msg:    fmt.Sprintf(`{"message": %s}`, accessJSON),
-				}),
-				sendEvent(pamError{status: pam.ErrAuth, msg: errMsg}),
-			)
+			event.AuthEvent.Response.Access = auth.Denied
+			event.AuthEvent.Response.Msg = errMsg
+			return m, sendEvent(m.emitEventSync(event))
 		}
 
-		return m, m.emitEvent(&gdm.EventData_AuthEvent{
-			AuthEvent: &gdm.Events_AuthEvent{Response: &authd.IAResponse{
-				Access: access,
-				Msg:    authMsg,
-			}},
-		})
+		if access == auth.Denied {
+			// Let GDM's normal PAM failure path handle authentication failures.
+			return m, nil
+		}
+		return m, m.emitEvent(event)
 
 	case gdmStopConversations:
 		m.stopConversations()

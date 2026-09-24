@@ -2,10 +2,17 @@
 
 ## Supported Versions
 
-`authd` is currently released to a PPA. There are two PPAs, [stable](https://launchpad.net/~ubuntu-enterprise-desktop/+archive/ubuntu/authd) and [edge](https://launchpad.net/~ubuntu-enterprise-desktop/+archive/ubuntu/authd-edge)
-We provide security updates for the following versions of `authd`. Please ensure you are using a supported version to receive updates and patches.
+We provide security updates for the latest version of `authd` on each supported Ubuntu LTS release.
 
-If you are unsure of your version, please run the following command in a terminal and check which PPA `authd` is installed from:
+**Ubuntu 26.04 LTS and later**: `authd` is available directly from the Ubuntu archive.
+
+**Ubuntu 24.04 LTS and earlier supported LTS releases**: `authd` is not in the Ubuntu archive and must be installed using the stable PPA.
+
+See [Install authd](https://ubuntu.com/docs/authd/stable-docs/howto/install-authd/) for installation instructions.
+
+An [edge PPA](https://launchpad.net/~ubuntu-enterprise-desktop/+archive/ubuntu/authd-edge) provides the latest development builds, but is not recommended for production use and does not receive security support.
+
+If you are unsure of your version, please run the following command in a terminal to check which channel `authd` is installed from:
 
 ```shell
 apt policy authd
@@ -37,6 +44,6 @@ The [Ubuntu Security disclosure and embargo policy](https://ubuntu.com/security/
 - [Canonical's Security Site](https://ubuntu.com/security)
 - [Ubuntu Security disclosure and embargo policy](https://ubuntu.com/security/disclosure-policy)
 - [Ubuntu Security Notices](https://ubuntu.com/security/notices)
-- [authd Documentation](https://documentation.ubuntu.com/authd/stable-docs/)
+- [authd Documentation](https://ubuntu.com/docs/authd/stable-docs/)
 
 If you have any questions regarding security vulnerabilities, please reach out to the maintainers via the aforementioned channels.

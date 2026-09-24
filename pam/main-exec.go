@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/canonical/authd/log"
 	"github.com/canonical/authd/pam/internal/dbusmodule"
@@ -15,9 +14,7 @@ import (
 )
 
 var (
-	pamFlags      = flag.Int64("flags", 0, "pam flags")
-	serverAddress = flag.String("server-address", "", "the dbus connection to use to communicate with module")
-	timeout       = flag.Int64("timeout", 120, "timeout for the server connection (in seconds)")
+	pamFlags = flag.Int64("flags", 0, "pam flags")
 )
 
 func init() {
@@ -37,22 +34,38 @@ func mainFunc() error {
 		return errors.New("not enough arguments")
 	}
 
-	serverAddressEnv := os.Getenv("AUTHD_PAM_SERVER_ADDRESS")
-	if serverAddressEnv != "" {
-		*serverAddress = serverAddressEnv
-	}
-
-	if serverAddress == nil {
+	serverAddress := os.Getenv("AUTHD_PAM_SERVER_ADDRESS")
+	if serverAddress == "" {
 		return fmt.Errorf("%w: no connection provided", pam.ErrSystem)
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Duration(*timeout)*time.Second)
-	defer cancel()
-	mTx, closeFunc, err := dbusmodule.NewTransaction(ctx, *serverAddress)
+	mTx, closeFunc, err := dbusmodule.NewTransaction(serverAddress)
 	if err != nil {
 		return fmt.Errorf("%w: can't connect to server: %w", pam.ErrSystem, err)
 	}
 	defer closeFunc()
+
+	actionDone := make(chan struct{})
+	defer close(actionDone)
+
+	go func() {
+		select {
+		case <-actionDone:
+		case <-mTx.Context().Done():
+			// The connection context is also cancelled by closeFunc() during a
+			// normal shutdown, which races with the actionDone close above.
+			// Make sure we only react to a genuine disconnect and not to our own
+			// teardown.
+			select {
+			case <-actionDone:
+				return
+			default:
+			}
+			log.Warningf(context.Background(), "[%v] D-Bus Connection closed: %v",
+				os.Getpid(), mTx.Context().Err())
+			os.Exit(255)
+		}
+	}()
 
 	action, args := args[0], args[1:]
 
@@ -60,6 +73,22 @@ func mainFunc() error {
 	if pamFlags != nil {
 		flags = pam.Flags(*pamFlags)
 	}
+
+	// Initialize logging early so lifecycle logs emitted by main-exec (including
+	// disconnect handling) follow the same debug/logfile/silent behavior used by
+	// PAM action handlers.
+	parsedArgs, logArgsIssues := parseArgs(args)
+	resetLogging, err := initLogging(mTx, parsedArgs, flags)
+	if err != nil {
+		return fmt.Errorf("%w: can't initialize logger: %v", pam.ErrSystem, err)
+	}
+	logArgsIssues()
+	defer resetLogging()
+
+	log.Debugf(context.Background(), "[%v] Connected to D-Bus server %q",
+		os.Getpid(), serverAddress)
+	log.Debugf(context.Background(), "[%v] Starting action %q (%v)",
+		os.Getpid(), action, flags)
 
 	switch action {
 	case "authenticate":
@@ -89,5 +118,9 @@ func main() {
 		log.Error(context.TODO(), err)
 		os.Exit(255)
 	}
+	// Log the PAM error and the resulting exit code before exiting. Without this
+	// a PAM error makes the process exit silently, which hides the reason behind
+	// the exec module's reported PAM result (e.g. when authd stops mid-run).
+	log.Debugf(context.TODO(), "Exiting with PAM error %q (exit code %d)", err, int(pamError))
 	os.Exit(int(pamError))
 }
