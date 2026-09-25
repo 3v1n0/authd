@@ -190,59 +190,113 @@ action_type_to_string (ActionType action_type)
   g_return_val_if_reached ("unknown");
 }
 
-typedef struct
+typedef struct _ConversationInvocation ConversationInvocation;
+typedef void (*ConversationDoneCallback) (ConversationInvocation *invocation);
+
+struct _ConversationInvocation
 {
-  pam_handle_t          *pamh;
-  GCancellable          *cancellable;
-  GDBusMethodInvocation *invocation;
-  char                  *prompt;
-  int                    style;
+  pam_handle_t            *pamh;
+  GCancellable            *cancellable;
+  char                    *message;
+  int                      style;
+  int                      ret;
+  char                    *response;
+  ConversationDoneCallback done_callback;
+  gpointer                 callback_data;
+  GDestroyNotify           callback_data_destroy;
 
 #ifdef AUTHD_TEST_MODULE
-  GThread               *main_thread;
-  GMainContext          *action_context;
+  GThread      *main_thread;
+  GMainContext *action_context;
 #endif
-} PromptInvocationData;
+};
+
+static void
+conversation_invocation_free (gpointer data)
+{
+  g_autofree ConversationInvocation *conversation_invocation =
+    g_steal_pointer (&data);
+
+  g_clear_pointer (&conversation_invocation->message, g_free);
+  g_clear_pointer (&conversation_invocation->response, g_free);
+  g_clear_object (&conversation_invocation->cancellable);
+#ifdef AUTHD_TEST_MODULE
+  g_clear_pointer (&conversation_invocation->action_context, g_main_context_unref);
+#endif
+
+  if (conversation_invocation->callback_data_destroy)
+    {
+      g_clear_pointer (&conversation_invocation->callback_data,
+                       conversation_invocation->callback_data_destroy);
+    }
+}
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (ConversationInvocation,
+                               conversation_invocation_free);
 
 static gboolean
-invoke_prompt_on_main_thread (gpointer data)
+invoke_conversation_on_action_context (gpointer data)
 {
-  PromptInvocationData *prompt_data = data;
-  g_autofree char *response = NULL;
-  int ret = PAM_CONV_ERR;
+  ConversationInvocation *conversation_invocation = data;
+  char **response_ptr = NULL;
 
 #ifdef AUTHD_TEST_MODULE
-  g_assert (prompt_data->main_thread == g_thread_self ());
-  g_assert (g_main_context_is_owner (prompt_data->action_context));
+  g_assert (conversation_invocation->main_thread == g_thread_self ());
+  g_assert (g_main_context_is_owner (conversation_invocation->action_context));
 #endif
 
-  if (!g_cancellable_is_cancelled (prompt_data->cancellable))
+  if (conversation_invocation->style == PAM_PROMPT_ECHO_ON ||
+      conversation_invocation->style == PAM_PROMPT_ECHO_OFF)
+    response_ptr = &conversation_invocation->response;
+
+  conversation_invocation->ret = PAM_CONV_ERR;
+
+  if (!g_cancellable_is_cancelled (conversation_invocation->cancellable))
     {
-      ret = pam_prompt (prompt_data->pamh,
-                        prompt_data->style,
-                        &response, "%s",
-                        prompt_data->prompt);
+      conversation_invocation->ret = pam_prompt (conversation_invocation->pamh,
+                                                 conversation_invocation->style,
+                                                 response_ptr,
+                                                 "%s",
+                                                 conversation_invocation->message);
     }
 
-  g_dbus_method_invocation_return_value (prompt_data->invocation,
-                                         g_variant_new ("(is)", ret,
-                                                        response ? response : ""));
+  if (conversation_invocation->done_callback)
+    conversation_invocation->done_callback (conversation_invocation);
 
   return G_SOURCE_REMOVE;
 }
 
 static void
-prompt_invocation_data_free (gpointer data)
+conversation_invocation_invoke (ActionData               *action_data,
+                                int                       style,
+                                const char               *prompt,
+                                ConversationDoneCallback  done_callback,
+                                gpointer                  callback_data,
+                                GDestroyNotify            callback_data_destroy)
 {
-  PromptInvocationData *prompt_data = data;
+  ConversationInvocation *conversation_invocation = NULL;
 
-  g_clear_object (&prompt_data->invocation);
-  g_clear_object (&prompt_data->cancellable);
+  conversation_invocation = g_new0 (ConversationInvocation, 1);
+
+  *conversation_invocation = (ConversationInvocation){
+    .pamh = action_data->pamh,
+    .cancellable = g_object_ref (action_data->cancellable),
 #ifdef AUTHD_TEST_MODULE
-  g_clear_pointer (&prompt_data->action_context, g_main_context_unref);
+    .main_thread = action_data->main_thread,
+    .action_context = g_main_context_ref (action_data->action_context),
 #endif
-  g_clear_pointer (&prompt_data->prompt, g_free);
-  g_free (prompt_data);
+    .style = style,
+    .message = g_strdup (prompt),
+    .done_callback = done_callback,
+    .callback_data = callback_data,
+    .callback_data_destroy = callback_data_destroy,
+  };
+
+  g_main_context_invoke_full (action_data->action_context,
+                              G_PRIORITY_DEFAULT,
+                              invoke_conversation_on_action_context,
+                              g_steal_pointer (&conversation_invocation),
+                              conversation_invocation_free);
 }
 
 G_GNUC_PRINTF (2, 3)
@@ -545,6 +599,16 @@ sanitize_variant_key (const char *key)
 }
 
 static void
+conversation_prompt_done (ConversationInvocation *conversation_invocation)
+{
+  g_dbus_method_invocation_return_value (conversation_invocation->callback_data,
+                                         g_variant_new ("(is)",
+                                                        conversation_invocation->ret,
+                                                        conversation_invocation->response ?
+                                                        conversation_invocation->response : ""));
+}
+
+static void
 on_pam_method_call (GDBusConnection       *connection,
                     const char            *sender,
                     const char            *object_path,
@@ -710,30 +774,15 @@ on_pam_method_call (GDBusConnection       *connection,
     }
   else if (g_str_equal (method_name, "Prompt"))
     {
-      PromptInvocationData *prompt_data = NULL;
-      g_autofree char *prompt = NULL;
+      const char *prompt = NULL;
       int style;
 
-      g_variant_get (parameters, "(is)", &style, &prompt);
-      prompt_data = g_new0 (PromptInvocationData, 1);
+      g_variant_get (parameters, "(i&s)", &style, &prompt);
 
-      *prompt_data = (PromptInvocationData){
-        .pamh = action_data->pamh,
-        .cancellable = g_object_ref (action_data->cancellable),
-#ifdef AUTHD_TEST_MODULE
-        .main_thread = action_data->main_thread,
-        .action_context = g_main_context_ref (action_data->action_context),
-#endif
-        .invocation = g_object_ref (invocation),
-        .style = style,
-        .prompt = g_steal_pointer (&prompt),
-      };
-
-      g_main_context_invoke_full (action_data->action_context,
-                                  G_PRIORITY_DEFAULT,
-                                  invoke_prompt_on_main_thread,
-                                  g_steal_pointer (&prompt_data),
-                                  prompt_invocation_data_free);
+      conversation_invocation_invoke (action_data, style, prompt,
+                                      conversation_prompt_done,
+                                      g_object_ref (invocation),
+                                      g_object_unref);
     }
   else
     {
