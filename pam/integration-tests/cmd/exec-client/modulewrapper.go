@@ -70,3 +70,9 @@ func (m moduleWrapper) SimulateClientSignalAfterDelay(sig syscall.Signal, delayM
 		m.SimulateClientSignal(sig, false)
 	})
 }
+
+// StartStringConvInBackground starts a string conversation without waiting for
+// its reply, so that other conversations can be queued while it's in progress.
+func (m moduleWrapper) StartStringConvInBackground(style pam.Style, prompt string) {
+	go func() { _, _ = m.StartStringConv(style, prompt) }()
+}
